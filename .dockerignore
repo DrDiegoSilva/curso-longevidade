@@ -1,0 +1,7 @@
+**/__pycache__/
+*.pyc
+*.log
+app/logs/
+Curso_Longevidade_DrDiego.html
+resumos_enviados.jsonl
+.git/

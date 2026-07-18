@@ -1,0 +1,42 @@
+{
+  "_nota": "Filtros de busca dos resumos cientificos semanais. Sintaxe Europe PMC. query = termos-alvo; excluir = termos que geram ruido (aplicados como NOT). Refinado apos teste 2026-06-15.",
+  "temas": {
+    "Obesidade": {
+      "dia_semana": "segunda",
+      "query": "(obesity OR \"weight loss\" OR \"weight management\" OR \"anti-obesity\" OR \"GLP-1\" OR tirzepatide OR semaglutide OR retatrutide OR orforglipron OR cagrilintide OR liraglutide OR survodutide OR \"bariatric surgery\")",
+      "excluir": "(pediatric OR adolescent OR \"in mice\" OR \"in rats\" OR 3T3)"
+    },
+    "Hormonios": {
+      "dia_semana": "terca",
+      "query": "(\"testosterone replacement\" OR \"testosterone therapy\" OR hypogonadism OR \"androgen deficiency\" OR \"late-onset hypogonadism\" OR \"menopausal hormone therapy\" OR \"hormone replacement therapy\" OR andropause OR \"estradiol therapy\" OR hypothyroidism OR \"thyroid hormone replacement\" OR \"subclinical hypothyroidism\" OR gynecomastia)",
+      "excluir": "(\"prostate cancer\" OR arthroplasty OR \"disc replacement\" OR \"knee replacement\" OR \"hip replacement\" OR HIV)"
+    },
+    "Lipedema": {
+      "dia_semana": "quarta",
+      "query": "(lipedema OR lipoedema)",
+      "excluir": ""
+    },
+    "Longevidade": {
+      "dia_semana": "quinta",
+      "query": "(senolytic OR senescence OR \"healthy aging\" OR healthspan OR \"lifespan extension\" OR rapamycin OR sirolimus OR geroprotector OR \"biological age\" OR \"epigenetic clock\" OR \"epigenetic age\" OR \"DNA methylation age\" OR \"caloric restriction\" OR geroscience OR \"NAD+\" OR spermidine OR \"cellular senescence\" OR \"precision medicine\" OR \"personalized medicine\" OR pharmacogenomics OR \"polygenic risk score\" OR nutrigenomics OR \"aging biomarkers\" OR \"precision health\" OR wearable OR \"continuous glucose\" OR multiomics OR \"multi-omics\")",
+      "excluir": "(\"nursing home\" OR \"aged care\" OR \"home care\" OR dementia OR sedation OR anesthesia OR arthroplasty OR cancer OR tumor OR oncology)"
+    },
+    "Performance": {
+      "dia_semana": "sexta",
+      "query": "(\"sports medicine\" OR \"exercise performance\" OR \"resistance training\" OR \"strength training\" OR \"endurance training\" OR VO2max OR \"athletic performance\" OR \"muscle hypertrophy\" OR \"sports nutrition\" OR ergogenic OR creatine OR \"exercise physiology\" OR \"muscle recovery\")",
+      "excluir": "(arthroplasty OR \"disc replacement\" OR \"knee replacement\" OR \"total knee\" OR \"total hip\" OR surgery OR pediatric OR adolescent OR dementia)"
+    }
+  },
+  "calendario": {
+    "segunda":  {"tema": "Obesidade",   "modo": "atualizacao"},
+    "terca":    {"tema": "Hormonios",   "modo": "atualizacao"},
+    "quarta":   {"tema": "Lipedema",    "modo": "atualizacao"},
+    "quinta":   {"tema": "Longevidade", "modo": "curso"},
+    "sexta":    {"tema": "Performance", "modo": "atualizacao"},
+    "sabado":   {"tema": "Longevidade", "modo": "curso"},
+    "domingo":  {"tema": "Longevidade", "modo": "curso"}
+  },
+  "horario": "08:00",
+  "regra_fallback": "Dia de modo 'atualizacao' sem estudo relevante na janela de 7 dias -> entregar uma aula do curso de Longevidade (avanca o curriculo).",
+  "journals_top": ["N Engl J Med", "Lancet", "JAMA", "BMJ", "Nature Medicine", "Cell Metab", "Diabetes Care", "Lancet Diabetes Endocrinol", "Circulation", "Ann Intern Med", "J Clin Endocrinol Metab", "Diabetes Obes Metab", "Obesity", "Thyroid", "Eur J Endocrinol", "Aging Cell", "Nature Aging", "GeroScience"]
+}
