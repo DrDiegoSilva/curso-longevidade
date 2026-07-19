@@ -68,8 +68,81 @@ def init():
                 nome TEXT,
                 expira TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS subscribers (
+                id TEXT PRIMARY KEY,
+                nome TEXT, whatsapp TEXT, email TEXT, cpf TEXT,
+                plano TEXT, metodo TEXT,
+                status TEXT DEFAULT 'ATIVO',
+                asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
+                proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
+                criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT
+            );
+            CREATE TABLE IF NOT EXISTS pending_signups (
+                token TEXT PRIMARY KEY,
+                nome TEXT, email TEXT, cpf TEXT, whatsapp TEXT,
+                plano TEXT, metodo TEXT, parcelas INTEGER, valor REAL,
+                criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS webhook_events (
+                payment_id TEXT, event TEXT, processed_em TEXT,
+                PRIMARY KEY (payment_id, event)
+            );
+            CREATE TABLE IF NOT EXISTS cupons (
+                codigo TEXT PRIMARY KEY, ativo INTEGER DEFAULT 1, descricao TEXT, criado_em TEXT
+            );
             """
         )
+    _seed_cupons()
+
+
+def _seed_cupons():
+    from datetime import datetime
+    codigos = config.cupons_seed()
+    if not codigos:
+        return
+    with _conn() as c:
+        for cod in codigos:
+            c.execute("INSERT OR IGNORE INTO cupons (codigo,ativo,descricao,criado_em) VALUES (?,1,'seed',?)",
+                      (cod, datetime.now().isoformat()))
+
+
+def criar_pending(dados):
+    """Cadastro em aberto (antes do redirect ao checkout). Retorna o token (externalReference)."""
+    import secrets
+    from datetime import datetime
+    token = secrets.token_hex(16)
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO pending_signups (token,nome,email,cpf,whatsapp,plano,metodo,parcelas,valor,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (token, dados.get("nome", ""), dados.get("email", ""), dados.get("cpf", ""),
+             dados.get("whatsapp", ""), dados.get("plano", ""), dados.get("metodo", ""),
+             int(dados.get("parcelas", 1)), float(dados.get("valor", 0)), datetime.now().isoformat()),
+        )
+    return token
+
+
+def obter_pending(token):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM pending_signups WHERE token=?", (token,)).fetchone()
+    return dict(r) if r else None
+
+
+def registrar_webhook(payment_id, event):
+    """True se é a 1ª vez (processar); False se já visto (idempotência)."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("INSERT OR IGNORE INTO webhook_events (payment_id,event,processed_em) VALUES (?,?,?)",
+                        (payment_id or "", event or "", datetime.now().isoformat()))
+        return cur.rowcount > 0
+
+
+def cupom_valido(codigo):
+    if not codigo:
+        return False
+    with _conn() as c:
+        r = c.execute("SELECT ativo FROM cupons WHERE codigo=?", ((codigo or "").strip().upper(),)).fetchone()
+    return bool(r and r["ativo"])
 
 
 def registrar_digest(art, conteudo, tmeta=None, data=None):

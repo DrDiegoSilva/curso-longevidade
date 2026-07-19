@@ -61,6 +61,31 @@ class TestDb(unittest.TestCase):
         self.assertEqual(len(lst), 1)
         self.assertEqual(lst[0]["titulo_pt"], "V2")
 
+    def test_pending_roundtrip(self):
+        tok = self.db.criar_pending({"nome": "Dr. X", "whatsapp": "5543", "plano": "anual",
+                                     "metodo": "CARTAO", "parcelas": 12, "valor": 1000.4})
+        p = self.db.obter_pending(tok)
+        self.assertEqual(p["plano"], "anual")
+        self.assertEqual(p["parcelas"], 12)
+        self.assertIsNone(self.db.obter_pending("inexistente"))
+
+    def test_webhook_idempotente(self):
+        self.assertTrue(self.db.registrar_webhook("pay_1", "PAYMENT_CONFIRMED"))
+        self.assertFalse(self.db.registrar_webhook("pay_1", "PAYMENT_CONFIRMED"))  # já visto
+        self.assertTrue(self.db.registrar_webhook("pay_1", "PAYMENT_RECEIVED"))    # outro evento
+
+    def test_cupom(self):
+        import importlib
+        os.environ["DSCURSO_CUPONS"] = "DIEGO2026, cortesia"
+        import config as _c
+        importlib.reload(_c)
+        importlib.reload(self.db)
+        self.db.init()
+        self.assertTrue(self.db.cupom_valido("diego2026"))   # case-insensitive
+        self.assertTrue(self.db.cupom_valido("CORTESIA"))
+        self.assertFalse(self.db.cupom_valido("naoexiste"))
+        del os.environ["DSCURSO_CUPONS"]
+
 
 if __name__ == "__main__":
     unittest.main()
