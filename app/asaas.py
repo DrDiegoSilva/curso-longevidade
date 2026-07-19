@@ -21,31 +21,34 @@ def _hoje():
     return date.today().isoformat()
 
 
+_DESC_ITEM = "Resumos científicos diários selecionados para médicos."
+
+
 def montar_checkout(plano, metodo, parcelas, dados, token, base_url):
-    """Monta o corpo do POST /checkouts conforme plano×método (puro)."""
-    metodo = (metodo or "PIX").upper()
+    """Corpo do POST /checkouts (puro). Regras REAIS do Asaas:
+    - CARTÃO → RECURRENT (renova no ciclo; parcelável) — único método que recorre.
+    - PIX → DETACHED (à vista, não renova; exige chave Pix na conta).
+    `customerData` é OMITIDO de propósito: o checkout hospedado coleta nome/CPF/
+    endereço/cartão; a amarração ao assinante é pelo externalReference.
+    """
+    metodo = "CARTAO" if (metodo or "").upper() == "CARTAO" else "PIX"
     parcelas = max(1, int(parcelas or 1))
     base = float(plano["base"])
-    customer = {"name": dados.get("nome", ""), "cpfCnpj": _so_digitos(dados.get("cpf", "")),
-                "email": dados.get("email", ""), "phone": _so_digitos(dados.get("whatsapp", ""))}
-    p = {"customerData": customer, "externalReference": token,
+    item_nome = f"Assinatura {plano['nome']}"[:30]        # Asaas: name <= 30 chars
+    p = {"externalReference": token,
          "callback": {"successUrl": f"{base_url}/obrigado", "cancelUrl": f"{base_url}/assinar"}}
-    if metodo == "CARTAO":                       # cartão: sempre recorrente (renova no ciclo do plano)
+    if metodo == "CARTAO":
+        valor = pricing.valor_cartao(base, parcelas)
         p["billingTypes"] = ["CREDIT_CARD"]
         p["chargeTypes"] = ["RECURRENT"]
-        p["value"] = pricing.valor_cartao(base, parcelas)
+        p["items"] = [{"name": item_nome, "description": _DESC_ITEM, "quantity": 1, "value": valor}]
         p["subscription"] = {"cycle": plano["cycle"], "nextDueDate": _hoje()}
         if parcelas > 1:
             p["installmentCount"] = parcelas
-    elif plano.get("recorrente_pix"):            # mensal via Pix Automático
-        p["billingTypes"] = ["PIX"]
-        p["chargeTypes"] = ["RECURRENT"]
-        p["value"] = base
-        p["subscription"] = {"cycle": plano["cycle"], "nextDueDate": _hoje()}
-    else:                                        # planos maiores via Pix à vista (não renova)
+    else:                                                 # PIX à vista (não renova)
         p["billingTypes"] = ["PIX"]
         p["chargeTypes"] = ["DETACHED"]
-        p["value"] = base
+        p["items"] = [{"name": item_nome, "description": _DESC_ITEM, "quantity": 1, "value": base}]
     return p
 
 
@@ -61,8 +64,13 @@ def _req(caminho, metodo="GET", payload=None):
 
 
 def criar_checkout(payload):
-    """Cria o checkout e retorna {url, id}. Erro logado; lança pro caller tratar."""
-    d = _req("checkouts", "POST", payload)
+    """Cria o checkout e retorna {url, id}. Loga o corpo do erro do Asaas e relança."""
+    try:
+        d = _req("checkouts", "POST", payload)
+    except urllib.error.HTTPError as e:
+        corpo = e.read().decode("utf-8", "replace")
+        print(f"[asaas] checkout HTTP {e.code}: {corpo[:500]}", flush=True)
+        raise
     return {"url": d.get("link") or d.get("url") or d.get("checkoutUrl"), "id": d.get("id")}
 
 

@@ -50,10 +50,11 @@ class TestRender(unittest.TestCase):
 
     def test_assinar_form_mensal(self):
         h = self.s.pagina_assinar("mensal")
-        self.assertIn("Pix Automático", h)
+        self.assertIn("Pix à vista", h)
+        self.assertIn("renova todo mês", h)               # cartão mensal recorre
         self.assertIn('name="metodo"', h)
         self.assertIn('name="cupom"', h)
-        self.assertNotIn("<select name=\"parcelas\"", h)  # mensal não parcela
+        self.assertNotIn('<select name="parcelas"', h)    # mensal não parcela
 
     def test_assinar_form_anual_parcelas(self):
         h = self.s.pagina_assinar("anual")

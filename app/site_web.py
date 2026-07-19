@@ -379,13 +379,12 @@ def pagina_assinar(plano_slug=None, erro=""):
                        meta_extra='<meta name="robots" content="noindex">')
     base = float(plano["base"])
     erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
-    if plano.get("recorrente_pix"):   # mensal
-        pix_lab = f"Pix Automático · {pricing.fmt_brl(base)}/mês (renova)"
-        cartao_lab = f"Cartão · {pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês (renova)"
+    pix_lab = f"Pix à vista · {pricing.fmt_brl(base)} (não renova)"
+    if plano.get("recorrente_pix"):   # mensal (sem parcelamento)
+        cartao_lab = f"Cartão · {pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês (renova todo mês)"
         parcelas_html = '<input type="hidden" name="parcelas" value="1">'
     else:
-        pix_lab = f"Pix à vista · {pricing.fmt_brl(base)} (não renova)"
-        cartao_lab = "Cartão · parcelável, renova no fim do período"
+        cartao_lab = "Cartão · renova no fim do período (parcelável)"
         opts = "".join(
             f'<option value="{o["parcelas"]}">{o["parcelas"]}x de {pricing.fmt_brl(o["por_parcela"])} '
             f'— total {pricing.fmt_brl(o["total"])}</option>' for o in pricing.opcoes_parcelas(base))

@@ -1,4 +1,7 @@
-"""Testes do montador de payload do checkout Asaas (puro). Standalone."""
+"""Testes do montador de payload do checkout Asaas (puro). Standalone.
+Regras reais do Asaas: CARTÃO=RECURRENT (parcelável), PIX=DETACHED (à vista),
+sem customerData (o checkout coleta), items com name<=30.
+"""
 import os
 import sys
 import unittest
@@ -15,20 +18,21 @@ class TestPayload(unittest.TestCase):
     def _plano(self, slug):
         return self.cfg.plano_por_slug(slug)
 
-    def test_mensal_pix_recorrente(self):
+    def test_mensal_pix_avista(self):
         p = self.a.montar_checkout(self._plano("mensal"), "PIX", 1, self.dados, "tok1", "https://x")
         self.assertEqual(p["billingTypes"], ["PIX"])
-        self.assertEqual(p["chargeTypes"], ["RECURRENT"])
-        self.assertEqual(p["value"], 99.0)
-        self.assertEqual(p["subscription"]["cycle"], "MONTHLY")
+        self.assertEqual(p["chargeTypes"], ["DETACHED"])          # Pix não recorre
+        self.assertNotIn("subscription", p)
+        self.assertEqual(p["items"][0]["value"], 99.0)
         self.assertEqual(p["externalReference"], "tok1")
-        self.assertEqual(p["customerData"]["cpfCnpj"], "12345678900")
+        self.assertNotIn("customerData", p)                       # Asaas coleta
 
     def test_mensal_cartao_recorrente(self):
         p = self.a.montar_checkout(self._plano("mensal"), "CARTAO", 1, self.dados, "t", "https://x")
         self.assertEqual(p["billingTypes"], ["CREDIT_CARD"])
         self.assertEqual(p["chargeTypes"], ["RECURRENT"])
-        self.assertEqual(p["value"], self.p.valor_cartao(99.0, 1))
+        self.assertEqual(p["subscription"]["cycle"], "MONTHLY")
+        self.assertEqual(p["items"][0]["value"], self.p.valor_cartao(99.0, 1))
         self.assertNotIn("installmentCount", p)
 
     def test_anual_cartao_parcelado(self):
@@ -36,14 +40,19 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(p["chargeTypes"], ["RECURRENT"])
         self.assertEqual(p["subscription"]["cycle"], "YEARLY")
         self.assertEqual(p["installmentCount"], 12)
-        self.assertEqual(p["value"], self.p.valor_cartao(960.0, 12))
+        self.assertEqual(p["items"][0]["value"], self.p.valor_cartao(960.0, 12))
 
-    def test_anual_pix_avulso(self):
+    def test_anual_pix_avista(self):
         p = self.a.montar_checkout(self._plano("anual"), "PIX", 1, self.dados, "t", "https://x")
         self.assertEqual(p["billingTypes"], ["PIX"])
         self.assertEqual(p["chargeTypes"], ["DETACHED"])
-        self.assertEqual(p["value"], 960.0)
+        self.assertEqual(p["items"][0]["value"], 960.0)
         self.assertNotIn("subscription", p)
+
+    def test_item_nome_curto(self):
+        for slug in ("mensal", "trimestral", "semestral", "anual"):
+            p = self.a.montar_checkout(self._plano(slug), "PIX", 1, self.dados, "t", "https://x")
+            self.assertLessEqual(len(p["items"][0]["name"]), 30)
 
     def test_success_url(self):
         p = self.a.montar_checkout(self._plano("mensal"), "PIX", 1, self.dados, "t", "https://artigos.x")
