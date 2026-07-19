@@ -112,7 +112,7 @@ def enviar_08h():
     def _envia(whatsapp, nome):
         ppath = os.path.join(config.drafts_dir(), f"{hoje}-{whatsapp}.pdf")
         pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, nome or "Assinante", tmeta), ppath)
-        link = f"{config.PUBLIC_URL}/minha/{whatsapp}"
+        link = f"{config.PUBLIC_URL}/entrar"  # portal protegido (login por código)
         msg = deliver.personalizar_rodape(f"🔬 *{titulo}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
         deliver.enviar_pdf(whatsapp, ppath, caption=titulo)  # PDF local -> base64 (Evolution)

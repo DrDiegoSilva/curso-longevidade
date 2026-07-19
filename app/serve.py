@@ -46,18 +46,45 @@ def agendador():
             print(f"[agendador] {nome} erro: {e}", flush=True)
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    # host começa com "artigos" -> modo site (produto); senão -> ebook (curso.)
+    def _site(self):
+        return self.headers.get("Host", "").lower().startswith("artigos")
+
+    def _sessao(self):
+        import auth_web
+        return auth_web.sessao(self.headers.get("Cookie", ""))
+
+    def _cookie(self, token):
+        return f"sid={token}; HttpOnly; Path=/; Max-Age=2592000; SameSite=Lax; Secure"
+
+    def _redirect(self, location, token=None, clear=False):
+        self.send_response(302)
+        self.send_header("Location", location)
+        if token is not None:
+            self.send_header("Set-Cookie", self._cookie(token))
+        if clear:
+            self.send_header("Set-Cookie", "sid=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure")
+        self.end_headers()
+
     def do_GET(self):
-        if self.path in ("/health", "/healthz"):
+        import urllib.parse as up
+        path = up.urlparse(self.path).path
+        if path in ("/health", "/healthz"):
             self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers()
             self.wfile.write(b"ok"); return
-        if self.path.startswith("/revisar/"):
+        if path == "/robots.txt":
+            import site_web
+            body = site_web.robots_txt() if self._site() else "User-agent: *\nAllow: /\n"
+            self.send_response(200); self.send_header("Content-Type", "text/plain; charset=utf-8"); self.end_headers()
+            self.wfile.write(body.encode("utf-8")); return
+        if path.startswith("/revisar/"):
             import draft_store, review_web
-            tok = self.path.split("/revisar/", 1)[1]
+            tok = path.split("/revisar/", 1)[1]
             r = draft_store.por_token(tok)
             return self._html(review_web.pagina_revisao(r) if r else "<h3>Link inválido/expirado</h3>", 200 if r else 404)
-        if self.path.startswith("/pdf/"):
+        if path.startswith("/pdf/"):
             import config, draft_store
-            parts = [p for p in self.path.split("/pdf/", 1)[1].split("/") if p]
+            parts = [p for p in path.split("/pdf/", 1)[1].split("/") if p]
             data_iso = parts[0] if parts else ""
             if len(parts) >= 2:  # /pdf/<data>/<whatsapp> -> PDF personalizado
                 fpath = os.path.join(config.drafts_dir(), f"{data_iso}-{parts[1]}.pdf")
@@ -69,12 +96,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "application/pdf"); self.end_headers()
                 return self.wfile.write(body)
             return self._html("<h3>PDF não encontrado</h3>", 404)
-        if self.path.startswith("/admin"):
-            import urllib.parse as up, config, subscribers, review_web
+        if path.startswith("/admin"):
+            import config, subscribers, review_web
             q = up.parse_qs(up.urlparse(self.path).query)
             if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
             return self._html(review_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN), 200)
+        if self._site():
+            return self._site_get(path)
+        # fallback: ebook (host curso./demais) — comportamento original
         try:
             data = open(ebook_curso.OUT, "rb").read()
         except Exception:
@@ -87,6 +117,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(data)
+
+    def _site_get(self, path):
+        import site_web, db
+        if path == "/":
+            return self._html(site_web.landing())
+        if path == "/entrar":
+            return self._html(site_web.pagina_entrar("numero"))
+        if path == "/sair":
+            import auth_web
+            auth_web.logout(auth_web._parse_cookie(self.headers.get("Cookie", "")).get("sid"))
+            return self._redirect("/", clear=True)
+        if path == "/minha":
+            sub = self._sessao()
+            if not sub:
+                return self._redirect("/entrar")
+            return self._html(site_web.pagina_minha(sub))
+        parts = [p for p in path.split("/") if p]
+        if parts and parts[0] == "artigos":
+            sub = self._sessao()
+            if not sub:
+                return self._redirect("/entrar")
+            if len(parts) == 1:
+                return self._html(site_web.hub_temas(db.listar_temas()))
+            slug = parts[1]
+            if len(parts) == 2:
+                return self._html(site_web.lista_tema(db.meta_tema(slug), db.listar_por_tema(slug)))
+            d = db.obter(slug, parts[2])
+            if not d:
+                return self._html("<h3>Edição não encontrada</h3>", 404)
+            return self._html(site_web.pagina_digest(db.meta_tema(slug), d))
+        return self._html("<h3>Página não encontrada</h3>", 404)
+
     def _html(self, s, code=200):
         self.send_response(code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -98,15 +160,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0"))
         form = up.parse_qs(self.rfile.read(length).decode("utf-8"))
         g = lambda k: form.get(k, [""])[0]
-        if self.path.startswith("/revisar/"):
+        path = up.urlparse(self.path).path
+        if path.startswith("/revisar/"):
             import draft_store
-            tok = self.path.split("/revisar/", 1)[1]
+            tok = path.split("/revisar/", 1)[1]
             r = draft_store.por_token(tok)
             if not r:
                 return self._html("<h3>Link inválido</h3>", 404)
             draft_store.aplicar(r["data"], g("acao"), g("texto"))
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
-        if self.path == "/admin":
+        if path == "/admin":
             import config, subscribers
             if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
@@ -115,6 +178,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif g("acao") == "remover":
                 subscribers.remover(g("id"))
             return self._html("<meta http-equiv='refresh' content='0;url=/admin?token=" + config.ADMIN_TOKEN + "'>")
+        if path == "/entrar":
+            import site_web, auth_web
+            wpp = g("whatsapp")
+            if g("etapa") == "codigo":
+                token = auth_web.verificar(wpp, g("codigo"))
+                if token:
+                    return self._redirect("/artigos", token=token)
+                return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp,
+                                  erro="Código inválido ou expirado. Tente novamente."))
+            auth_web.iniciar_login(wpp)  # neutro: só envia se for assinante ATIVO
+            return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
         return self._html("<h3>rota inválida</h3>", 404)
 
     def log_message(self, *a):
@@ -124,6 +198,11 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
 
 if __name__ == "__main__":
+    try:
+        import db
+        db.init()
+    except Exception as e:
+        print(f"[web] db.init falhou: {e}", flush=True)
     threading.Thread(target=agendador, daemon=True).start()
-    print(f"[web] servindo o ebook em :{PORT}", flush=True)
+    print(f"[web] servindo ebook (curso.) + site artigos (artigos.) em :{PORT}", flush=True)
     Server(("0.0.0.0", PORT), Handler).serve_forever()
