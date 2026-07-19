@@ -70,6 +70,9 @@ a{color:inherit}
 .plano .pr{font-size:30px;color:var(--creme);margin:8px 0 2px}
 .plano .pe{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--suave)}
 .plano .pn{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--ouro2);margin-top:10px}
+.plano .pcard{font-family:system-ui,sans-serif;font-size:12px;color:var(--suave);margin-top:8px}
+.planbtn{display:inline-block;margin-top:16px;font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));text-decoration:none;padding:10px 26px;border-radius:100px}
+.planbtn:hover{filter:brightness(1.06)}
 /* login/forms */
 .panel{max-width:440px;margin:40px auto;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);
   border-radius:20px;padding:38px 32px}
@@ -176,8 +179,10 @@ def landing():
     planos = "".join(
         f'<div class="card plano"><div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
-        f'<div class="pe">{_esc(p["periodo"])}</div>'
+        f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(p["nota"])}</div>' if p.get("nota") else "")
+        + f'<div class="pcard">no cartão a partir de {_esc(pricing.fmt_brl(pricing.valor_cartao(p["base"], 1)))}</div>'
+        + f'<a class="planbtn" href="/assinar?plano={_esc(p["slug"])}">Assinar</a>'
         + '</div>' for p in config.PLANOS)
     corpo = f"""
     <div class="wrap">

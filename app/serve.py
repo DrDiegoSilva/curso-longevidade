@@ -32,7 +32,7 @@ def proximo_disparo(now, horarios):
 def agendador():
     """Dois disparos diários (fuso TZ): 18h prepara+avisa o curador; 08h envia à lista."""
     import daily
-    tarefas = {"preparar": daily.preparar_18h, "enviar": daily.enviar_08h}
+    tarefas = {"preparar": daily.preparar_18h, "enviar": daily.rotina_08h}
     while True:
         now = _now().replace(tzinfo=None)
         alvo, nome = proximo_disparo(now, [(8, "enviar"), (18, "preparar")])

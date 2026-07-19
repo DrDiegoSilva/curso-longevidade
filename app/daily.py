@@ -94,6 +94,18 @@ def preparar_18h():
     return r
 
 
+def rotina_08h():
+    """Tarefa das 08h: avisa pré-renovação (todo dia) + envia o digest (dias úteis)."""
+    try:
+        import billing_notices
+        n = billing_notices.avisar_pre_renovacao()
+        if n:
+            print(f"[pre-renovacao] {n} aviso(s) enviado(s)", flush=True)
+    except Exception as e:
+        print(f"[pre-renovacao] erro: {e}", flush=True)
+    enviar_08h()
+
+
 def enviar_08h():
     import resumo_diario as rd
     if not _e_dia_util(datetime.now()):
