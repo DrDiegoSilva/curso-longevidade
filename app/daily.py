@@ -121,6 +121,11 @@ def enviar_08h():
     r["status"] = "SENT"
     draft_store.salvar(r)
     queue_store.confirmar_envio(art)
+    try:  # grava no arquivo do site (não derruba o envio se falhar)
+        import db
+        db.registrar_digest(art, conteudo, tmeta, data=hoje)
+    except Exception as e:
+        print(f"[enviar] falha ao registrar no arquivo: {e}", flush=True)
     rd.registrar([art["doi"]] if art.get("doi") else [])
     deliver.enviar_curador(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
                            + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))
