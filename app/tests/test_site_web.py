@@ -63,6 +63,15 @@ class TestRender(unittest.TestCase):
     def test_obrigado(self):
         self.assertIn("Quase lá", self.s.pagina_obrigado())
 
+    def test_cancelar_fluxo(self):
+        self.assertIn("Por que está cancelando", self.s.pagina_cancelar())
+        self.assertIn("erro-teste", self.s.pagina_cancelar("erro-teste"))
+        of = self.s.pagina_cancelar_oferta("caro demais")
+        self.assertIn("mais um mês", of)
+        self.assertIn('value="caro demais"', of)          # motivo preservado
+        self.assertIn('name="acao" value="aceitar"', of)
+        self.assertIn("cancelada", self.s.pagina_cancelado("2026-08-19"))
+
     def test_robots(self):
         self.assertIn("Disallow: /artigos", self.s.robots_txt())
         self.assertIn("Disallow: /assinar", self.s.robots_txt())

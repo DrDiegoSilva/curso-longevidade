@@ -118,6 +118,8 @@ button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
 .field{margin-bottom:16px}
 .field label{margin-bottom:7px}
 select{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;color:var(--creme);font-size:16px;font-family:Georgia,serif;padding:13px 14px}
+textarea{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;color:var(--creme);font-size:16px;font-family:Georgia,serif;padding:13px 14px;margin-bottom:16px;resize:vertical}
+textarea:focus{outline:none;border-color:var(--ouro)}
 .pay{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}
 .pay label{display:flex;align-items:center;gap:8px;flex:1;min-width:150px;background:rgba(0,0,0,.2);border:1px solid rgba(233,225,198,.18);border-radius:12px;padding:13px 14px;color:var(--creme);text-transform:none;letter-spacing:0;font-family:Georgia,serif;font-size:15px;cursor:pointer;margin:0}
 .pay .sub2{display:block;font-family:system-ui,sans-serif;font-size:12px;color:var(--suave)}
@@ -290,10 +292,56 @@ def pagina_minha(sub):
       <h2 class="disp">Minha assinatura</h2>
       <p class="hint">Olá, {_esc(sub.get("nome") or "assinante")}. Sua assinatura está ativa.</p>
       <p style="margin:18px 0"><a class="cta ghost" href="/artigos">Ir para o arquivo</a></p>
-      <p class="hint">Para cancelar ou trocar de plano, <a href="{_cta()}" style="color:var(--ouro2)">fale com a gente</a>.</p>
-      <p class="hint" style="margin-top:20px"><a href="/sair" style="color:var(--suave)">Sair desta conta</a></p>
+      <p class="hint" style="margin-top:20px"><a href="/sair" style="color:var(--suave)">Sair desta conta</a>
+       &nbsp;·&nbsp; <a href="/cancelar" style="color:var(--suave)">Cancelar assinatura</a></p>
     </div></div>"""
     return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_cancelar(erro=""):
+    erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Cancelar assinatura</h2>
+      <p class="hint">Que pena que você quer sair. Antes, conta o motivo — é o que nos ajuda a melhorar o produto.</p>
+      {erro_html}
+      <form method="post" action="/cancelar">
+        <label>Por que está cancelando? (obrigatório)</label>
+        <textarea name="motivo" rows="4" required placeholder="Escreva aqui..."></textarea>
+        <button class="cta" type="submit">Continuar</button>
+      </form>
+      <p class="hint" style="margin-top:14px"><a href="/minha" style="color:var(--ouro2)">← voltar, quero continuar assinante</a></p>
+    </div></div>"""
+    return _pagina(f"Cancelar · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_cancelar_oferta(motivo):
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Espera — um presente antes de você ir 🎁</h2>
+      <p class="hint">Que tal <strong>mais um mês por nossa conta</strong>? Sem cobrança agora: você continua
+      recebendo os estudos e decide com calma depois.</p>
+      <form method="post" action="/cancelar/confirmar">
+        <input type="hidden" name="motivo" value="{_esc(motivo)}">
+        <button class="cta" type="submit" name="acao" value="aceitar">Quero meu mês grátis</button>
+        <button class="cta" type="submit" name="acao" value="cancelar"
+          style="margin-top:12px;background:transparent;color:var(--suave);border:1px solid rgba(233,225,198,.25);box-shadow:none">
+          Não, pode cancelar mesmo assim</button>
+      </form>
+    </div></div>"""
+    return _pagina(f"Cancelar · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_cancelado(acesso_ate=""):
+    ate = f" Seu acesso continua até <strong>{_esc(_data_br(acesso_ate))}</strong>." if acesso_ate else ""
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Assinatura cancelada</h2>
+      <p class="hint">Pronto — não haverá novas cobranças.{ate} Enviamos um e-mail de confirmação.</p>
+      <p class="hint">Mudou de ideia? <a href="/assinar" style="color:var(--ouro2)">Assine de novo quando quiser</a>.</p>
+      <p style="margin-top:16px"><a href="/sair" style="color:var(--suave)">Sair</a></p>
+    </div></div>"""
+    return _pagina(f"Cancelado · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
 # ── Assinatura (checkout) ──
