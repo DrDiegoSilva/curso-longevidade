@@ -1,6 +1,14 @@
-"""Entrega WhatsApp texto + PDF à lista, com personalização e throttle."""
+"""Entrega WhatsApp (backend trocável: Evolution ou Z-API).
+
+- Evolution (self-hosted): PDF vai em base64 (não precisa de URL pública).
+- Z-API (legado): mantém envio por URL.
+O backend é escolhido por config.WHATSAPP_BACKEND. Partes de montagem de payload
+são puras e testáveis; o loop de distribuição injeta a função de envio.
+"""
 import time
 import json
+import re
+import base64
 import urllib.request
 import config
 
@@ -9,6 +17,7 @@ def personalizar_rodape(msg, nome, link):
     return f"{msg}\n\n— {nome}\nMinha assinatura / cancelar: {link}"
 
 
+# ── Z-API (legado) ──
 def _zapi_post(caminho, payload):
     z = config.zapi()
     url = f"https://api.z-api.io/instances/{z['instanceId']}/token/{z['instanceToken']}/{caminho}"
@@ -19,16 +28,49 @@ def _zapi_post(caminho, payload):
         return r.read().decode("utf-8", "replace")
 
 
+# ── Evolution API (self-hosted) ──
+def _evolution_texto_payload(whatsapp, msg):
+    return {"number": whatsapp, "text": msg}
+
+
+def _evolution_media_payload(whatsapp, pdf_path, caption):
+    b64 = base64.b64encode(open(pdf_path, "rb").read()).decode("ascii")
+    nome = (re.sub(r"[^\w-]", "_", caption)[:40] or "documento") + ".pdf"
+    return {"number": whatsapp, "mediatype": "document", "mimetype": "application/pdf",
+            "media": b64, "fileName": nome, "caption": caption}
+
+
+def _evolution_post(caminho, payload):
+    e = config.evolution()
+    url = f"{e['url']}/{caminho}/{e['instance']}"
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "apikey": e["apikey"]})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        return r.read().decode("utf-8", "replace")
+
+
+# ── API pública (dispatch por backend) ──
 def enviar_texto(whatsapp, msg):
+    if config.WHATSAPP_BACKEND == "evolution":
+        return _evolution_post("message/sendText", _evolution_texto_payload(whatsapp, msg))
     return _zapi_post("send-text", {"phone": whatsapp, "message": msg})
 
 
-def enviar_pdf(whatsapp, pdf_url, caption=""):
-    return _zapi_post("send-document/pdf", {"phone": whatsapp, "document": pdf_url, "caption": caption})
+def enviar_pdf(whatsapp, pdf_path, caption=""):
+    """pdf_path = arquivo LOCAL. Evolution manda em base64; Z-API precisaria de URL."""
+    if config.WHATSAPP_BACKEND == "evolution":
+        return _evolution_post("message/sendMedia", _evolution_media_payload(whatsapp, pdf_path, caption))
+    return _zapi_post("send-document/pdf", {"phone": whatsapp, "document": pdf_path, "caption": caption})
+
+
+def enviar_curador(msg):
+    """Aviso ao curador (Dr. Diego) — usado pelos jobs 18h/08h."""
+    return enviar_texto(config.whatsapp_destino(), msg)
 
 
 def distribuir(rascunho, assinantes, delay_sec, enviar_fn):
-    """Loop com throttle. enviar_fn(whatsapp, nome) é injetado (testável sem rede).
+    """Loop com throttle. enviar_fn(whatsapp, nome) injetável (testável sem rede).
     Falha em um assinante não derruba o lote."""
     ok, falhas = 0, []
     for a in assinantes:

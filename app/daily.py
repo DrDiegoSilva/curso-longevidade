@@ -67,7 +67,6 @@ def reabastecer():
 
 
 def preparar_18h():
-    import resumo_diario as rd
     amanha = datetime.now() + timedelta(days=1)
     if not _e_dia_util(amanha):
         print("[preparar] amanhã não é dia de envio — pulo", flush=True)
@@ -76,7 +75,7 @@ def preparar_18h():
         print(f"[reabastecer] +{reabastecer()} na fila", flush=True)
     art = queue_store.proximo()
     if not art:
-        rd.enviar_zap("📭 Sem artigo forte para amanhã (fila vazia). Nada preparado — me chama se quiser forçar.")
+        deliver.enviar_curador("📭 Sem artigo forte para amanhã (fila vazia). Nada preparado — me chama se quiser forçar.")
         return None
     c = content.gerar_conteudo(art)
     hoje = _hoje_iso()
@@ -88,9 +87,9 @@ def preparar_18h():
     r["grafico"] = c["grafico"]
     draft_store.salvar(r)
     link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
-    rd.enviar_zap(f"📋 Amanhã · {art.get('tema','')}:\n*{art['titulo']}*\n{art.get('fonte','')}\n"
-                  f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
-                  f"(se não mexer, envio automático às 08h)")
+    deliver.enviar_curador(f"📋 Amanhã · {art.get('tema','')}:\n*{art['titulo']}*\n{art.get('fonte','')}\n"
+                           f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
+                           f"(se não mexer, envio automático às 08h)")
     return r
 
 
@@ -102,7 +101,7 @@ def enviar_08h():
     hoje = _hoje_iso()
     r = draft_store.carregar(hoje)
     if not r or not draft_store.pode_enviar(r["status"]):
-        rd.enviar_zap(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else r['status']}).")
+        deliver.enviar_curador(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else r['status']}).")
         return
     art = r["artigo"]
     conteudo = {"resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
@@ -111,16 +110,15 @@ def enviar_08h():
     def _envia(whatsapp, nome):
         ppath = os.path.join(config.drafts_dir(), f"{hoje}-{whatsapp}.pdf")
         pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, nome or "Assinante", tmeta), ppath)
-        pdf_url = f"{config.PUBLIC_URL}/pdf/{hoje}/{whatsapp}"
         link = f"{config.PUBLIC_URL}/minha/{whatsapp}"
         msg = deliver.personalizar_rodape(f"🔬 *{art['titulo']}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
-        deliver.enviar_pdf(whatsapp, pdf_url, caption=art["titulo"])
+        deliver.enviar_pdf(whatsapp, ppath, caption=art["titulo"])  # PDF local -> base64 (Evolution)
 
     res = deliver.distribuir(r, subscribers.ativos(), config.SEND_DELAY_SEC, _envia)
     r["status"] = "SENT"
     draft_store.salvar(r)
     queue_store.confirmar_envio(art)
     rd.registrar([art["doi"]] if art.get("doi") else [])
-    rd.enviar_zap(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
-                  + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))
+    deliver.enviar_curador(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
+                           + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))

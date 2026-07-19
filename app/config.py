@@ -48,3 +48,19 @@ def zapi():
         "clientToken":   os.environ.get("ZAPI_CLIENT_TOKEN")   or _json_get(_ZAPI_FILE, "clientToken"),
         "destinoNumero": os.environ.get("ZAPI_DESTINO")        or _json_get(_ZAPI_FILE, "destinoNumero"),
     }
+
+# ── WhatsApp backend (evolution | zapi) ──
+WHATSAPP_BACKEND = (os.environ.get("WHATSAPP_BACKEND") or "zapi").lower()
+
+def evolution():
+    return {
+        "url":      (os.environ.get("EVOLUTION_URL") or "").rstrip("/"),
+        "instance": os.environ.get("EVOLUTION_INSTANCE"),
+        "apikey":   os.environ.get("EVOLUTION_APIKEY"),
+    }
+
+def whatsapp_destino():
+    """Número do curador (Dr. Diego) para o aviso das 18h."""
+    return (os.environ.get("WHATSAPP_DESTINO")
+            or os.environ.get("ZAPI_DESTINO")
+            or _json_get(_ZAPI_FILE, "destinoNumero"))
