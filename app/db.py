@@ -75,7 +75,7 @@ def init():
                 status TEXT DEFAULT 'ATIVO',
                 asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
                 proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
-                criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT
+                criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT
             );
             CREATE TABLE IF NOT EXISTS pending_signups (
                 token TEXT PRIMARY KEY,

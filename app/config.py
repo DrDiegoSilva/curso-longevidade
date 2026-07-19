@@ -75,6 +75,11 @@ TAXA_FIXA = float(os.environ.get("DSCURSO_TAXA_FIXA") or "0.49")
 def cupons_seed():
     return [c.strip().upper() for c in (os.environ.get("DSCURSO_CUPONS") or "").split(",") if c.strip()]
 
+# ── E-mail (Resend — já usado no ecossistema do Diego). Sem chave => só loga. ──
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
+EMAIL_FROM = os.environ.get("DSCURSO_EMAIL_FROM") or "Atualização Científica <nao-responda@drdiegosilva.com.br>"
+EMAIL_BACKEND = (os.environ.get("DSCURSO_EMAIL_BACKEND") or ("resend" if RESEND_API_KEY else "none")).lower()
+
 # ── Z-API (WhatsApp) ──
 _ZAPI_FILE = os.environ.get("DSCURSO_ZAPI_FILE", r"C:\Users\edson\.zapi-config.json")
 def zapi():
