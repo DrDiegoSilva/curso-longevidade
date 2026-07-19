@@ -30,19 +30,64 @@ def slug(texto):
     return n or "tema"
 
 
+def _is_pg():
+    return bool(config.DATABASE_URL)
+
+
+class _Wrap:
+    """Interface comum estilo sqlite sobre sqlite3 OU psycopg2 (Postgres/Supabase).
+    Traduz placeholders ? -> %s no Postgres; commit/rollback+close no fim do `with`.
+    """
+    def __init__(self, conn, pg):
+        self._c = conn
+        self._pg = pg
+
+    def execute(self, sql, params=()):
+        if self._pg:
+            import psycopg2.extras
+            cur = self._c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cur.execute(sql.replace("?", "%s"), params)
+        else:
+            cur = self._c.cursor()
+            cur.execute(sql, params)
+        return cur
+
+    def executescript(self, sql):
+        cur = self._c.cursor()
+        cur.execute(sql) if self._pg else cur.executescript(sql)
+        return cur
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, *a):
+        try:
+            self._c.commit() if exc_type is None else self._c.rollback()
+        finally:
+            self._c.close()
+
+
 def _conn():
+    if _is_pg():
+        import psycopg2
+        return _Wrap(psycopg2.connect(config.DATABASE_URL), True)
+    os.makedirs(os.path.dirname(config.artigos_db()) or ".", exist_ok=True)
     c = sqlite3.connect(config.artigos_db())
     c.row_factory = sqlite3.Row
-    return c
+    return _Wrap(c, False)
+
+
+_INITED = False
 
 
 def init():
-    os.makedirs(os.path.dirname(config.artigos_db()) or ".", exist_ok=True)
+    global _INITED
+    if _INITED:
+        return
     with _conn() as c:
         c.executescript(
             """
             CREATE TABLE IF NOT EXISTS digests (
-                id INTEGER PRIMARY KEY,
                 data TEXT NOT NULL,
                 tema TEXT NOT NULL,
                 tema_slug TEXT NOT NULL,
@@ -54,7 +99,7 @@ def init():
                 fonte TEXT,
                 url TEXT,
                 criado_em TEXT,
-                UNIQUE(data, tema_slug)
+                PRIMARY KEY (data, tema_slug)
             );
             CREATE TABLE IF NOT EXISTS login_codes (
                 whatsapp TEXT PRIMARY KEY,
@@ -93,6 +138,7 @@ def init():
             """
         )
     _seed_cupons()
+    _INITED = True
 
 
 def _seed_cupons():
@@ -102,8 +148,8 @@ def _seed_cupons():
         return
     with _conn() as c:
         for cod in codigos:
-            c.execute("INSERT OR IGNORE INTO cupons (codigo,ativo,descricao,criado_em) VALUES (?,1,'seed',?)",
-                      (cod, datetime.now().isoformat()))
+            c.execute("INSERT INTO cupons (codigo,ativo,descricao,criado_em) VALUES (?,1,'seed',?) "
+                      "ON CONFLICT (codigo) DO NOTHING", (cod, datetime.now().isoformat()))
 
 
 def criar_pending(dados):
@@ -132,7 +178,8 @@ def registrar_webhook(payment_id, event):
     """True se é a 1ª vez (processar); False se já visto (idempotência)."""
     from datetime import datetime
     with _conn() as c:
-        cur = c.execute("INSERT OR IGNORE INTO webhook_events (payment_id,event,processed_em) VALUES (?,?,?)",
+        cur = c.execute("INSERT INTO webhook_events (payment_id,event,processed_em) VALUES (?,?,?) "
+                        "ON CONFLICT (payment_id,event) DO NOTHING",
                         (payment_id or "", event or "", datetime.now().isoformat()))
         return cur.rowcount > 0
 
@@ -210,7 +257,7 @@ def meta_tema(s):
 def listar_por_tema(s):
     with _conn() as c:
         rows = c.execute(
-            "SELECT * FROM digests WHERE tema_slug=? ORDER BY data DESC, id DESC", (s,)
+            "SELECT * FROM digests WHERE tema_slug=? ORDER BY data DESC, criado_em DESC", (s,)
         ).fetchall()
     return [dict(r) for r in rows]
 

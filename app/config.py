@@ -35,7 +35,10 @@ def drafts_dir():
 def subscribers_path():
     return os.path.join(DATA, "subscribers.json")
 
-# Banco do site artigos (landing + arquivo protegido). Env sobrescreve → testável em /tmp.
+# Banco do site artigos. Produção = Postgres/Supabase (DATABASE_URL);
+# testes locais = SQLite (sem DATABASE_URL) — não precisa de banco no Mac.
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
 def artigos_db():
     return os.environ.get("DSCURSO_ARTIGOS_DB") or os.path.join(DATA, "artigos.db")
 

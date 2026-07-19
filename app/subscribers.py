@@ -47,8 +47,10 @@ def _migrar_json():
 def _insert(d):
     vals = [d.get(k) for k in _COLS]
     ph = ",".join("?" * len(_COLS))
+    updates = ",".join(f"{k}=excluded.{k}" for k in _COLS if k != "id")
     with db._conn() as c:
-        c.execute(f"INSERT OR REPLACE INTO subscribers ({','.join(_COLS)}) VALUES ({ph})", vals)
+        c.execute(f"INSERT INTO subscribers ({','.join(_COLS)}) VALUES ({ph}) "
+                  f"ON CONFLICT (id) DO UPDATE SET {updates}", vals)
 
 
 def listar():

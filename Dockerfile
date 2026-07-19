@@ -11,6 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata chromium
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# Driver Postgres (Supabase) — usado só em produção (quando DATABASE_URL está setada)
+RUN pip install --no-cache-dir psycopg2-binary
+
 WORKDIR /app
 COPY app/ /app/
 COPY seed/ /seed/
