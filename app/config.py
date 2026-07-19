@@ -47,12 +47,12 @@ SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
 def contato_whatsapp():
     return os.environ.get("DSCURSO_CONTATO_WHATSAPP") or whatsapp_destino()
 
-# Planos exibidos na landing. preco vazio => "sob consulta" (Diego preenche depois).
+# Planos exibidos na landing. preco vazio => "sob consulta". nota = equivalente/mês (venda).
 PLANOS = [
-    {"nome": "Mensal",     "periodo": "por mês",       "preco": os.environ.get("DSCURSO_PRECO_MENSAL", "")},
-    {"nome": "Trimestral", "periodo": "a cada 3 meses", "preco": os.environ.get("DSCURSO_PRECO_TRIMESTRAL", "")},
-    {"nome": "Semestral",  "periodo": "a cada 6 meses", "preco": os.environ.get("DSCURSO_PRECO_SEMESTRAL", "")},
-    {"nome": "Anual",      "periodo": "por ano",        "preco": os.environ.get("DSCURSO_PRECO_ANUAL", "")},
+    {"nome": "Mensal",     "periodo": "por mês",        "preco": os.environ.get("DSCURSO_PRECO_MENSAL", "R$ 99"),      "nota": ""},
+    {"nome": "Trimestral", "periodo": "a cada 3 meses", "preco": os.environ.get("DSCURSO_PRECO_TRIMESTRAL", "R$ 269"), "nota": "≈ R$ 90/mês"},
+    {"nome": "Semestral",  "periodo": "a cada 6 meses", "preco": os.environ.get("DSCURSO_PRECO_SEMESTRAL", "R$ 499"),  "nota": "≈ R$ 83/mês"},
+    {"nome": "Anual",      "periodo": "por ano",        "preco": os.environ.get("DSCURSO_PRECO_ANUAL", "R$ 960"),      "nota": "≈ R$ 80/mês · melhor preço"},
 ]
 
 # ── Z-API (WhatsApp) ──

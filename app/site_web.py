@@ -68,6 +68,7 @@ a{color:inherit}
 .plano .nm{font-family:"Cormorant Garamond",Georgia,serif;font-size:26px;color:var(--ouro2);margin-bottom:4px}
 .plano .pr{font-size:30px;color:var(--creme);margin:8px 0 2px}
 .plano .pe{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--suave)}
+.plano .pn{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--ouro2);margin-top:10px}
 /* login/forms */
 .panel{max-width:440px;margin:40px auto;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);
   border-radius:20px;padding:38px 32px}
@@ -160,7 +161,9 @@ def landing():
     planos = "".join(
         f'<div class="card plano"><div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
-        f'<div class="pe">{_esc(p["periodo"])}</div></div>' for p in config.PLANOS)
+        f'<div class="pe">{_esc(p["periodo"])}</div>'
+        + (f'<div class="pn">{_esc(p["nota"])}</div>' if p.get("nota") else "")
+        + '</div>' for p in config.PLANOS)
     corpo = f"""
     <div class="wrap">
       <section class="hero">
