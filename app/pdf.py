@@ -95,6 +95,7 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
   .brand {{ position:absolute; left:34px; top:28px; z-index:2; }}
   .brand .mark {{ font-family:system-ui,sans-serif; font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:#ece4c6; font-weight:600; }}
   .brand .sig {{ color:#fbf7ea; font-size:26px; margin-top:5px; }}
+  .brand .crm {{ font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.1em; color:#cbd8cf; margin-top:3px; }}
   .tag {{ position:absolute; right:34px; top:28px; z-index:2; background:#c9a227; color:#1a1300; font-family:system-ui,sans-serif;
           font-size:12px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; padding:7px 15px; border-radius:100px; }}
   .body {{ padding:34px 48px 40px; }}
@@ -117,7 +118,7 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
   .foot .wm {{ font-style:italic; color:#9aa8a0; }}
 </style></head><body>
   <div class="cover">{_MOTIF}
-    <div class="brand"><div class="mark">Atualiza&ccedil;&atilde;o cient&iacute;fica</div><div class="sig">Dr. Diego Silva</div></div>
+    <div class="brand"><div class="mark">Atualiza&ccedil;&atilde;o cient&iacute;fica</div><div class="sig">Dr. Diego Silva</div><div class="crm">CRM-PR 54310</div></div>
     <div class="tag">{esc(emoji)} {esc(rotulo)}</div>
   </div>
   <div class="body">
