@@ -10,6 +10,7 @@ import json
 import re
 import base64
 import urllib.request
+import urllib.error
 import config
 
 
@@ -46,8 +47,12 @@ def _evolution_post(caminho, payload):
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, method="POST",
                                  headers={"Content-Type": "application/json", "apikey": e["apikey"]})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        return r.read().decode("utf-8", "replace")
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            return r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as ex:
+        print(f"[evolution] {caminho} HTTP {ex.code}: {ex.read().decode('utf-8', 'replace')[:200]}", flush=True)
+        raise
 
 
 # ── API pública (dispatch por backend) ──

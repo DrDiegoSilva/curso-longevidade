@@ -60,7 +60,10 @@ def iniciar_login(whatsapp, enviar_fn=None):
     msg = (f"🔐 Seu código de acesso ao portal Atualização Científica é *{codigo}*.\n"
            f"Válido por {CODIGO_TTL_MIN} minutos. Se não foi você, ignore.")
     fn = enviar_fn or _enviar_padrao
-    fn(num, msg)
+    try:
+        fn(num, msg)                     # falha do WhatsApp NÃO pode derrubar a tela de login
+    except Exception as e:
+        print(f"[login] envio do código falhou: {e}", flush=True)
     return True
 
 
