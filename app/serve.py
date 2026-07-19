@@ -39,6 +39,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path in ("/health", "/healthz"):
             self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers()
             self.wfile.write(b"ok"); return
+        if self.path.startswith("/revisar/"):
+            import draft_store, review_web
+            tok = self.path.split("/revisar/", 1)[1]
+            r = draft_store.por_token(tok)
+            return self._html(review_web.pagina_revisao(r) if r else "<h3>Link inválido/expirado</h3>", 200 if r else 404)
+        if self.path.startswith("/pdf/"):
+            import draft_store
+            data_iso = self.path.split("/pdf/", 1)[1]
+            r = draft_store.carregar(data_iso)
+            if r and os.path.exists(r.get("pdf_path", "")):
+                body = open(r["pdf_path"], "rb").read()
+                self.send_response(200); self.send_header("Content-Type", "application/pdf"); self.end_headers()
+                return self.wfile.write(body)
+            return self._html("<h3>PDF não encontrado</h3>", 404)
+        if self.path.startswith("/admin"):
+            import urllib.parse as up, config, subscribers, review_web
+            q = up.parse_qs(up.urlparse(self.path).query)
+            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            return self._html(review_web.pagina_admin(subscribers.listar()), 200)
         try:
             data = open(ebook_curso.OUT, "rb").read()
         except Exception:
@@ -51,6 +71,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(data)
+    def _html(self, s, code=200):
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(s.encode("utf-8"))
+
+    def do_POST(self):
+        import urllib.parse as up
+        length = int(self.headers.get("Content-Length", "0"))
+        form = up.parse_qs(self.rfile.read(length).decode("utf-8"))
+        g = lambda k: form.get(k, [""])[0]
+        if self.path.startswith("/revisar/"):
+            import draft_store
+            tok = self.path.split("/revisar/", 1)[1]
+            r = draft_store.por_token(tok)
+            if not r:
+                return self._html("<h3>Link inválido</h3>", 404)
+            draft_store.aplicar(r["data"], g("acao"), g("texto"))
+            return self._html("<h3>Feito ✅ Pode fechar.</h3>")
+        if self.path == "/admin":
+            import config, subscribers
+            if g("acao") == "adicionar":
+                subscribers.adicionar(g("nome"), g("whatsapp"))
+            elif g("acao") == "remover":
+                subscribers.remover(g("id"))
+            return self._html("<meta http-equiv='refresh' content='0;url=/admin?token=" + (config.ADMIN_TOKEN or "") + "'>")
+        return self._html("<h3>rota inválida</h3>", 404)
+
     def log_message(self, *a):
         pass
 
