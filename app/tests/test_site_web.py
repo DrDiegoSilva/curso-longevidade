@@ -43,8 +43,29 @@ class TestRender(unittest.TestCase):
         self.assertIn("bar-fill", html)             # gráfico renderizado
         self.assertIn("Ver o estudo original", html)
 
+    def test_assinar_pick(self):
+        h = self.s.pagina_assinar(None)
+        self.assertIn("Escolha seu plano", h)
+        self.assertIn("/assinar?plano=anual", h)
+
+    def test_assinar_form_mensal(self):
+        h = self.s.pagina_assinar("mensal")
+        self.assertIn("Pix Automático", h)
+        self.assertIn('name="metodo"', h)
+        self.assertIn('name="cupom"', h)
+        self.assertNotIn("<select name=\"parcelas\"", h)  # mensal não parcela
+
+    def test_assinar_form_anual_parcelas(self):
+        h = self.s.pagina_assinar("anual")
+        self.assertIn('<select name="parcelas">', h)
+        self.assertIn("12x de", h)
+
+    def test_obrigado(self):
+        self.assertIn("Quase lá", self.s.pagina_obrigado())
+
     def test_robots(self):
         self.assertIn("Disallow: /artigos", self.s.robots_txt())
+        self.assertIn("Disallow: /assinar", self.s.robots_txt())
 
 
 if __name__ == "__main__":

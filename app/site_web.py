@@ -10,6 +10,7 @@ import json
 import html as _html
 import config
 import pdf
+import pricing
 
 MARCA = "Dr. Diego Silva"
 CRM = "CRM-PR 54310"
@@ -107,6 +108,20 @@ button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
 .docbtn{display:inline-block;margin-top:6px;font-family:system-ui,sans-serif;font-size:14px;color:var(--ouro2);text-decoration:none;border:1px solid rgba(201,162,39,.5);border-radius:100px;padding:10px 20px}
 .foot{padding:40px 0 60px;border-top:1px solid rgba(233,225,198,.1);color:var(--suave);font-family:system-ui,sans-serif;font-size:13px;margin-top:20px}
 .foot .cfm{max-width:640px;margin-top:8px;font-size:12px;opacity:.8}
+/* assinar */
+.pick{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:26px 0}
+.pick a{text-decoration:none;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:16px;padding:22px;text-align:center;transition:.15s}
+.pick a:hover{border-color:var(--ouro);background:rgba(255,255,255,.06)}
+.pick .nm{font-family:"Cormorant Garamond",Georgia,serif;font-size:24px;color:var(--ouro2)}
+.pick .pr{font-size:26px;color:var(--creme);margin:6px 0 2px}
+.pick .pe{font-family:system-ui,sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--suave)}
+.field{margin-bottom:16px}
+.field label{margin-bottom:7px}
+select{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;color:var(--creme);font-size:16px;font-family:Georgia,serif;padding:13px 14px}
+.pay{display:flex;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.pay label{display:flex;align-items:center;gap:8px;flex:1;min-width:150px;background:rgba(0,0,0,.2);border:1px solid rgba(233,225,198,.18);border-radius:12px;padding:13px 14px;color:var(--creme);text-transform:none;letter-spacing:0;font-family:Georgia,serif;font-size:15px;cursor:pointer;margin:0}
+.pay .sub2{display:block;font-family:system-ui,sans-serif;font-size:12px;color:var(--suave)}
+.resumo{background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.35);border-radius:12px;padding:14px 16px;margin-bottom:20px;font-family:system-ui,sans-serif;font-size:14px;color:var(--creme)}
 """
 
 
@@ -281,9 +296,80 @@ def pagina_minha(sub):
     return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
+# ── Assinatura (checkout) ──
+def _pick_planos():
+    cards = "".join(
+        f'<a href="/assinar?plano={_esc(p["slug"])}"><div class="nm">{_esc(p["nome"])}</div>'
+        f'<div class="pr">{_esc(p["preco"])}</div><div class="pe">{_esc(p["periodo"])}</div></a>'
+        for p in config.PLANOS)
+    return (f'<div class="wrap"><section class="sec"><h2 class="disp">Escolha seu plano</h2>'
+            f'<p class="sub">O mensal renova sozinho (cancela quando quiser). Os planos maiores '
+            f'saem mais barato por mês.</p><div class="pick">{cards}</div>'
+            f'<p class="hint">Já é assinante? <a href="/entrar" style="color:var(--ouro2)">Entrar</a></p>'
+            f'</section></div>')
+
+
+def pagina_assinar(plano_slug=None, erro=""):
+    plano = config.plano_por_slug(plano_slug) if plano_slug else None
+    if not plano:
+        return _pagina(f"Assinar · {PRODUTO}", _pick_planos(), logado=False,
+                       meta_extra='<meta name="robots" content="noindex">')
+    base = float(plano["base"])
+    erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
+    if plano.get("recorrente_pix"):   # mensal
+        pix_lab = f"Pix Automático · {pricing.fmt_brl(base)}/mês (renova)"
+        cartao_lab = f"Cartão · {pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês (renova)"
+        parcelas_html = '<input type="hidden" name="parcelas" value="1">'
+    else:
+        pix_lab = f"Pix à vista · {pricing.fmt_brl(base)} (não renova)"
+        cartao_lab = "Cartão · parcelável, renova no fim do período"
+        opts = "".join(
+            f'<option value="{o["parcelas"]}">{o["parcelas"]}x de {pricing.fmt_brl(o["por_parcela"])} '
+            f'— total {pricing.fmt_brl(o["total"])}</option>' for o in pricing.opcoes_parcelas(base))
+        parcelas_html = (f'<div class="field"><label>Parcelas (só no cartão)</label>'
+                         f'<select name="parcelas">{opts}</select></div>')
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Assinar — {_esc(plano["nome"])}</h2>
+      <div class="resumo">Plano {_esc(plano["nome"])} · {_esc(plano["periodo"])} · Pix {_esc(plano["preco"])}</div>
+      {erro_html}
+      <form method="post" action="/assinar">
+        <input type="hidden" name="plano" value="{_esc(plano["slug"])}">
+        <div class="field"><label>Nome completo</label><input type="text" name="nome" required></div>
+        <div class="field"><label>E-mail</label><input type="text" name="email" inputmode="email" required></div>
+        <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" required></div>
+        <div class="field"><label>WhatsApp (com DDD) — é onde você recebe os artigos e faz login</label>
+          <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
+        <label>Forma de pagamento</label>
+        <div class="pay">
+          <label><input type="radio" name="metodo" value="PIX" checked><span>{_esc(pix_lab)}</span></label>
+          <label><input type="radio" name="metodo" value="CARTAO"><span>{_esc(cartao_lab)}</span></label>
+        </div>
+        {parcelas_html}
+        <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" placeholder="tem um cupom de cortesia?"></div>
+        <button class="cta" type="submit">Continuar para o pagamento</button>
+      </form>
+      <p class="hint" style="margin-top:14px"><a href="/assinar" style="color:var(--suave)">← trocar de plano</a></p>
+    </div></div>"""
+    return _pagina(f"Assinar {plano['nome']} · {PRODUTO}", corpo, logado=False,
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_obrigado():
+    corpo = ('<div class="wrap"><div class="panel">'
+             '<h2 class="disp">Quase lá!</h2>'
+             '<p class="hint">Recebemos seu pedido. Assim que o pagamento for confirmado, '
+             'seu acesso chega no <strong>WhatsApp</strong> que você informou — e a partir do próximo '
+             'dia útil começam a chegar os resumos. Pode fechar esta página.</p>'
+             '<p style="margin-top:18px"><a class="cta ghost" href="/entrar">Já recebi meu acesso</a></p>'
+             '</div></div>')
+    return _pagina(f"Obrigado · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
+
+
 def robots_txt():
     return ("User-agent: *\nAllow: /$\nAllow: /\nDisallow: /artigos\nDisallow: /entrar\n"
-            "Disallow: /minha\nDisallow: /admin\nDisallow: /revisar\nDisallow: /pdf\n")
+            "Disallow: /minha\nDisallow: /assinar\nDisallow: /obrigado\nDisallow: /admin\n"
+            "Disallow: /revisar\nDisallow: /pdf\n")
 
 
 _MESES = ["", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
