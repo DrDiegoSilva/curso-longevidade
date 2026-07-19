@@ -65,6 +65,25 @@ def plano_por_slug(slug):
             return p
     return None
 
+
+def plano_por_cycle(cycle):
+    for p in PLANOS:
+        if p["cycle"] == cycle:
+            return p
+    return None
+
+
+def plano_por_base(valor):
+    """Casa o valor pago com a base do plano (Pix à vista cobra a base cheia)."""
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return None
+    for p in PLANOS:
+        if abs(float(p["base"]) - v) < 0.01:
+            return p
+    return None
+
 # ── Asaas (checkout hospedado + webhook) ──
 ASAAS_BASE_URL = (os.environ.get("ASAAS_BASE_URL") or "https://api-sandbox.asaas.com/v3").rstrip("/")
 ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY")

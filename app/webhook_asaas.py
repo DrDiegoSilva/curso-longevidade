@@ -45,15 +45,18 @@ def _boas_vindas(whatsapp, nome, enviar_fn):
 
 def processar(body, token_header, enviar_fn=None):
     """Retorna (status_code, msg). Idempotente. token_header valida a origem."""
-    if not config.ASAAS_WEBHOOK_TOKEN or token_header != config.ASAAS_WEBHOOK_TOKEN:
+    import phone
+    event = (body or {}).get("event")
+    pay = (body or {}).get("payment") or {}
+    pid = pay.get("id") or ""
+    token_ok = bool(config.ASAAS_WEBHOOK_TOKEN) and token_header == config.ASAAS_WEBHOOK_TOKEN
+    print(f"[webhook] event={event} pay={pid} sub={pay.get('subscription')} token_ok={token_ok}", flush=True)
+    if not token_ok:
         return (401, "unauthorized")
     if enviar_fn is None:
         import deliver
         enviar_fn = deliver.enviar_texto
 
-    event = (body or {}).get("event")
-    pay = (body or {}).get("payment") or {}
-    pid = pay.get("id") or ""
     if not db.registrar_webhook(pid, event):
         return (200, "duplicado")
 
@@ -62,15 +65,35 @@ def processar(body, token_header, enviar_fn=None):
     acao = decidir(event, sub is not None)
 
     if acao == "ATIVAR":
+        # Asaas NÃO propaga externalReference do checkout -> montar do CLIENTE do Asaas.
+        cust, sub_obj = {}, {}
+        if config.ASAAS_API_KEY:
+            import asaas
+            try:
+                cust = asaas.obter_cliente(pay.get("customer")) or {}
+            except Exception as e:
+                print(f"[webhook] obter_cliente falhou: {e}", flush=True)
+            if sid:
+                try:
+                    sub_obj = asaas.obter_assinatura(sid) or {}
+                except Exception as e:
+                    print(f"[webhook] obter_assinatura falhou: {e}", flush=True)
         pending = db.obter_pending(pay.get("externalReference"))
-        if not pending:
-            return (200, "sem-pending")   # cortesia/já processado
-        plano = config.plano_por_slug(pending.get("plano", "")) or {}
+        whatsapp = phone.normalizar(cust.get("mobilePhone") or cust.get("phone")
+                                    or (pending or {}).get("whatsapp") or "")
+        if not whatsapp:
+            print("[webhook] ATIVAR sem whatsapp — pulei", flush=True)
+            return (200, "sem-whatsapp")
+        plano = (config.plano_por_cycle(sub_obj.get("cycle"))
+                 or config.plano_por_base(pay.get("value"))
+                 or (config.plano_por_slug((pending or {}).get("plano", "")) if pending else None) or {})
         prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
-        subscribers.criar_de_pagamento(pending, {
-            "customer": pay.get("customer"), "subscription": sid,
-            "payment": pid, "proximo_vencimento": prox})
-        _boas_vindas(subscribers._norm(pending.get("whatsapp", "")), pending.get("nome", ""), enviar_fn)
+        nome = cust.get("name") or (pending or {}).get("nome", "")
+        email = cust.get("email") or (pending or {}).get("email", "")
+        subscribers.criar_de_pagamento(
+            {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", "")},
+            {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
+        _boas_vindas(whatsapp, nome, enviar_fn)
         return (200, "ativado")
 
     if acao == "RENOVAR" and sub:

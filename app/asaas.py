@@ -82,6 +82,10 @@ def obter_pagamento(pid):
     return _req(f"payments/{pid}")
 
 
+def obter_assinatura(sid):
+    return _req(f"subscriptions/{sid}")
+
+
 def cancelar_assinatura(sid):
     return _req(f"subscriptions/{sid}", "DELETE")
 
