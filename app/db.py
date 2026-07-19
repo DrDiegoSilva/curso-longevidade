@@ -120,7 +120,8 @@ def init():
                 status TEXT DEFAULT 'ATIVO',
                 asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
                 proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
-                criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT
+                criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT,
+                senha_hash TEXT
             );
             CREATE TABLE IF NOT EXISTS pending_signups (
                 token TEXT PRIMARY KEY,
@@ -135,8 +136,15 @@ def init():
             CREATE TABLE IF NOT EXISTS cupons (
                 codigo TEXT PRIMARY KEY, ativo INTEGER DEFAULT 1, descricao TEXT, criado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS senha_tokens (
+                token TEXT PRIMARY KEY,
+                whatsapp TEXT NOT NULL,
+                expira TEXT NOT NULL,
+                usado INTEGER DEFAULT 0
+            );
             """
         )
+    _migrar_colunas()
     _seed_cupons()
     if _is_pg():
         _habilitar_rls()        # trava a Data API pública do Supabase (app conecta direto e ignora RLS)
@@ -144,7 +152,21 @@ def init():
 
 
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
-            "pending_signups", "webhook_events", "cupons"]
+            "pending_signups", "webhook_events", "cupons", "senha_tokens"]
+
+
+def _migrar_colunas():
+    """Adiciona colunas novas a bancos JÁ existentes (idempotente).
+    Banco novo/testes já nasce com a coluna via CREATE TABLE — aqui o ALTER é
+    p/ o Supabase de produção que foi criado antes desta coluna existir."""
+    with _conn() as c:
+        if _is_pg():
+            c.execute("ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS senha_hash TEXT")
+        else:
+            try:
+                c.execute("ALTER TABLE subscribers ADD COLUMN senha_hash TEXT")
+            except Exception:
+                pass  # coluna já existe (banco recém-criado pela CREATE TABLE)
 
 
 def _habilitar_rls():
@@ -203,6 +225,45 @@ def cupom_valido(codigo):
     with _conn() as c:
         r = c.execute("SELECT ativo FROM cupons WHERE codigo=?", ((codigo or "").strip().upper(),)).fetchone()
     return bool(r and r["ativo"])
+
+
+# ── Tokens de definição/redefinição de senha ──
+def criar_token_senha(whatsapp, validade_horas=1):
+    """Cria um token de uso único p/ criar/redefinir senha. Retorna o token."""
+    import secrets
+    from datetime import datetime, timedelta
+    token = secrets.token_hex(24)
+    expira = (datetime.now() + timedelta(hours=validade_horas)).isoformat()
+    with _conn() as c:
+        c.execute("INSERT INTO senha_tokens (token,whatsapp,expira,usado) VALUES (?,?,?,0)",
+                  (token, whatsapp or "", expira))
+    return token
+
+
+def obter_token_senha(token):
+    """Dados do token {whatsapp,expira} se existe, NÃO usado e NÃO expirado; senão None."""
+    from datetime import datetime
+    if not token:
+        return None
+    with _conn() as c:
+        r = c.execute("SELECT * FROM senha_tokens WHERE token=?", (token,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    if d.get("usado"):
+        return None
+    try:
+        if datetime.fromisoformat(d["expira"]) < datetime.now():
+            return None
+    except Exception:
+        return None
+    return d
+
+
+def consumir_token_senha(token):
+    """Marca o token como usado (uso único)."""
+    with _conn() as c:
+        c.execute("UPDATE senha_tokens SET usado=1 WHERE token=?", (token,))
 
 
 def registrar_digest(art, conteudo, tmeta=None, data=None):

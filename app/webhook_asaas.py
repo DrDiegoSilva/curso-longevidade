@@ -31,16 +31,27 @@ def _proximo_venc(cycle, ref=None):
     return (base + timedelta(days=_CICLO_DIAS.get(cycle, 30))).date().isoformat()
 
 
-def _boas_vindas(whatsapp, nome, enviar_fn):
-    msg = (f"✅ Assinatura confirmada — bem-vindo(a) à *Atualização Científica*"
-           f"{', ' + nome if nome else ''}!\n\n"
-           f"Seu acesso ao portal é com ESTE número de WhatsApp. Entre em "
-           f"{config.PUBLIC_URL}/entrar e peça o código.\n\n"
-           f"A partir do próximo dia útil você começa a receber os resumos aqui.")
+def _boas_vindas(whatsapp, nome, email, enviar_fn):
+    """Confirma a assinatura e manda o link de CRIAR SENHA nos dois canais (WhatsApp + e-mail)."""
+    import auth_web
+    try:
+        link = auth_web.preparar_primeiro_acesso(whatsapp)
+    except Exception as e:
+        print(f"[webhook] preparar 1º acesso falhou: {e}", flush=True)
+        link = f"{config.ARTIGOS_URL}/primeiro-acesso"
+    msg = (auth_web.wa_msg_senha(link, primeiro=True)
+           + "\n\nA partir do próximo dia útil você começa a receber os resumos por aqui.")
     try:
         enviar_fn(whatsapp, msg)
     except Exception as e:
-        print(f"[webhook] boas-vindas falhou: {e}", flush=True)
+        print(f"[webhook] boas-vindas WhatsApp falhou: {e}", flush=True)
+    if email:
+        try:
+            import email_send
+            email_send.enviar(email, f"Crie sua senha de acesso — {config.PRODUTO}",
+                              auth_web.email_html_senha(nome, link, True))
+        except Exception as e:
+            print(f"[webhook] boas-vindas e-mail falhou: {e}", flush=True)
 
 
 def processar(body, token_header, enviar_fn=None):
@@ -93,7 +104,7 @@ def processar(body, token_header, enviar_fn=None):
         subscribers.criar_de_pagamento(
             {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", "")},
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
-        _boas_vindas(whatsapp, nome, enviar_fn)
+        _boas_vindas(whatsapp, nome, email, enviar_fn)
         return (200, "ativado")
 
     if acao == "RENOVAR" and sub:

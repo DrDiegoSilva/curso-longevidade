@@ -44,6 +44,10 @@ def artigos_db():
 
 ADMIN_TOKEN = os.environ.get("DSCURSO_ADMIN_TOKEN")
 PUBLIC_URL = (os.environ.get("DSCURSO_PUBLIC_URL") or "https://curso.drdiegosilva.com.br").rstrip("/")
+# URL absoluta do PORTAL de assinantes (host "artigos."). Usada em links de e-mail/WhatsApp
+# (webhook e recuperação de senha rodam fora de uma request → não dá pra derivar do Host).
+ARTIGOS_URL = (os.environ.get("DSCURSO_ARTIGOS_URL") or "https://artigos.drdiegosilva.com.br").rstrip("/")
+PRODUTO = "Atualização Científica"
 SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
 
 # CTA "Quero assinar" da landing → página de assinatura. Env sobrescreve.

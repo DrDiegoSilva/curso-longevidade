@@ -129,7 +129,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/obrigado":
             return self._html(site_web.pagina_obrigado())
         if path == "/entrar":
+            return self._html(site_web.pagina_login())
+        if path == "/entrar-codigo":
             return self._html(site_web.pagina_entrar("numero"))
+        if path == "/primeiro-acesso":
+            return self._html(site_web.pagina_recuperar("primeiro"))
+        if path == "/esqueci":
+            return self._html(site_web.pagina_recuperar("esqueci"))
+        if path == "/criar-senha":
+            import urllib.parse as up
+            tok = up.parse_qs(up.urlparse(self.path).query).get("token", [""])[0]
+            if not db.obter_token_senha(tok):
+                return self._html(site_web.pagina_msg("Link inválido ou expirado",
+                    "Peça um novo link em 'Primeiro acesso' ou 'Esqueci minha senha'."))
+            return self._html(site_web.pagina_criar_senha(tok))
         if path == "/sair":
             import auth_web
             auth_web.logout(auth_web._parse_cookie(self.headers.get("Cookie", "")).get("sid"))
@@ -200,6 +213,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/entrar":
             import site_web, auth_web
             wpp = g("whatsapp")
+            status, token = auth_web.login_senha(wpp, g("senha"))
+            if status == "ok":
+                return self._redirect("/artigos", token=token)
+            if status == "sem_senha":
+                return self._html(site_web.pagina_login(sem_senha=True, whatsapp=wpp))
+            return self._html(site_web.pagina_login(erro="WhatsApp ou senha incorretos.", whatsapp=wpp))
+        if path == "/entrar-codigo":
+            import site_web, auth_web
+            wpp = g("whatsapp")
             if g("etapa") == "codigo":
                 token = auth_web.verificar(wpp, g("codigo"))
                 if token:
@@ -208,6 +230,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                   erro="Código inválido ou expirado. Tente novamente."))
             auth_web.iniciar_login(wpp)  # neutro: só envia se for assinante ATIVO
             return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
+        if path in ("/primeiro-acesso", "/esqueci"):
+            import site_web, auth_web
+            motivo = "primeiro" if path == "/primeiro-acesso" else "esqueci"
+            auth_web.iniciar_definir_senha(g("whatsapp"), motivo)  # neutro (anti-enumeração)
+            return self._html(site_web.pagina_msg("Verifique seu e-mail",
+                "Se houver uma assinatura com esse WhatsApp, enviamos um link para você "
+                + ("criar sua senha." if motivo == "primeiro" else "redefinir sua senha.")
+                + " O link também segue pelo seu WhatsApp."))
+        if path == "/criar-senha":
+            import site_web, auth_web
+            tok = g("token")
+            status, sess = auth_web.definir_senha(tok, g("senha"), g("senha2"))
+            if status == "ok":
+                return self._redirect("/artigos", token=sess)
+            if status == "token_invalido":
+                return self._html(site_web.pagina_msg("Link inválido ou expirado",
+                    "Peça um novo link em 'Primeiro acesso' ou 'Esqueci minha senha'."))
+            msgs = {"nao_confere": "As senhas não conferem. Digite a mesma senha nos dois campos.",
+                    "fraca": "Senha fraca. Use pelo menos 6 caracteres, com letra e número."}
+            return self._html(site_web.pagina_criar_senha(tok, erro=msgs.get(status, "Tente novamente.")))
         if path == "/assinar":
             return self._post_assinar(g)
         if path == "/cancelar":

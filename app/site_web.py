@@ -79,8 +79,9 @@ a{color:inherit}
 .panel h2{font-family:"Cormorant Garamond",Georgia,serif;font-size:34px;color:var(--creme);margin-bottom:6px}
 .panel p.hint{color:var(--suave);margin-bottom:22px;font-size:15px}
 label{display:block;font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);margin-bottom:8px}
-input[type=text]{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;
+input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;
   color:var(--creme);font-size:20px;font-family:Georgia,serif;padding:14px 16px;margin-bottom:18px;letter-spacing:.04em}
+.infobox{background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.4);color:var(--creme);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
 input:focus{outline:none;border-color:var(--ouro)}
 button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
 .erro{background:rgba(180,40,40,.18);border:1px solid rgba(220,90,90,.4);color:#ffd9d9;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
@@ -216,30 +217,113 @@ def pagina_entrar(etapa="numero", whatsapp="", erro=""):
           <h2 class="disp">Digite o código</h2>
           <p class="hint">Enviamos um código de 6 dígitos no seu WhatsApp. Ele vale por 10 minutos.</p>
           {erro_html}
-          <form method="post" action="/entrar">
+          <form method="post" action="/entrar-codigo">
             <input type="hidden" name="etapa" value="codigo">
             <input type="hidden" name="whatsapp" value="{_esc(whatsapp)}">
             <label>Código</label>
             <input type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" autofocus>
             <button class="cta" type="submit">Entrar</button>
           </form>
-          <p class="hint" style="margin-top:16px"><a href="/entrar" style="color:var(--ouro2)">Usar outro número</a></p>
+          <p class="hint" style="margin-top:16px"><a href="/entrar-codigo" style="color:var(--ouro2)">Usar outro número</a> &nbsp;·&nbsp; <a href="/entrar" style="color:var(--suave)">Entrar com senha</a></p>
         </div></div>"""
     else:
         corpo = f"""
         <div class="wrap"><div class="panel">
-          <h2 class="disp">Área do assinante</h2>
-          <p class="hint">Informe o WhatsApp da sua assinatura. Vamos te enviar um código de acesso.</p>
+          <h2 class="disp">Entrar com código</h2>
+          <p class="hint">Sem acesso à senha? Informe o WhatsApp da sua assinatura e enviamos um código de acesso.</p>
           {erro_html}
-          <form method="post" action="/entrar">
+          <form method="post" action="/entrar-codigo">
             <input type="hidden" name="etapa" value="numero">
             <label>WhatsApp (com DDD)</label>
             <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" autofocus>
             <button class="cta" type="submit">Enviar código</button>
           </form>
-          <p class="hint" style="margin-top:16px">Ainda não assina? <a href="/" style="color:var(--ouro2)">Conheça o plano</a>.</p>
+          <p class="hint" style="margin-top:16px"><a href="/entrar" style="color:var(--ouro2)">← Entrar com senha</a></p>
         </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_login(erro="", sem_senha=False, whatsapp=""):
+    """Tela de login principal: WhatsApp + senha (não depende do WhatsApp p/ entrar)."""
+    erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
+    if sem_senha:
+        erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
+                      '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Área do assinante</h2>
+      <p class="hint">Entre com o WhatsApp da sua assinatura e sua senha.</p>
+      {erro_html}
+      <form method="post" action="/entrar">
+        <label>WhatsApp (com DDD)</label>
+        <input type="text" name="whatsapp" inputmode="tel" value="{_esc(whatsapp)}" placeholder="(43) 99999-0000" autofocus>
+        <label>Senha</label>
+        <input type="password" name="senha" placeholder="sua senha">
+        <button class="cta" type="submit">Entrar</button>
+      </form>
+      <p class="hint" style="margin-top:16px">
+        <a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>
+        &nbsp;·&nbsp;
+        <a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a>
+      </p>
+      <p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>
+      <p class="hint" style="margin-top:14px">Ainda não assina? <a href="/" style="color:var(--ouro2)">Conheça o plano</a>.</p>
+    </div></div>"""
+    return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_recuperar(motivo="esqueci", erro=""):
+    """Formulário de 1º acesso / esqueci a senha (informa WhatsApp → link por e-mail)."""
+    primeiro = (motivo == "primeiro")
+    titulo = "Primeiro acesso" if primeiro else "Esqueci minha senha"
+    acao = "/primeiro-acesso" if primeiro else "/esqueci"
+    hint = ("Informe o WhatsApp da sua assinatura. Enviaremos um link por e-mail para você "
+            + ("criar sua senha de acesso." if primeiro else "redefinir sua senha."))
+    erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">{titulo}</h2>
+      <p class="hint">{hint}</p>
+      {erro_html}
+      <form method="post" action="{acao}">
+        <label>WhatsApp (com DDD)</label>
+        <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" autofocus>
+        <button class="cta" type="submit">Enviar link</button>
+      </form>
+      <p class="hint" style="margin-top:16px"><a href="/entrar" style="color:var(--ouro2)">← voltar ao login</a></p>
+    </div></div>"""
+    return _pagina(f"{titulo} · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_criar_senha(token, erro=""):
+    """Tela de definir a senha (aberta pelo link tokenizado)."""
+    erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Crie sua senha</h2>
+      <p class="hint">Escolha uma senha com pelo menos 6 caracteres, incluindo letra e número.</p>
+      {erro_html}
+      <form method="post" action="/criar-senha">
+        <input type="hidden" name="token" value="{_esc(token)}">
+        <label>Nova senha</label>
+        <input type="password" name="senha" autofocus>
+        <label>Repita a senha</label>
+        <input type="password" name="senha2">
+        <button class="cta" type="submit">Salvar e entrar</button>
+      </form>
+    </div></div>"""
+    return _pagina(f"Criar senha · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_msg(titulo, texto, logado=False):
+    """Mensagem neutra (confirmação de envio, link inválido, etc.)."""
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">{_esc(titulo)}</h2>
+      <p class="hint">{_esc(texto)}</p>
+      <p style="margin-top:18px"><a class="cta ghost" href="/entrar">Voltar para o login</a></p>
+    </div></div>"""
+    return _pagina(f"{titulo} · {PRODUTO}", corpo, logado=logado, meta_extra='<meta name="robots" content="noindex">')
 
 
 # ── Arquivo (protegido) ──

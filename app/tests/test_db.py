@@ -74,6 +74,23 @@ class TestDb(unittest.TestCase):
         self.assertFalse(self.db.registrar_webhook("pay_1", "PAYMENT_CONFIRMED"))  # já visto
         self.assertTrue(self.db.registrar_webhook("pay_1", "PAYMENT_RECEIVED"))    # outro evento
 
+    def test_token_senha_roundtrip_e_uso_unico(self):
+        tok = self.db.criar_token_senha("5543999990000", validade_horas=1)
+        r = self.db.obter_token_senha(tok)
+        self.assertEqual(r["whatsapp"], "5543999990000")
+        self.db.consumir_token_senha(tok)
+        self.assertIsNone(self.db.obter_token_senha(tok))          # usado => inválido
+        self.assertIsNone(self.db.obter_token_senha("naoexiste"))
+        self.assertIsNone(self.db.obter_token_senha(""))
+
+    def test_token_senha_expirado(self):
+        from datetime import datetime, timedelta
+        tok = self.db.criar_token_senha("5543", validade_horas=1)
+        with self.db._conn() as c:
+            c.execute("UPDATE senha_tokens SET expira=? WHERE token=?",
+                      ((datetime.now() - timedelta(minutes=1)).isoformat(), tok))
+        self.assertIsNone(self.db.obter_token_senha(tok))
+
     def test_cupom(self):
         import importlib
         os.environ["DSCURSO_CUPONS"] = "DIEGO2026, cortesia"

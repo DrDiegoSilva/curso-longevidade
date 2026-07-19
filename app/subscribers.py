@@ -13,7 +13,7 @@ _migrado = False
 _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
          "asaas_customer_id", "asaas_subscription_id", "asaas_payment_id",
          "proximo_vencimento", "acesso_ate", "carencia_ate", "aviso_renov_em",
-         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em"]
+         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em", "senha_hash"]
 
 
 def _norm(w):
@@ -140,3 +140,10 @@ def marcar_status(id, status, **campos):
 def registrar_cancelamento(id, motivo, acesso_ate=None):
     marcar_status(id, "CANCELADO", cancel_motivo=motivo,
                   cancelado_em=datetime.now().isoformat(), acesso_ate=acesso_ate)
+
+
+def definir_senha(id, senha_hash):
+    """Grava o hash da senha do assinante (nunca a senha crua)."""
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET senha_hash=? WHERE id=?", (senha_hash, id))
