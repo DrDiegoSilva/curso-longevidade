@@ -28,6 +28,17 @@ BASE = os.environ.get("DSCURSO_BASE") or r"D:\SSD Secundário\_BaseConhecimento"
 _ANTHROPIC_FILE = os.environ.get("DSCURSO_ANTHROPIC_FILE", r"C:\Users\edson\.anthropic-resumos.json")
 ANTHROPIC_KEY = os.environ.get("DSCURSO_ANTHROPIC_KEY") or _json_get(_ANTHROPIC_FILE, "apiKey")
 
+# ── Estado persistente (volume /data) ──
+DATA = os.environ.get("DSCURSO_DATA") or "/data"
+def drafts_dir():
+    return os.path.join(DATA, "drafts")
+def subscribers_path():
+    return os.path.join(DATA, "subscribers.json")
+
+ADMIN_TOKEN = os.environ.get("DSCURSO_ADMIN_TOKEN")
+PUBLIC_URL = (os.environ.get("DSCURSO_PUBLIC_URL") or "https://curso.drdiegosilva.com.br").rstrip("/")
+SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
+
 # ── Z-API (WhatsApp) ──
 _ZAPI_FILE = os.environ.get("DSCURSO_ZAPI_FILE", r"C:\Users\edson\.zapi-config.json")
 def zapi():
