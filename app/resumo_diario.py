@@ -243,6 +243,15 @@ SYS_CURSO = ("Você é professor de medicina de longevidade do Dr. Diego. Aula c
     "estudos-chave (ex.: 'Konopka 2019') para ele situar quão atual é; cubra mecanismo, doses, segurança, interações, "
     "conduta e o debate entre pesquisadores com conflito de interesse. WhatsApp: *negrito*. Honesto sobre hype/evidência fraca.")
 
+def gerar_texto_do_artigo(artigo):
+    """Resumo clínico estruturado de UM artigo já escolhido (reusa a voz SYS_APROF).
+    Usado pela máquina de conteúdo (daily.py) — não altera o fluxo diário atual."""
+    blob = (f"### {artigo.get('titulo','')}\nData: {artigo.get('data','')}\n"
+            f"Fonte: {artigo.get('fonte','')} | doi:{artigo.get('doi','')}\n{artigo.get('resumo','')}")
+    return claude(OPUS, f"Aprofunde ESTE estudo para o médico (abra pela data de publicação):\n\n{blob}",
+                  system=SYS_APROF, max_tokens=3200)
+
+
 # ─── Main ─────────────────────────────────────────────────────
 def main():
     import argparse
