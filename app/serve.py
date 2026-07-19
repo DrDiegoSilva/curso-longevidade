@@ -122,6 +122,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         import site_web, db
         if path == "/":
             return self._html(site_web.landing())
+        if path == "/assinar":
+            import urllib.parse as up
+            plano = up.parse_qs(up.urlparse(self.path).query).get("plano", [None])[0]
+            return self._html(site_web.pagina_assinar(plano))
+        if path == "/obrigado":
+            return self._html(site_web.pagina_obrigado())
         if path == "/entrar":
             return self._html(site_web.pagina_entrar("numero"))
         if path == "/sair":
@@ -157,10 +163,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         import urllib.parse as up
-        length = int(self.headers.get("Content-Length", "0"))
-        form = up.parse_qs(self.rfile.read(length).decode("utf-8"))
-        g = lambda k: form.get(k, [""])[0]
         path = up.urlparse(self.path).path
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length) if length > 0 else b""
+        if path == "/webhook/asaas":       # Asaas envia JSON (não form-urlencoded)
+            import webhook_asaas, json as _json
+            try:
+                body = _json.loads(raw.decode("utf-8") or "{}")
+            except Exception:
+                return self._html("bad json", 400)
+            st, msg = webhook_asaas.processar(body, self.headers.get("asaas-access-token"))
+            return self._html(msg, st)
+        form = up.parse_qs(raw.decode("utf-8"))
+        g = lambda k: form.get(k, [""])[0]
         if path.startswith("/revisar/"):
             import draft_store
             tok = path.split("/revisar/", 1)[1]
@@ -189,7 +204,50 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                   erro="Código inválido ou expirado. Tente novamente."))
             auth_web.iniciar_login(wpp)  # neutro: só envia se for assinante ATIVO
             return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
+        if path == "/assinar":
+            return self._post_assinar(g)
         return self._html("<h3>rota inválida</h3>", 404)
+
+    def _post_assinar(self, g):
+        import site_web, config, db, subscribers, pricing, asaas
+        plano = config.plano_por_slug(g("plano"))
+        if not plano:
+            return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
+        dados = {"nome": g("nome").strip(), "email": g("email").strip(),
+                 "cpf": g("cpf").strip(), "whatsapp": g("whatsapp").strip()}
+        if not (dados["nome"] and dados["whatsapp"] and dados["email"]):
+            return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail e WhatsApp."))
+        metodo = "CARTAO" if g("metodo").upper() == "CARTAO" else "PIX"
+        try:
+            parcelas = max(1, min(12, int(g("parcelas") or "1")))
+        except ValueError:
+            parcelas = 1
+        cupom = g("cupom").strip()
+        # Cupom de cortesia: ativa na hora, sem Asaas
+        if cupom and db.cupom_valido(cupom):
+            subscribers.criar_de_pagamento({**dados, "plano": plano["slug"], "metodo": "CUPOM"}, {}, status="ATIVO")
+            try:
+                import deliver
+                deliver.enviar_texto(subscribers._norm(dados["whatsapp"]),
+                    f"✅ Cadastro liberado (cortesia)! Bem-vindo(a) à Atualização Científica.\n\n"
+                    f"Entre em {config.PUBLIC_URL}/entrar com este WhatsApp e peça o código.")
+            except Exception as e:
+                print(f"[assinar] boas-vindas cupom falhou: {e}", flush=True)
+            return self._redirect("/obrigado")
+        # Pagamento via checkout Asaas
+        valor = pricing.valor_cartao(plano["base"], parcelas) if metodo == "CARTAO" else float(plano["base"])
+        token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
+                                  "parcelas": parcelas, "valor": valor})
+        try:
+            payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL)
+            res = asaas.criar_checkout(payload)
+            if not res.get("url"):
+                raise RuntimeError("checkout sem url")
+            return self._redirect(res["url"])
+        except Exception as e:
+            print(f"[assinar] checkout falhou: {e}", flush=True)
+            return self._html(site_web.pagina_assinar(plano["slug"],
+                "Não conseguimos iniciar o pagamento agora. Tente novamente em instantes."))
 
     def log_message(self, *a):
         pass
