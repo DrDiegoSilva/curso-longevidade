@@ -79,6 +79,7 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
     esc = _html.escape
     cor = tema_meta.get("cor", "#14332a")
     rotulo = tema_meta.get("rotulo", artigo.get("tema", ""))
+    emoji = tema_meta.get("emoji", "")
     titulo = conteudo.get("titulo_pt") or artigo.get("titulo", "")
     resumo_html = _resumo_html(conteudo.get("resumo", ""))
     grafico_html = _grafico_html(conteudo.get("grafico"))
@@ -87,7 +88,8 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
 <style>
   @page {{ size: A4; margin: 0; }}
   *{{box-sizing:border-box}}
-  body {{ font-family: Georgia, "Times New Roman", serif; color:#20302b; margin:0; font-size:16px; line-height:1.65; }}
+  body {{ font-family: Georgia, "Times New Roman", serif; color:#20302b; margin:0; font-size:17.5px; line-height:1.72; }}
+  h1, h2 {{ break-after:avoid; }}
   .cover {{ position:relative; height:185px; background:linear-gradient(120deg,#0e211a,{cor} 60%,#20543f); }}
   .cover svg {{ position:absolute; inset:0; width:100%; height:100%; }}
   .brand {{ position:absolute; left:34px; top:28px; z-index:2; }}
@@ -96,27 +98,27 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
   .tag {{ position:absolute; right:34px; top:28px; z-index:2; background:#c9a227; color:#1a1300; font-family:system-ui,sans-serif;
           font-size:12px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; padding:7px 15px; border-radius:100px; }}
   .body {{ padding:34px 48px 40px; }}
-  .title {{ font-size:27px; line-height:1.25; color:{cor}; margin:0 0 14px; }}
-  .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:13px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
-  .corpo p {{ margin:.75em 0; font-size:16px; color:#2b3a35; }}
+  .title {{ font-size:30px; line-height:1.24; color:{cor}; margin:0 0 14px; }}
+  .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:13.5px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
+  .corpo p {{ margin:.8em 0; font-size:17.5px; color:#2b3a35; break-inside:avoid; }}
   .corpo strong {{ color:{cor}; }}
-  .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; }}
+  .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; break-inside:avoid; }}
   .chart .ct {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
   .bar-row {{ display:flex; align-items:center; gap:14px; margin:11px 0; }}
   .bar-lab {{ width:130px; font-family:system-ui,sans-serif; font-size:15px; color:#2b3a35; flex:none; }}
   .bar-track {{ flex:1; background:#e7e2d3; border-radius:100px; height:24px; overflow:hidden; }}
   .bar-fill {{ height:100%; border-radius:100px; }}
   .bar-val {{ font-family:ui-monospace,monospace; font-size:15px; font-weight:700; width:70px; text-align:right; flex:none; }}
-  .social {{ margin:28px 0 8px; border:2px solid #c9a227; border-radius:12px; padding:20px 22px; background:linear-gradient(180deg,#fff9e9,#fbf3d9); }}
-  .social .lab {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
-  .social .post {{ font-size:16px; color:#3a2f10; font-style:italic; line-height:1.6; }}
+  .social {{ margin:28px 0 8px; border:2px solid #c9a227; border-radius:12px; padding:20px 22px; background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
+  .social .lab {{ font-family:system-ui,sans-serif; font-size:13.5px; letter-spacing:.08em; text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
+  .social .post {{ font-size:17.5px; color:#3a2f10; font-style:italic; line-height:1.62; }}
   .foot {{ margin-top:30px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
-           font-family:system-ui,sans-serif; font-size:12px; color:#6f7d78; }}
+           break-inside:avoid; font-family:system-ui,sans-serif; font-size:12px; color:#6f7d78; }}
   .foot .wm {{ font-style:italic; color:#9aa8a0; }}
 </style></head><body>
   <div class="cover">{_MOTIF}
     <div class="brand"><div class="mark">Atualiza&ccedil;&atilde;o cient&iacute;fica</div><div class="sig">Dr. Diego Silva</div></div>
-    <div class="tag">{esc(rotulo)}</div>
+    <div class="tag">{esc(emoji)} {esc(rotulo)}</div>
   </div>
   <div class="body">
     <h1 class="title">{esc(titulo)}</h1>
