@@ -69,7 +69,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             q = up.parse_qs(up.urlparse(self.path).query)
             if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
-            return self._html(review_web.pagina_admin(subscribers.listar()), 200)
+            return self._html(review_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN), 200)
         try:
             data = open(ebook_curso.OUT, "rb").read()
         except Exception:
@@ -103,11 +103,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
         if self.path == "/admin":
             import config, subscribers
+            if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
             if g("acao") == "adicionar":
                 subscribers.adicionar(g("nome"), g("whatsapp"))
             elif g("acao") == "remover":
                 subscribers.remover(g("id"))
-            return self._html("<meta http-equiv='refresh' content='0;url=/admin?token=" + (config.ADMIN_TOKEN or "") + "'>")
+            return self._html("<meta http-equiv='refresh' content='0;url=/admin?token=" + config.ADMIN_TOKEN + "'>")
         return self._html("<h3>rota inválida</h3>", 404)
 
     def log_message(self, *a):

@@ -19,11 +19,13 @@ def pagina_revisao(r):
 </form></body>"""
 
 
-def pagina_admin(assinantes):
+def pagina_admin(assinantes, token=""):
     esc = _html.escape
+    tk = esc(token)
     linhas = "".join(
         f"<li>{esc(s['nome'])} — {esc(s['whatsapp'])} "
         f'<form style="display:inline" method="post" action="/admin">'
+        f'<input type="hidden" name="token" value="{tk}">'
         f'<input type="hidden" name="acao" value="remover">'
         f'<input type="hidden" name="id" value="{esc(s["id"])}">'
         f"<button>remover</button></form></li>"
@@ -32,6 +34,7 @@ def pagina_admin(assinantes):
     return f"""<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;max-width:640px;margin:24px auto">
 <h2>Assinantes ({len(assinantes)})</h2><ul>{linhas}</ul>
 <form method="post" action="/admin">
+  <input type="hidden" name="token" value="{tk}">
   <input type="hidden" name="acao" value="adicionar">
   <input name="nome" placeholder="Nome"> <input name="whatsapp" placeholder="55DDDNUMERO">
   <button>adicionar</button>
