@@ -43,18 +43,37 @@ ADMIN_TOKEN = os.environ.get("DSCURSO_ADMIN_TOKEN")
 PUBLIC_URL = (os.environ.get("DSCURSO_PUBLIC_URL") or "https://curso.drdiegosilva.com.br").rstrip("/")
 SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
 
-# CTA "Quero assinar" da landing. Vira a URL do checkout Asaas na Fase 2.
-# Até lá cai em /entrar (sem depender de nº de WhatsApp).
+# CTA "Quero assinar" da landing → página de assinatura. Env sobrescreve.
 def cta_url():
-    return os.environ.get("DSCURSO_CTA_URL") or "/entrar"
+    return os.environ.get("DSCURSO_CTA_URL") or "/assinar"
 
-# Planos exibidos na landing. preco vazio => "sob consulta". nota = equivalente/mês (venda).
+# Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
+# preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [
-    {"nome": "Mensal",     "periodo": "por mês",        "preco": os.environ.get("DSCURSO_PRECO_MENSAL", "R$ 99"),      "nota": ""},
-    {"nome": "Trimestral", "periodo": "a cada 3 meses", "preco": os.environ.get("DSCURSO_PRECO_TRIMESTRAL", "R$ 269"), "nota": "≈ R$ 90/mês"},
-    {"nome": "Semestral",  "periodo": "a cada 6 meses", "preco": os.environ.get("DSCURSO_PRECO_SEMESTRAL", "R$ 499"),  "nota": "≈ R$ 83/mês"},
-    {"nome": "Anual",      "periodo": "por ano",        "preco": os.environ.get("DSCURSO_PRECO_ANUAL", "R$ 960"),      "nota": "≈ R$ 80/mês · melhor preço"},
+    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": ""},
+    {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês"},
+    {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês"},
+    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 960.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 960", "nota": "≈ R$ 80/mês · melhor preço"},
 ]
+
+def plano_por_slug(slug):
+    for p in PLANOS:
+        if p["slug"] == slug:
+            return p
+    return None
+
+# ── Asaas (checkout hospedado + webhook) ──
+ASAAS_BASE_URL = (os.environ.get("ASAAS_BASE_URL") or "https://api-sandbox.asaas.com/v3").rstrip("/")
+ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY")
+ASAAS_WEBHOOK_TOKEN = os.environ.get("ASAAS_WEBHOOK_TOKEN")
+
+# Taxas de cartão (defaults Asaas; Diego troca pelas reais). gross-up embute a taxa no preço.
+TAXA_CARTAO = {"avista": 0.0299, "ate6": 0.0349, "ate12": 0.0399}
+TAXA_FIXA = float(os.environ.get("DSCURSO_TAXA_FIXA") or "0.49")
+
+# Cupons de cortesia (cadastro grátis, sem Asaas): csv em DSCURSO_CUPONS.
+def cupons_seed():
+    return [c.strip().upper() for c in (os.environ.get("DSCURSO_CUPONS") or "").split(",") if c.strip()]
 
 # ── Z-API (WhatsApp) ──
 _ZAPI_FILE = os.environ.get("DSCURSO_ZAPI_FILE", r"C:\Users\edson\.zapi-config.json")
