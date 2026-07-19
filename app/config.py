@@ -35,9 +35,25 @@ def drafts_dir():
 def subscribers_path():
     return os.path.join(DATA, "subscribers.json")
 
+# Banco do site artigos (landing + arquivo protegido). Env sobrescreve → testável em /tmp.
+def artigos_db():
+    return os.environ.get("DSCURSO_ARTIGOS_DB") or os.path.join(DATA, "artigos.db")
+
 ADMIN_TOKEN = os.environ.get("DSCURSO_ADMIN_TOKEN")
 PUBLIC_URL = (os.environ.get("DSCURSO_PUBLIC_URL") or "https://curso.drdiegosilva.com.br").rstrip("/")
 SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
+
+# Número do CTA "Quero assinar" da landing (wa.me). Fallback = número do curador.
+def contato_whatsapp():
+    return os.environ.get("DSCURSO_CONTATO_WHATSAPP") or whatsapp_destino()
+
+# Planos exibidos na landing. preco vazio => "sob consulta" (Diego preenche depois).
+PLANOS = [
+    {"nome": "Mensal",     "periodo": "por mês",       "preco": os.environ.get("DSCURSO_PRECO_MENSAL", "")},
+    {"nome": "Trimestral", "periodo": "a cada 3 meses", "preco": os.environ.get("DSCURSO_PRECO_TRIMESTRAL", "")},
+    {"nome": "Semestral",  "periodo": "a cada 6 meses", "preco": os.environ.get("DSCURSO_PRECO_SEMESTRAL", "")},
+    {"nome": "Anual",      "periodo": "por ano",        "preco": os.environ.get("DSCURSO_PRECO_ANUAL", "")},
+]
 
 # ── Z-API (WhatsApp) ──
 _ZAPI_FILE = os.environ.get("DSCURSO_ZAPI_FILE", r"C:\Users\edson\.zapi-config.json")
