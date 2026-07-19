@@ -43,9 +43,10 @@ ADMIN_TOKEN = os.environ.get("DSCURSO_ADMIN_TOKEN")
 PUBLIC_URL = (os.environ.get("DSCURSO_PUBLIC_URL") or "https://curso.drdiegosilva.com.br").rstrip("/")
 SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
 
-# Número do CTA "Quero assinar" da landing (wa.me). Fallback = número do curador.
-def contato_whatsapp():
-    return os.environ.get("DSCURSO_CONTATO_WHATSAPP") or whatsapp_destino()
+# CTA "Quero assinar" da landing. Vira a URL do checkout Asaas na Fase 2.
+# Até lá cai em /entrar (sem depender de nº de WhatsApp).
+def cta_url():
+    return os.environ.get("DSCURSO_CTA_URL") or "/entrar"
 
 # Planos exibidos na landing. preco vazio => "sob consulta". nota = equivalente/mês (venda).
 PLANOS = [

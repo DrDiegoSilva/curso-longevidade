@@ -114,10 +114,8 @@ def _esc(s):
     return _html.escape(str(s or ""))
 
 
-def _wa_link():
-    num = "".join(c for c in (config.contato_whatsapp() or "") if c.isdigit())
-    txt = "Ol%C3%A1%2C%20Dr.%20Diego!%20Quero%20assinar%20a%20Atualiza%C3%A7%C3%A3o%20Cient%C3%ADfica."
-    return f"https://wa.me/{num}?text={txt}" if num else "#"
+def _cta():
+    return _esc(config.cta_url())
 
 
 def _topbar(logado=False):
@@ -170,7 +168,7 @@ def landing():
         <div class="eyebrow">{_esc(PRODUTO)}</div>
         <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — todo dia útil, no seu WhatsApp.</h1>
         <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
-        <a class="cta" href="{_wa_link()}">Quero assinar</a>
+        <a class="cta" href="{_cta()}">Quero assinar</a>
       </section>
       <section class="sec"><h2 class="disp">O que você recebe</h2>
         <div class="grid g4">{cards}</div></section>
@@ -180,7 +178,7 @@ def landing():
       <section class="sec"><h2 class="disp">Planos</h2>
         <p class="sub">Escolha a recorrência que faz sentido para você. Renova automaticamente até você cancelar.</p>
         <div class="grid g4">{planos}</div>
-        <div style="margin-top:26px"><a class="cta" href="{_wa_link()}">Quero assinar</a>
+        <div style="margin-top:26px"><a class="cta" href="{_cta()}">Quero assinar</a>
         <a class="cta ghost" href="/entrar" style="margin-left:10px">Já sou assinante</a></div>
       </section>
     </div>"""
@@ -277,7 +275,7 @@ def pagina_minha(sub):
       <h2 class="disp">Minha assinatura</h2>
       <p class="hint">Olá, {_esc(sub.get("nome") or "assinante")}. Sua assinatura está ativa.</p>
       <p style="margin:18px 0"><a class="cta ghost" href="/artigos">Ir para o arquivo</a></p>
-      <p class="hint">Para cancelar ou trocar de plano, fale com a gente pelo <a href="{_wa_link()}" style="color:var(--ouro2)">WhatsApp</a>.</p>
+      <p class="hint">Para cancelar ou trocar de plano, <a href="{_cta()}" style="color:var(--ouro2)">fale com a gente</a>.</p>
       <p class="hint" style="margin-top:20px"><a href="/sair" style="color:var(--suave)">Sair desta conta</a></p>
     </div></div>"""
     return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
