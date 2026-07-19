@@ -138,7 +138,20 @@ def init():
             """
         )
     _seed_cupons()
+    if _is_pg():
+        _habilitar_rls()        # trava a Data API pública do Supabase (app conecta direto e ignora RLS)
     _INITED = True
+
+
+_TABELAS = ["digests", "login_codes", "sessions", "subscribers",
+            "pending_signups", "webhook_events", "cupons"]
+
+
+def _habilitar_rls():
+    """ENABLE RLS em toda tabela (sem policy = Data API pública bloqueada). Idempotente."""
+    with _conn() as c:
+        for t in _TABELAS:
+            c.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
 
 
 def _seed_cupons():
