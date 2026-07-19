@@ -103,7 +103,9 @@ Layout: cabeçalho com a marca do Dr. Diego, selo do tema, título, seções est
 
 ## 10. Assinatura e cobrança (Asaas)
 
-**Gateway:** Asaas (recorrência brasileira: cartão + Pix + boleto; webhooks de pagamento).
+**Gateway:** Asaas (recorrência brasileira; **mensalidade zero**, paga-se só por cobrança recebida; webhooks de pagamento).
+
+**Forma de pagamento principal = Pix Automático** (débito recorrente autorizado na conta do banco do médico), com **cartão como alternativa**. Motivos: **sem chargeback** (o débito é autorizado no app do banco), **MDR muito menor** (~0,4–1,2% vs 3–4,5% do cartão) e **maior taxa de sucesso de renovação** (conta bancária não vence/troca como cartão). Boleto/cartão ficam como fallback.
 
 **Planos (4), todos recorrentes até cancelar — valores definidos pelo Dr. Diego, editáveis:**
 | Chave | Ciclo Asaas |
@@ -187,7 +189,7 @@ Serviço EasyPanel novo `curso` (projeto próprio), source GitHub `DrDiegoSilva/
 ## 22. Riscos e decisões em aberto
 
 - **Renderizador de PDF** (WeasyPrint × Chrome headless) — decidir no plano (peso da imagem × qualidade).
-- **Chargeback / cobrança pós-mês-grátis:** decisão do Dr. Diego = cobrança volta automática, aviso por **e-mail** (canal padrão de billing). Registrado que a proteção real (legal + anti-chargeback) depende do aviso ser **claro**; o aviso é **configurável** (canal/ligado) para permitir mudar de estratégia num clique se aparecer contestação. Compliance CDC/Decreto 11.034 fica sob decisão de negócio do titular.
+- **Chargeback / cobrança pós-mês-grátis:** com **Pix Automático como forma principal, o chargeback deixa de existir** (débito autorizado no banco) — o que dissolve boa parte desta preocupação. Para quem pagar via **cartão**: decisão do Dr. Diego = cobrança volta automática, aviso por **e-mail** (canal padrão de billing), claro e sem esconder; o aviso é **configurável** (canal/ligado). Compliance CDC/Decreto 11.034 sob decisão de negócio do titular.
 - **"PULA" por WhatsApp** (webhook de entrada Z-API) — reforço opcional pós-Fase 1.
 - **Escala de WhatsApp:** uma instância Z-API para muitos envios diários tem teto/risco de bloqueio; mitigado por throttle + PDF personalizado. Reavaliar se a base crescer.
 - **Preços dos planos:** a definir pelo Dr. Diego (config, não código).
