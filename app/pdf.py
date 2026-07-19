@@ -1,5 +1,6 @@
-"""PDF bonito (visual C): capa temática + resumo + gráfico do achado + gancho +
+"""PDF bonito (visual C): capa ilustrada + resumo + gráfico do achado + gancho +
 marca d'água por assinante. HTML+CSS puro (testável) renderizado por Chromium.
+Título em português (conteudo['titulo_pt']).
 """
 import os
 import re
@@ -7,18 +8,30 @@ import subprocess
 import tempfile
 import html as _html
 
+# Capa ilustrada: rede molecular (nós + conexões) + arco dourado sobre o gradiente.
 _MOTIF = (
-    '<svg viewBox="0 0 760 150" preserveAspectRatio="xMidYMid slice">'
-    '<defs><linearGradient id="w" x1="0" x2="1">'
-    '<stop offset="0" stop-color="#c9a227" stop-opacity="0"/>'
-    '<stop offset=".5" stop-color="#c9a227" stop-opacity=".55"/>'
-    '<stop offset="1" stop-color="#c9a227" stop-opacity="0"/></linearGradient></defs>'
-    '<path d="M0,104 C90,104 110,60 175,60 C240,60 250,120 320,120 C400,120 405,44 470,44 '
-    'C540,44 545,96 620,96 C690,96 700,66 760,66" fill="none" stroke="url(#w)" stroke-width="2.5"/>'
-    '<path d="M0,118 C90,118 120,88 190,88 C260,88 270,128 340,128 C420,128 430,72 500,72 '
-    'C560,72 580,110 660,110 C710,110 730,92 760,92" fill="none" stroke="#ffffff" stroke-opacity=".28" stroke-width="1.5"/>'
-    '<g fill="#c9a227" fill-opacity=".85"><circle cx="175" cy="60" r="3.2"/><circle cx="470" cy="44" r="3.2"/>'
-    '<circle cx="620" cy="96" r="2.6"/><circle cx="320" cy="120" r="2.4"/></g></svg>'
+    '<svg viewBox="0 0 760 185" preserveAspectRatio="xMidYMid slice">'
+    '<defs>'
+    '<radialGradient id="glow" cx="78%" cy="30%" r="60%">'
+    '<stop offset="0" stop-color="#ffffff" stop-opacity=".16"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>'
+    '<linearGradient id="arc" x1="0" x2="1"><stop offset="0" stop-color="#c9a227" stop-opacity="0"/>'
+    '<stop offset=".5" stop-color="#e7c766" stop-opacity=".7"/><stop offset="1" stop-color="#c9a227" stop-opacity="0"/></linearGradient>'
+    '</defs>'
+    '<rect width="760" height="185" fill="url(#glow)"/>'
+    '<path d="M-10,150 C160,120 250,60 400,66 C560,72 620,120 780,96" fill="none" stroke="url(#arc)" stroke-width="3"/>'
+    '<g stroke="#dfe8e2" stroke-opacity=".28" stroke-width="1.1">'
+    '<line x1="120" y1="52" x2="210" y2="96"/><line x1="210" y1="96" x2="150" y2="140"/>'
+    '<line x1="210" y1="96" x2="330" y2="70"/><line x1="330" y1="70" x2="430" y2="118"/>'
+    '<line x1="430" y1="118" x2="540" y2="70"/><line x1="540" y1="70" x2="640" y2="112"/>'
+    '<line x1="330" y1="70" x2="300" y2="150"/><line x1="540" y1="70" x2="600" y2="44"/>'
+    '</g>'
+    '<g fill="#f2ead0">'
+    '<circle cx="120" cy="52" r="4"/><circle cx="210" cy="96" r="5.5"/><circle cx="150" cy="140" r="3.5"/>'
+    '<circle cx="330" cy="70" r="6"/><circle cx="430" cy="118" r="5"/><circle cx="540" cy="70" r="6.5"/>'
+    '<circle cx="640" cy="112" r="4"/><circle cx="300" cy="150" r="3"/><circle cx="600" cy="44" r="4.5"/></g>'
+    '<g fill="#c9a227">'
+    '<circle cx="210" cy="96" r="2.4"/><circle cx="330" cy="70" r="2.6"/><circle cx="540" cy="70" r="2.8"/></g>'
+    '</svg>'
 )
 
 
@@ -51,8 +64,7 @@ def _grafico_html(grafico):
             f'<div class="bar-row"><div class="bar-lab">{esc(str(b["rotulo"]))}</div>'
             f'<div class="bar-track"><div class="bar-fill" style="width:{w}%;background:{fill}"></div></div>'
             f'<div class="bar-val" style="color:{cor_val}">{txt}</div></div>')
-    titulo = esc(grafico.get("titulo", ""))
-    return f'<div class="chart"><div class="ct">{titulo}</div>{"".join(linhas)}</div>'
+    return f'<div class="chart"><div class="ct">{esc(grafico.get("titulo",""))}</div>{"".join(linhas)}</div>'
 
 
 def _gancho_html(gancho):
@@ -67,6 +79,7 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
     esc = _html.escape
     cor = tema_meta.get("cor", "#14332a")
     rotulo = tema_meta.get("rotulo", artigo.get("tema", ""))
+    titulo = conteudo.get("titulo_pt") or artigo.get("titulo", "")
     resumo_html = _resumo_html(conteudo.get("resumo", ""))
     grafico_html = _grafico_html(conteudo.get("grafico"))
     gancho_html = _gancho_html(conteudo.get("gancho", ""))
@@ -74,31 +87,31 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
 <style>
   @page {{ size: A4; margin: 0; }}
   *{{box-sizing:border-box}}
-  body {{ font-family: Georgia, "Times New Roman", serif; color:#1c2b27; margin:0; line-height:1.5; }}
-  .cover {{ position:relative; height:150px; background:linear-gradient(115deg,#0e211a,{cor} 62%,#1c4436); }}
+  body {{ font-family: Georgia, "Times New Roman", serif; color:#20302b; margin:0; font-size:16px; line-height:1.65; }}
+  .cover {{ position:relative; height:185px; background:linear-gradient(120deg,#0e211a,{cor} 60%,#20543f); }}
   .cover svg {{ position:absolute; inset:0; width:100%; height:100%; }}
-  .brand {{ position:absolute; left:26px; top:22px; z-index:2; }}
-  .brand .mark {{ font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:#e9e2c9; font-weight:600; }}
-  .brand .sig {{ color:#fbf7ea; font-size:20px; margin-top:3px; }}
-  .tag {{ position:absolute; right:26px; top:22px; z-index:2; background:#b8860b; color:#1a1300; font-family:system-ui,sans-serif;
-          font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; padding:6px 12px; border-radius:100px; }}
-  .body {{ padding:26px 40px 30px; }}
-  .title {{ font-size:24px; line-height:1.18; color:{cor}; margin:2px 0 10px; }}
-  .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:12px; color:#6f7d78; border-bottom:2px solid #b8860b; padding-bottom:10px; margin-bottom:16px; }}
-  .corpo p {{ margin:.45em 0; font-size:14.5px; color:#2b3a35; }}
+  .brand {{ position:absolute; left:34px; top:28px; z-index:2; }}
+  .brand .mark {{ font-family:system-ui,sans-serif; font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:#ece4c6; font-weight:600; }}
+  .brand .sig {{ color:#fbf7ea; font-size:26px; margin-top:5px; }}
+  .tag {{ position:absolute; right:34px; top:28px; z-index:2; background:#c9a227; color:#1a1300; font-family:system-ui,sans-serif;
+          font-size:12px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; padding:7px 15px; border-radius:100px; }}
+  .body {{ padding:34px 48px 40px; }}
+  .title {{ font-size:27px; line-height:1.25; color:{cor}; margin:0 0 14px; }}
+  .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:13px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
+  .corpo p {{ margin:.75em 0; font-size:16px; color:#2b3a35; }}
   .corpo strong {{ color:{cor}; }}
-  .chart {{ margin:18px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:8px; padding:14px 16px; }}
-  .chart .ct {{ font-family:system-ui,sans-serif; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:10px; font-weight:600; }}
-  .bar-row {{ display:flex; align-items:center; gap:12px; margin:8px 0; }}
-  .bar-lab {{ width:120px; font-family:system-ui,sans-serif; font-size:13px; color:#2b3a35; flex:none; }}
-  .bar-track {{ flex:1; background:#e7e2d3; border-radius:100px; height:20px; overflow:hidden; }}
+  .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; }}
+  .chart .ct {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
+  .bar-row {{ display:flex; align-items:center; gap:14px; margin:11px 0; }}
+  .bar-lab {{ width:130px; font-family:system-ui,sans-serif; font-size:15px; color:#2b3a35; flex:none; }}
+  .bar-track {{ flex:1; background:#e7e2d3; border-radius:100px; height:24px; overflow:hidden; }}
   .bar-fill {{ height:100%; border-radius:100px; }}
-  .bar-val {{ font-family:ui-monospace,monospace; font-size:13px; font-weight:700; width:64px; text-align:right; flex:none; }}
-  .social {{ margin:20px 0 6px; border:1.5px solid #b8860b; border-radius:10px; padding:15px 17px; background:linear-gradient(180deg,#fff9e9,#fbf3d9); }}
-  .social .lab {{ font-family:system-ui,sans-serif; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:7px; }}
-  .social .post {{ font-size:14.5px; color:#3a2f10; font-style:italic; }}
-  .foot {{ margin-top:22px; border-top:1px solid #e7e2d6; padding-top:11px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
-           font-family:system-ui,sans-serif; font-size:11px; color:#6f7d78; }}
+  .bar-val {{ font-family:ui-monospace,monospace; font-size:15px; font-weight:700; width:70px; text-align:right; flex:none; }}
+  .social {{ margin:28px 0 8px; border:2px solid #c9a227; border-radius:12px; padding:20px 22px; background:linear-gradient(180deg,#fff9e9,#fbf3d9); }}
+  .social .lab {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
+  .social .post {{ font-size:16px; color:#3a2f10; font-style:italic; line-height:1.6; }}
+  .foot {{ margin-top:30px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+           font-family:system-ui,sans-serif; font-size:12px; color:#6f7d78; }}
   .foot .wm {{ font-style:italic; color:#9aa8a0; }}
 </style></head><body>
   <div class="cover">{_MOTIF}
@@ -106,7 +119,7 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
     <div class="tag">{esc(rotulo)}</div>
   </div>
   <div class="body">
-    <h1 class="title">{esc(artigo.get('titulo',''))}</h1>
+    <h1 class="title">{esc(titulo)}</h1>
     <div class="meta">{esc(artigo.get('fonte',''))} &middot; {esc(artigo.get('data',''))} &middot; DOI {esc(artigo.get('doi','') or '—')}</div>
     <div class="corpo">{resumo_html}</div>
     {grafico_html}

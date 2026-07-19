@@ -12,13 +12,14 @@ class TestPdfHtml(unittest.TestCase):
 
     def test_html_completo(self):
         conteudo = {
+            "titulo_pt": "Tirzepatida preserva músculo",
             "resumo": "💡 *Em resumo*\nPerda de peso robusta.",
             "gancho": "📣 Fale com seus pacientes sobre gordura vs músculo.",
             "grafico": {"titulo": "Peso (%)", "unidade": "%", "barras": [
                 {"rotulo": "Tirzepatida", "valor": 20.9}, {"rotulo": "Placebo", "valor": 3.1}]},
         }
         h = pdf.montar_html(self._art(), conteudo, "Dr. Fulano", TEMA)
-        self.assertIn("Tirzepatida X", h)          # título
+        self.assertIn("Tirzepatida preserva músculo", h)   # título em PT (não o inglês)
         self.assertIn("NEJM", h)                    # fonte
         self.assertIn("Dr. Fulano", h)              # marca d'água
         self.assertIn("10.1/a", h)                  # DOI

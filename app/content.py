@@ -16,6 +16,13 @@ SYS_GANCHO = (
     "sem sensacionalismo. Máximo 4 linhas, em português.")
 
 
+def _prompt_titulo(artigo):
+    return (f"Título original (em inglês) de um estudo científico: {artigo.get('titulo','')}\n\n"
+            "Reescreva em PORTUGUÊS DO BRASIL: curto e claro para um médico (no máximo ~12 palavras), "
+            "com a terminologia correta em pt-BR (ex.: 'lipedema' e NÃO 'lipoedema'; 'menopausa'; "
+            "'reposição hormonal'). Responda SÓ o título, sem aspas e sem ponto final.")
+
+
 def _prompt_gancho(artigo):
     return (f"Estudo: {artigo.get('titulo','')} ({artigo.get('fonte','')}).\n"
             f"Resumo: {(artigo.get('resumo','') or '')[:900]}\n\n"
@@ -51,8 +58,8 @@ def _parse_grafico(texto):
     return {"titulo": g.get("titulo", ""), "unidade": g.get("unidade", ""), "barras": barras[:4]}
 
 
-def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=None):
-    """Retorna {resumo, gancho, grafico}. grafico pode ser None."""
+def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=None, gerar_titulo=None):
+    """Retorna {titulo_pt, resumo, gancho, grafico}. grafico pode ser None."""
     if gerar_resumo is None:
         from resumo_diario import gerar_texto_do_artigo as gerar_resumo
     if gerar_gancho is None:
@@ -61,7 +68,12 @@ def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_j
     if gerar_grafico_json is None:
         from resumo_diario import claude, HAIKU
         gerar_grafico_json = lambda a: claude(HAIKU, _prompt_grafico(a), max_tokens=300)
+    if gerar_titulo is None:
+        from resumo_diario import claude, HAIKU
+        gerar_titulo = lambda a: claude(HAIKU, _prompt_titulo(a), max_tokens=80)
+    titulo_pt = (gerar_titulo(artigo) or "").strip().strip('"').strip() or artigo.get("titulo", "")
     return {
+        "titulo_pt": titulo_pt,
         "resumo": gerar_resumo(artigo),
         "gancho": gerar_gancho(artigo),
         "grafico": _parse_grafico(gerar_grafico_json(artigo)),

@@ -85,9 +85,10 @@ def preparar_18h():
     r = draft_store.novo_rascunho(hoje, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
+    r["titulo_pt"] = c["titulo_pt"]
     draft_store.salvar(r)
     link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
-    deliver.enviar_curador(f"📋 Amanhã · {art.get('tema','')}:\n*{art['titulo']}*\n{art.get('fonte','')}\n"
+    deliver.enviar_curador(f"📋 Amanhã · {art.get('tema','')}:\n*{c['titulo_pt']}*\n{art.get('fonte','')}\n"
                            f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
                            f"(se não mexer, envio automático às 08h)")
     return r
@@ -104,16 +105,17 @@ def enviar_08h():
         deliver.enviar_curador(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else r['status']}).")
         return
     art = r["artigo"]
-    conteudo = {"resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
+    titulo = r.get("titulo_pt") or art.get("titulo", "")
+    conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
     tmeta = _tema_meta(art.get("tema", ""))
 
     def _envia(whatsapp, nome):
         ppath = os.path.join(config.drafts_dir(), f"{hoje}-{whatsapp}.pdf")
         pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, nome or "Assinante", tmeta), ppath)
         link = f"{config.PUBLIC_URL}/minha/{whatsapp}"
-        msg = deliver.personalizar_rodape(f"🔬 *{art['titulo']}*\n\n{r['resumo']}", nome, link)
+        msg = deliver.personalizar_rodape(f"🔬 *{titulo}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
-        deliver.enviar_pdf(whatsapp, ppath, caption=art["titulo"])  # PDF local -> base64 (Evolution)
+        deliver.enviar_pdf(whatsapp, ppath, caption=titulo)  # PDF local -> base64 (Evolution)
 
     res = deliver.distribuir(r, subscribers.ativos(), config.SEND_DELAY_SEC, _envia)
     r["status"] = "SENT"

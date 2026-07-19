@@ -25,7 +25,9 @@ class TestContent(unittest.TestCase):
             gerar_resumo=lambda a: "resumo clínico",
             gerar_gancho=lambda a: "📣 dica pras redes",
             gerar_grafico_json=lambda a: '{"titulo":"X","barras":[{"rotulo":"A","valor":5}]}',
+            gerar_titulo=lambda a: '"Título em Português"',
         )
+        self.assertEqual(out["titulo_pt"], "Título em Português")  # aspas removidas
         self.assertEqual(out["resumo"], "resumo clínico")
         self.assertIn("dica", out["gancho"])
         self.assertEqual(out["grafico"]["barras"][0]["valor"], 5)
