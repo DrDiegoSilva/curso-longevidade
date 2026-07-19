@@ -18,21 +18,32 @@ APPDIR = os.path.dirname(os.path.abspath(__file__))
 def _now():
     return datetime.now(TZ) if TZ else datetime.now()
 
-def agendador():
-    """Dispara resumo_diario.py todo dia às 08:00 (fuso TZ). Loop simples e robusto."""
-    while True:
-        now = _now()
-        alvo = now.replace(hour=8, minute=0, second=0, microsecond=0)
+def proximo_disparo(now, horarios):
+    """horarios: lista de (hora_int, nome_tarefa). Retorna (alvo_datetime, nome) mais próximo."""
+    candidatos = []
+    for h, nome in horarios:
+        alvo = now.replace(hour=h, minute=0, second=0, microsecond=0)
         if now >= alvo:
             alvo += timedelta(days=1)
+        candidatos.append((alvo, nome))
+    return min(candidatos, key=lambda x: x[0])
+
+
+def agendador():
+    """Dois disparos diários (fuso TZ): 18h prepara+avisa o curador; 08h envia à lista."""
+    import daily
+    tarefas = {"preparar": daily.preparar_18h, "enviar": daily.enviar_08h}
+    while True:
+        now = _now().replace(tzinfo=None)
+        alvo, nome = proximo_disparo(now, [(8, "enviar"), (18, "preparar")])
         espera = max(60, (alvo - now).total_seconds())
-        print(f"[agendador] proximo disparo {alvo:%Y-%m-%d %H:%M %Z} (em {int(espera)}s)", flush=True)
+        print(f"[agendador] próximo: {nome} {alvo:%Y-%m-%d %H:%M} (em {int(espera)}s)", flush=True)
         time.sleep(espera)
         try:
-            print(f"[agendador] rodando resumo_diario {_now():%Y-%m-%d %H:%M}", flush=True)
-            subprocess.run([sys.executable, "resumo_diario.py"], cwd=APPDIR, timeout=1500)
+            print(f"[agendador] rodando {nome} {_now():%Y-%m-%d %H:%M}", flush=True)
+            tarefas[nome]()
         except Exception as e:
-            print("[agendador] erro:", e, flush=True)
+            print(f"[agendador] {nome} erro: {e}", flush=True)
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
