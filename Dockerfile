@@ -6,8 +6,8 @@ ENV PYTHONUNBUFFERED=1 \
     DSCURSO_BASE=/data/base \
     PORT=3000
 
-# tzdata p/ o agendador acertar 08:00 no horário de Brasília
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+# tzdata p/ o agendador (08:00 BRT) + chromium p/ renderizar o PDF bonito (HTML+CSS -> PDF)
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata chromium \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
