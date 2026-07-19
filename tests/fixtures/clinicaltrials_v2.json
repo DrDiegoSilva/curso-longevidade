@@ -1,0 +1,19 @@
+{
+  "studies": [
+    {
+      "protocolSection": {
+        "identificationModule": {
+          "nctId": "NCT06000001",
+          "briefTitle": "Tirzepatide for Weight Maintenance After Diet-Induced Weight Loss"
+        },
+        "descriptionModule": {
+          "briefSummary": "A study evaluating tirzepatide for maintaining weight loss and preserving lean mass."
+        },
+        "statusModule": {
+          "lastUpdatePostDateStruct": {"date": "2026-07-01"}
+        },
+        "designModule": {"studyType": "INTERVENTIONAL"}
+      }
+    }
+  ]
+}

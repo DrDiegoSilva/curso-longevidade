@@ -1,0 +1,17 @@
+{
+  "result": {
+    "uids": ["38768591"],
+    "38768591": {
+      "uid": "38768591",
+      "title": "Tirzepatide and lean mass preservation in obesity: a randomized trial",
+      "fulljournalname": "New England Journal of Medicine",
+      "source": "N Engl J Med",
+      "pubdate": "2026 Jun 12",
+      "pubtype": ["Randomized Controlled Trial", "Journal Article"],
+      "articleids": [
+        {"idtype": "pubmed", "value": "38768591"},
+        {"idtype": "doi", "value": "10.1056/NEJMoa2600001"}
+      ]
+    }
+  }
+}
