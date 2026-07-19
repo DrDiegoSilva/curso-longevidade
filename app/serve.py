@@ -139,6 +139,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not sub:
                 return self._redirect("/entrar")
             return self._html(site_web.pagina_minha(sub))
+        if path == "/cancelar":
+            if not self._sessao():
+                return self._redirect("/entrar")
+            return self._html(site_web.pagina_cancelar())
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             sub = self._sessao()
@@ -206,7 +210,75 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
         if path == "/assinar":
             return self._post_assinar(g)
+        if path == "/cancelar":
+            return self._cancelar_motivo(g)
+        if path == "/cancelar/confirmar":
+            return self._cancelar_confirmar(g)
         return self._html("<h3>rota inválida</h3>", 404)
+
+    def _sub_logado(self):
+        import subscribers
+        sess = self._sessao()
+        if not sess:
+            return None
+        return subscribers.por_whatsapp(sess["whatsapp"])
+
+    def _cancelar_motivo(self, g):
+        import site_web
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        motivo = g("motivo").strip()
+        if not motivo:
+            return self._html(site_web.pagina_cancelar("Conta pra gente o motivo — é obrigatório."))
+        if sub.get("oferta_retencao_em"):          # já usou a oferta -> cancela direto
+            return self._executar_cancelamento(sub, motivo)
+        return self._html(site_web.pagina_cancelar_oferta(motivo))
+
+    def _cancelar_confirmar(self, g):
+        import site_web, subscribers, asaas
+        from datetime import datetime, timedelta
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        motivo = g("motivo").strip()
+        if g("acao") == "aceitar":
+            sid = sub.get("asaas_subscription_id")
+            try:
+                if sid:
+                    asaas.adiar_vencimento(sid, 30)
+            except Exception as e:
+                print(f"[cancelar] adiar vencimento falhou: {e}", flush=True)
+            base = sub.get("proximo_vencimento")
+            try:
+                ref = datetime.fromisoformat(base) if base else datetime.now()
+            except Exception:
+                ref = datetime.now()
+            novo = (ref + timedelta(days=30)).date().isoformat()
+            subscribers.marcar_status(sub["id"], "ATIVO",
+                                      oferta_retencao_em=datetime.now().isoformat(), proximo_vencimento=novo)
+            return self._html(site_web.pagina_oferta_aceita())
+        return self._executar_cancelamento(sub, motivo)
+
+    def _executar_cancelamento(self, sub, motivo):
+        import site_web, subscribers, asaas, email_send
+        sid = sub.get("asaas_subscription_id")
+        try:
+            if sid:
+                asaas.cancelar_assinatura(sid)
+        except Exception as e:
+            print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
+        acesso_ate = sub.get("proximo_vencimento")   # acesso até o fim do período pago
+        subscribers.registrar_cancelamento(sub["id"], motivo, acesso_ate=acesso_ate)
+        if sub.get("email"):
+            ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
+            html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>"
+                    f"<p>Confirmamos o cancelamento da sua assinatura da Atualização Científica. "
+                    f"Não haverá novas cobranças.{site_web._esc(ate)}</p>"
+                    f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
+                    f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
+            email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
+        return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
         import site_web, config, db, subscribers, pricing, asaas

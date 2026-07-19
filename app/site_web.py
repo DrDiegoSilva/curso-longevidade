@@ -332,6 +332,16 @@ def pagina_cancelar_oferta(motivo):
     return _pagina(f"Cancelar · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
+def pagina_oferta_aceita():
+    corpo = ('<div class="wrap"><div class="panel">'
+             '<h2 class="disp">Presente aplicado 🎁</h2>'
+             '<p class="hint">Você ganhou <strong>+30 dias</strong> por nossa conta — sem cobrança agora. '
+             'Continua tudo no ar. Que bom que você ficou!</p>'
+             '<p style="margin-top:18px"><a class="cta ghost" href="/artigos">Ir para o arquivo</a></p>'
+             '</div></div>')
+    return _pagina(f"Obrigado · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
 def pagina_cancelado(acesso_ate=""):
     ate = f" Seu acesso continua até <strong>{_esc(_data_br(acesso_ate))}</strong>." if acesso_ate else ""
     corpo = f"""
