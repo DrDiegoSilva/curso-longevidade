@@ -122,6 +122,8 @@ def enviar_08h():
     tmeta = _tema_meta(art.get("tema", ""))
 
     def _envia(whatsapp, nome):
+        import phone
+        whatsapp = phone.normalizar(whatsapp)   # garante o 55 (registros antigos)
         ppath = os.path.join(config.drafts_dir(), f"{hoje}-{whatsapp}.pdf")
         pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, nome or "Assinante", tmeta), ppath)
         link = f"{config.PUBLIC_URL}/entrar"  # portal protegido (login por código)

@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime
 import config
 import db
+import phone
 
 _migrado = False
 
@@ -16,7 +17,7 @@ _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
 
 
 def _norm(w):
-    return "".join(c for c in (w or "") if c.isdigit())
+    return phone.normalizar(w)
 
 
 def _ensure():

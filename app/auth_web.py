@@ -11,6 +11,7 @@ import secrets
 from datetime import datetime, timedelta
 import db
 import subscribers
+import phone
 
 CODIGO_TTL_MIN = 10
 SESSAO_TTL_DIAS = 30
@@ -18,7 +19,7 @@ MAX_TENTATIVAS = 5
 
 
 def _norm(whatsapp):
-    return "".join(c for c in (whatsapp or "") if c.isdigit())
+    return phone.normalizar(whatsapp)
 
 
 def _hash(codigo):
