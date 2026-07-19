@@ -56,11 +56,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             r = draft_store.por_token(tok)
             return self._html(review_web.pagina_revisao(r) if r else "<h3>Link inválido/expirado</h3>", 200 if r else 404)
         if self.path.startswith("/pdf/"):
-            import draft_store
-            data_iso = self.path.split("/pdf/", 1)[1]
-            r = draft_store.carregar(data_iso)
-            if r and os.path.exists(r.get("pdf_path", "")):
-                body = open(r["pdf_path"], "rb").read()
+            import config, draft_store
+            parts = [p for p in self.path.split("/pdf/", 1)[1].split("/") if p]
+            data_iso = parts[0] if parts else ""
+            if len(parts) >= 2:  # /pdf/<data>/<whatsapp> -> PDF personalizado
+                fpath = os.path.join(config.drafts_dir(), f"{data_iso}-{parts[1]}.pdf")
+            else:                # /pdf/<data> -> prévia do rascunho
+                r = draft_store.carregar(data_iso)
+                fpath = r.get("pdf_path", "") if r else ""
+            if fpath and os.path.exists(fpath):
+                body = open(fpath, "rb").read()
                 self.send_response(200); self.send_header("Content-Type", "application/pdf"); self.end_headers()
                 return self.wfile.write(body)
             return self._html("<h3>PDF não encontrado</h3>", 404)

@@ -1,54 +1,94 @@
-"""Orquestra os jobs diários: 18h prepara+avisa curador; 08h envia à lista.
+"""Orquestra os jobs diários (modelo fila + variedade, seg-sex, 1/dia).
 
-Sem teste unitário próprio (orquestra I/O: rede + IA + WhatsApp). Validada por
-smoke-test manual no deploy (com a lista-semente só no número do curador).
-Imports de resumo_diario/buscar_estudos/pdf são LAZY (dentro das funções) para
-não disparar efeitos de import (log/stdout do resumo_diario) na subida do serve.
+- preparar_18h(): se AMANHÃ for dia útil, reabastece a fila se preciso, tira o
+  próximo artigo, gera resumo + gancho + gráfico + PDF de prévia, salva o
+  rascunho e avisa o curador com o link de revisão. Silêncio = envia às 08h.
+- enviar_08h(): se HOJE for dia útil e houver rascunho não vetado, gera um PDF
+  PERSONALIZADO por assinante (nome na marca d'água) e envia.
+
+Sem teste unitário próprio (orquestra rede + IA + WhatsApp); as partes puras
+(fila, triagem, conteúdo, pdf) são testadas nos seus módulos. Imports de
+resumo_diario são lazy (efeitos de import: log/stdout).
 """
 import os
 import json
 from datetime import datetime, timedelta
 import config
 import sources
-import selection
+import triage
+import content
+import queue_store
 import draft_store
 import subscribers
 import deliver
+import pdf as pdfmod
+import buscar_estudos as be
+
+DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+REFILL_MINIMO = 2          # reabastece quando a fila cai abaixo disso
+JANELA_BUSCA_DIAS = 21     # janela da busca ao reabastecer
+
+
+def _cfg():
+    return json.load(open(os.path.join(os.path.dirname(__file__), "temas_config.json"), encoding="utf-8"))
+
+
+def _dias_envio():
+    return set(_cfg().get("dias_envio", ["segunda", "terca", "quarta", "quinta", "sexta"]))
+
+
+def _e_dia_util(dt):
+    return DIAS[dt.weekday()] in _dias_envio()
+
+
+def _tema_meta(nome):
+    return _cfg()["temas"].get(nome, {"rotulo": nome, "cor": "#14332a", "emoji": ""})
 
 
 def _hoje_iso():
     return datetime.now().strftime("%Y-%m-%d")
 
 
-def _tema_do_dia():
-    cfg = json.load(open(os.path.join(os.path.dirname(__file__), "temas_config.json"), encoding="utf-8"))
-    dias = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
-    plano = cfg["calendario"][dias[datetime.now().weekday()]]
-    return plano["tema"]
+def reabastecer():
+    """Busca a semana em TODOS os temas, tria por IA e põe os ENTRA na fila.
+    Retorna quantos artigos entraram."""
+    cfg = _cfg()
+    ate = datetime.now()
+    desde = ate - timedelta(days=JANELA_BUSCA_DIAS)
+    total = 0
+    for nome, meta in cfg["temas"].items():
+        try:
+            arts = sources.search_all(meta.get("query", ""), desde.strftime("%Y-%m-%d"), ate.strftime("%Y-%m-%d"))
+            bons = triage.triar(arts, nome)
+            total += queue_store.adicionar(bons)
+        except Exception as e:
+            print(f"[reabastecer] {nome} falhou: {e}", flush=True)
+    return total
 
 
 def preparar_18h():
     import resumo_diario as rd
-    import buscar_estudos as be
-    import pdf as pdfmod
-    tema = _tema_do_dia()
-    query, _exc = be.carregar_tema(tema)
-    ate = datetime.now()
-    desde = ate - timedelta(days=14)
-    arts = sources.search_all(query, desde.strftime("%Y-%m-%d"), ate.strftime("%Y-%m-%d"))
-    art = selection.escolher_do_dia(arts, rd.dois_enviados())
-    if not art:
-        rd.enviar_zap(f"📭 Sem artigo forte hoje ({tema}). Nada preparado — me chama se quiser forçar.")
+    amanha = datetime.now() + timedelta(days=1)
+    if not _e_dia_util(amanha):
+        print("[preparar] amanhã não é dia de envio — pulo", flush=True)
         return None
-    resumo = rd.gerar_texto_do_artigo(art)
+    if queue_store.tamanho() < REFILL_MINIMO:
+        print(f"[reabastecer] +{reabastecer()} na fila", flush=True)
+    art = queue_store.proximo()
+    if not art:
+        rd.enviar_zap("📭 Sem artigo forte para amanhã (fila vazia). Nada preparado — me chama se quiser forçar.")
+        return None
+    c = content.gerar_conteudo(art)
     hoje = _hoje_iso()
     os.makedirs(config.drafts_dir(), exist_ok=True)
-    pdf_path = os.path.join(config.drafts_dir(), f"{hoje}.pdf")
-    pdfmod.gerar_pdf(pdfmod.montar_html(art, resumo, "Dr. Diego (revisão)"), pdf_path)
-    r = draft_store.novo_rascunho(hoje, art, resumo, pdf_path)
+    preview = os.path.join(config.drafts_dir(), f"{hoje}-preview.pdf")
+    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, "Dr. Diego (revisão)", _tema_meta(art.get("tema", ""))), preview)
+    r = draft_store.novo_rascunho(hoje, art, c["resumo"], preview)
+    r["gancho"] = c["gancho"]
+    r["grafico"] = c["grafico"]
     draft_store.salvar(r)
     link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
-    rd.enviar_zap(f"📋 Resumo de AMANHÃ pronto:\n*{art['titulo']}*\nFonte: {art.get('fonte','')}\n"
+    rd.enviar_zap(f"📋 Amanhã · {art.get('tema','')}:\n*{art['titulo']}*\n{art.get('fonte','')}\n"
                   f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
                   f"(se não mexer, envio automático às 08h)")
     return r
@@ -56,23 +96,31 @@ def preparar_18h():
 
 def enviar_08h():
     import resumo_diario as rd
-    tema_hoje = _hoje_iso()
-    r = draft_store.carregar(tema_hoje)
+    if not _e_dia_util(datetime.now()):
+        print("[enviar] hoje não é dia de envio — pulo", flush=True)
+        return
+    hoje = _hoje_iso()
+    r = draft_store.carregar(hoje)
     if not r or not draft_store.pode_enviar(r["status"]):
         rd.enviar_zap(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else r['status']}).")
         return
-    art, resumo = r["artigo"], r["resumo"]
-    pdf_url = f"{config.PUBLIC_URL}/pdf/{tema_hoje}"  # servido pela Task 9
+    art = r["artigo"]
+    conteudo = {"resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
+    tmeta = _tema_meta(art.get("tema", ""))
 
     def _envia(whatsapp, nome):
-        link = f"{config.PUBLIC_URL}/minha/{whatsapp}"  # placeholder Fase 1 (link real vem na Fase 2)
-        msg = deliver.personalizar_rodape(f"🔬 *{art['titulo']}*\n\n{resumo}", nome, link)
+        ppath = os.path.join(config.drafts_dir(), f"{hoje}-{whatsapp}.pdf")
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, nome or "Assinante", tmeta), ppath)
+        pdf_url = f"{config.PUBLIC_URL}/pdf/{hoje}/{whatsapp}"
+        link = f"{config.PUBLIC_URL}/minha/{whatsapp}"
+        msg = deliver.personalizar_rodape(f"🔬 *{art['titulo']}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
         deliver.enviar_pdf(whatsapp, pdf_url, caption=art["titulo"])
 
     res = deliver.distribuir(r, subscribers.ativos(), config.SEND_DELAY_SEC, _envia)
     r["status"] = "SENT"
     draft_store.salvar(r)
+    queue_store.confirmar_envio(art)
     rd.registrar([art["doi"]] if art.get("doi") else [])
-    rd.enviar_zap(f"✅ Enviado: {res['ok']} assinantes"
+    rd.enviar_zap(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
                   + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))
