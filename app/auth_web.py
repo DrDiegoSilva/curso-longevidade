@@ -223,6 +223,8 @@ def _enviar_link_senha(a, link, primeiro, enviar_fn=None):
 def wa_msg_senha(link, primeiro):
     if primeiro:
         return (f"✅ Assinatura confirmada — bem-vindo(a) à *{config.PRODUTO}*!\n\n"
+                f"📲 *Salve este contato* (Dr. Diego Silva) na sua agenda — assim os estudos "
+                f"chegam certinho e os *links ficam clicáveis*.\n\n"
                 f"Para ler os resumos no site, crie sua senha de acesso:\n{link}\n\n"
                 f"Depois é só entrar com seu WhatsApp + senha em {config.ARTIGOS_URL}.")
     return (f"🔐 Para redefinir sua senha da *{config.PRODUTO}*, use este link "

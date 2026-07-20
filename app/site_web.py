@@ -204,6 +204,32 @@ textarea:focus{outline:none;border-color:var(--ouro)}
 .pay label{display:flex;align-items:center;gap:8px;flex:1;min-width:150px;background:rgba(0,0,0,.2);border:1px solid rgba(233,225,198,.18);border-radius:12px;padding:13px 14px;color:var(--creme);text-transform:none;letter-spacing:0;font-family:Georgia,serif;font-size:15px;cursor:pointer;margin:0}
 .pay .sub2{display:block;font-family:system-ui,sans-serif;font-size:12px;color:var(--suave)}
 .resumo{background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.35);border-radius:12px;padding:14px 16px;margin-bottom:20px;font-family:system-ui,sans-serif;font-size:14px;color:var(--creme)}
+/* checkout premium */
+.checkout{display:grid;grid-template-columns:.82fr 1.18fr;gap:26px;align-items:start;margin:26px 0 10px}
+.summary{background:linear-gradient(160deg,rgba(201,162,39,.15),rgba(20,51,42,.55));border:1px solid rgba(201,162,39,.32);border-radius:20px;padding:30px 28px;position:sticky;top:20px}
+.summary .sum-eyebrow{font-family:var(--ui);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold2);margin-bottom:10px}
+.summary .sum-plan{font-family:var(--disp);font-size:30px;color:var(--cream);line-height:1.08}
+.summary .sum-price{font-family:var(--disp);font-size:46px;color:var(--gold2);margin:16px 0 0;line-height:1}
+.summary .sum-price span{display:block;font-family:var(--ui);font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+.summary .sum-list{list-style:none;margin:20px 0;padding:18px 0 0;border-top:1px solid rgba(233,225,198,.16)}
+.summary .sum-list li{font-family:var(--ui);font-size:14px;color:var(--cream);margin:11px 0;display:flex;gap:10px;align-items:flex-start;line-height:1.4}
+.summary .sum-list li b{color:var(--gold2);flex:none;font-weight:700}
+.summary .sum-trust{font-family:var(--ui);font-size:12.5px;color:var(--muted);border-top:1px solid rgba(233,225,198,.16);padding-top:16px;line-height:1.5}
+.form-side{background:rgba(255,255,255,.03);border:1px solid var(--line);border-radius:20px;padding:30px 28px}
+.section-label{display:block;font-family:var(--ui);font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:6px 0 11px}
+.paytiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+.paytile{position:relative;display:flex;flex-direction:column;gap:4px;background:rgba(0,0,0,.22);border:1.5px solid rgba(233,225,198,.18);border-radius:14px;padding:16px 16px 15px;cursor:pointer;transition:.16s}
+.paytile input{position:absolute;opacity:0;pointer-events:none}
+.paytile .pt-ico{font-size:22px}
+.paytile .pt-nome{font-family:var(--disp);font-size:20px;color:var(--cream)}
+.paytile .pt-desc{font-family:var(--ui);font-size:12px;color:var(--muted);line-height:1.35}
+.paytile:hover{border-color:rgba(201,162,39,.5)}
+.paytile:has(input:checked){border-color:var(--gold);background:linear-gradient(160deg,rgba(201,162,39,.17),rgba(0,0,0,.22));box-shadow:inset 0 0 0 1px var(--gold)}
+.paytile:has(input:checked)::after{content:"✓";position:absolute;top:11px;right:13px;color:var(--gold2);font-weight:800;font-family:var(--ui)}
+.btn-pay{width:100%;border:none;cursor:pointer;margin-top:6px;font-family:var(--ui);font-weight:800;font-size:16px;letter-spacing:.02em;color:#1a1300;background:linear-gradient(180deg,var(--gold2),var(--gold));padding:17px 30px;border-radius:100px;box-shadow:0 14px 34px -10px rgba(201,162,39,.6);transition:.18s}
+.btn-pay:hover{transform:translateY(-2px);box-shadow:0 20px 46px -10px rgba(201,162,39,.72)}
+.securow{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:14px;font-family:var(--ui);font-size:12px;color:var(--muted)}
+@media(max-width:760px){.checkout{grid-template-columns:1fr}.summary{position:static}.paytiles{grid-template-columns:1fr}}
 /* ===== arquivo (redesign: abas por tema + mês/semana + leitura) ===== */
 .back{display:inline-flex;align-items:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--cream);border:1px solid var(--line);border-radius:100px;padding:9px 18px;margin-bottom:22px;transition:.18s}
 .back:hover{border-color:var(--gold);color:var(--gold2)}
@@ -925,41 +951,60 @@ def pagina_assinar(plano_slug=None, erro=""):
         return _pagina(f"Assinar · {PRODUTO}", _pick_planos(), logado=False,
                        meta_extra='<meta name="robots" content="noindex">')
     base = float(plano["base"])
-    erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
-    pix_lab = f"Pix à vista · {pricing.fmt_brl(base)} (não renova)"
+    erro_html = f'<div class="erro" style="margin-bottom:16px">{_esc(erro)}</div>' if erro else ""
+    pix_desc = f"{pricing.fmt_brl(base)} à vista"
     if plano.get("recorrente_pix"):   # mensal (sem parcelamento)
-        cartao_lab = f"Cartão · {pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês (renova todo mês)"
+        cartao_desc = f"{pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês · renova"
         parcelas_html = '<input type="hidden" name="parcelas" value="1">'
     else:
-        cartao_lab = "Cartão · renova no fim do período (parcelável)"
+        cartao_desc = "parcelável · renova no fim"
         opts = "".join(
             f'<option value="{o["parcelas"]}">{o["parcelas"]}x de {pricing.fmt_brl(o["por_parcela"])} '
             f'— total {pricing.fmt_brl(o["total"])}</option>' for o in pricing.opcoes_parcelas(base))
         parcelas_html = (f'<div class="field"><label>Parcelas (só no cartão)</label>'
                          f'<select name="parcelas">{opts}</select></div>')
+    inclui = "".join(f'<li><b>✓</b><span>{v}</span></li>' for v in (
+        "1 estudo por dia útil, no seu WhatsApp",
+        "Curadoria por IA + revisão médica",
+        "PDF elegante de cada edição",
+        "Arquivo completo no portal do assinante"))
     corpo = f"""
-    <div class="wrap"><div class="panel">
-      <h2 class="disp">Assinar — {_esc(plano["nome"])}</h2>
-      <div class="resumo">Plano {_esc(plano["nome"])} · {_esc(plano["periodo"])} · Pix {_esc(plano["preco"])}</div>
-      {erro_html}
-      <form method="post" action="/assinar">
-        <input type="hidden" name="plano" value="{_esc(plano["slug"])}">
-        <div class="field"><label>Nome completo</label><input type="text" name="nome" required></div>
-        <div class="field"><label>E-mail</label><input type="text" name="email" inputmode="email" required></div>
-        <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" required></div>
-        <div class="field"><label>WhatsApp (com DDD) — é onde você recebe os artigos e faz login</label>
-          <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
-        <label>Forma de pagamento</label>
-        <div class="pay">
-          <label><input type="radio" name="metodo" value="PIX" checked><span>{_esc(pix_lab)}</span></label>
-          <label><input type="radio" name="metodo" value="CARTAO"><span>{_esc(cartao_lab)}</span></label>
+    <div class="wrap">
+      <div class="sectag" style="margin-top:8px">Finalizar assinatura</div>
+      <h2 class="disp" style="font-size:clamp(30px,4vw,42px);color:var(--cream);margin:2px 0 4px">Você está quase lá</h2>
+      <div class="checkout">
+        <aside class="summary">
+          <div class="sum-eyebrow">{_esc(PRODUTO)}</div>
+          <div class="sum-plan">Plano {_esc(plano["nome"])}</div>
+          <div class="sum-price">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
+          <ul class="sum-list">{inclui}</ul>
+          <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>Cancele quando quiser, sem multa.</div>
+        </aside>
+        <div class="form-side">
+          {erro_html}
+          <form method="post" action="/assinar">
+            <input type="hidden" name="plano" value="{_esc(plano["slug"])}">
+            <div class="field"><label>Nome completo</label><input type="text" name="nome" required></div>
+            <div class="field"><label>E-mail</label><input type="text" name="email" inputmode="email" required></div>
+            <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" required></div>
+            <div class="field"><label>WhatsApp (com DDD) — onde você recebe os estudos e faz login</label>
+              <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
+            <label class="section-label">Forma de pagamento</label>
+            <div class="paytiles">
+              <label class="paytile"><input type="radio" name="metodo" value="PIX" checked>
+                <span class="pt-ico">⚡</span><span class="pt-nome">Pix</span><span class="pt-desc">{_esc(pix_desc)}</span></label>
+              <label class="paytile"><input type="radio" name="metodo" value="CARTAO">
+                <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
+            </div>
+            {parcelas_html}
+            <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" placeholder="tem um cupom de cortesia?"></div>
+            <button class="btn-pay" type="submit">Continuar para o pagamento →</button>
+            <div class="securow">🔒 Ambiente de pagamento seguro</div>
+          </form>
+          <p class="hint" style="margin-top:16px;text-align:center"><a href="/assinar" style="color:var(--suave)">← trocar de plano</a></p>
         </div>
-        {parcelas_html}
-        <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" placeholder="tem um cupom de cortesia?"></div>
-        <button class="cta" type="submit">Continuar para o pagamento</button>
-      </form>
-      <p class="hint" style="margin-top:14px"><a href="/assinar" style="color:var(--suave)">← trocar de plano</a></p>
-    </div></div>"""
+      </div>
+    </div>"""
     return _pagina(f"Assinar {plano['nome']} · {PRODUTO}", corpo, logado=False,
                    meta_extra='<meta name="robots" content="noindex">')
 
