@@ -60,7 +60,9 @@ def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None):
             continue
         try:
             arts = buscar_fn(meta.get("query", ""), desde, ate)
-            bons = triar_fn(arts, nome)
+            bons = []
+            for k in range(0, len(arts), 20):        # tria em lotes p/ a resposta não estourar tokens
+                bons += triar_fn(arts[k:k + 20], nome)
         except Exception as e:
             print(f"[curadoria] {nome} falhou: {e}", flush=True)
             continue
@@ -92,8 +94,12 @@ def _prompt_perguntas(cands):
 
 
 def _parse_perguntas(texto):
+    import jsonx
+    bruto = jsonx.primeiro_array(texto)
+    if not bruto:
+        return {}
     try:
-        arr = json.loads(re.search(r"\[.*\]", texto or "", re.S).group(0))
+        arr = json.loads(bruto)
     except Exception:
         return {}
     out = {}

@@ -44,11 +44,12 @@ def _parse_grafico(texto):
         return None
     if texto.strip().lower().startswith("null"):
         return None
+    import jsonx
+    bruto = jsonx.primeiro_objeto(texto)
+    if not bruto:
+        return None
     try:
-        m = re.search(r"\{.*\}", texto, re.S)
-        if not m:
-            return None
-        g = json.loads(m.group(0))
+        g = json.loads(bruto)
     except Exception:
         return None
     barras = [b for b in (g.get("barras") or [])

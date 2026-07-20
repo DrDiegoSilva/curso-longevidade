@@ -27,8 +27,12 @@ def _prompt(artigos, tema):
 
 
 def _parse(texto, artigos, tema):
+    import jsonx
+    bruto = jsonx.primeiro_array(texto)
+    if not bruto:
+        return []
     try:
-        cls = json.loads(re.search(r"\[.*\]", texto, re.S).group(0))
+        cls = json.loads(bruto)
     except Exception:
         return []
     out = []
