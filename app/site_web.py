@@ -113,7 +113,7 @@ a{color:inherit;text-decoration:none}
 .card h3{font-family:var(--disp);font-size:24px;color:var(--cream);margin-bottom:8px}
 .card p{color:var(--muted);font-size:15px}
 .card .k{font-family:var(--mono);font-size:12px;color:var(--gold2);letter-spacing:.04em;margin-bottom:12px;display:block}
-.c-a{grid-column:span 3}.c-b{grid-column:span 3}.c-c{grid-column:span 2}.c-d{grid-column:span 2}.c-e{grid-column:span 2}
+.c-a{grid-column:span 2}.c-b{grid-column:span 2}.c-c{grid-column:span 2}.c-d{grid-column:span 2}.c-e{grid-column:span 2}.c-f{grid-column:span 2}
 .card.big{background:linear-gradient(150deg,rgba(30,80,69,.5),rgba(20,51,42,.35));border-color:rgba(201,162,39,.25)}
 /* planos (redesign) */
 .plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,300px));justify-content:center;gap:18px}
@@ -268,7 +268,7 @@ textarea:focus{outline:none;border-color:var(--ouro)}
 @media(max-width:820px){
   .hero{grid-template-columns:1fr;gap:30px}
   .themes{grid-template-columns:repeat(2,1fr)}
-  .bento{grid-template-columns:1fr}.c-a,.c-b,.c-c,.c-d,.c-e{grid-column:auto}
+  .bento{grid-template-columns:1fr}.c-a,.c-b,.c-c,.c-d,.c-e,.c-f{grid-column:auto}
   .plans{grid-template-columns:1fr;max-width:340px;margin-inline:auto}
   .entry{grid-template-columns:1fr;gap:4px}
   .doc{padding:28px 22px}
@@ -324,9 +324,10 @@ def landing():
     valores = [
         ("01 · curadoria", "Curadoria + revisão médica", "Uma IA tria a literatura da semana; o Dr. Diego revisa antes de sair. Você recebe o que importa, sem ruído.", "card big c-a"),
         ("02 · cadência", "1 estudo por dia útil", "De segunda a sexta, um artigo relevante — resumo clínico direto ao ponto, no seu WhatsApp.", "card c-b"),
-        ("03 · redes", "Pronto para as redes", "Cada edição traz um gancho para levar o tema aos seus pacientes.", "card c-c"),
-        ("04 · pdf", "PDF elegante", "Um documento assinado, com gráfico e fonte — pronto para guardar ou compartilhar.", "card c-d"),
-        ("05 · arquivo", "Arquivo consultável", "Tudo por tema e data, sempre à mão neste portal.", "card c-e"),
+        ("03 · áudio", "Áudio-resumo", "Prefere ouvir? Cada edição vem com um áudio narrado de ~2 minutos — perfeito pro trânsito ou entre atendimentos.", "card c-c"),
+        ("04 · redes", "Pronto para as redes", "Cada edição traz um gancho para levar o tema aos seus pacientes.", "card c-d"),
+        ("05 · pdf", "PDF elegante", "Um documento assinado, com gráfico e fonte — pronto para guardar ou compartilhar.", "card c-e"),
+        ("06 · arquivo", "Arquivo consultável", "Tudo por tema e data, sempre à mão neste portal.", "card c-f"),
     ]
     bento = "".join(
         f'<div class="{cls}"><span class="k">{_esc(k)}</span><h3>{_esc(n)}</h3><p>{_esc(d)}</p></div>'
@@ -345,7 +346,7 @@ def landing():
         <div>
           <div class="eyebrow">{_esc(PRODUTO)}</div>
           <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — todo dia útil.</h1>
-          <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
+          <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, <em>áudio-resumo</em> pra ouvir no trânsito, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
           <div class="ctas">
             <a class="btn solid" href="{_cta()}">Quero assinar</a>
             <a class="btn ghost" href="/entrar">Já sou assinante</a>
@@ -363,6 +364,7 @@ def landing():
             <div class="crow"><span class="clab">5 mg</span><span class="ctrack"><span class="cfill" style="width:62%"></span></span><span class="cval">−15,0%</span></div>
           </div>
           <div class="hook"><div class="hl">Para as suas redes</div><div class="ht">"Manter o resultado é tão importante quanto alcançá-lo — e os dados de 3 anos reforçam isso."</div></div>
+          <div style="margin-top:14px;font-family:var(--ui);font-size:11.5px;letter-spacing:.04em;color:var(--inkpaper);opacity:.62">🎧 Áudio de ~2 min · 📄 PDF · direto no seu WhatsApp</div>
         </aside>
       </section>
 
