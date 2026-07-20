@@ -142,6 +142,18 @@ def init():
                 expira TEXT NOT NULL,
                 usado INTEGER DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS curadoria_candidatos (
+                id TEXT PRIMARY KEY,
+                tema TEXT, titulo TEXT, fonte TEXT, data TEXT, doi TEXT, url TEXT,
+                abstract TEXT, pergunta TEXT, score REAL, chave TEXT UNIQUE,
+                status TEXT DEFAULT 'novo', criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS reserva_resumos (
+                id TEXT PRIMARY KEY, candidato_id TEXT,
+                tema TEXT, titulo_pt TEXT, resumo TEXT, gancho TEXT, grafico TEXT,
+                doi TEXT, fonte TEXT, url TEXT, data TEXT,
+                status TEXT DEFAULT 'pronto', criado_em TEXT
+            );
             """
         )
     _migrar_colunas()
@@ -152,7 +164,8 @@ def init():
 
 
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
-            "pending_signups", "webhook_events", "cupons", "senha_tokens"]
+            "pending_signups", "webhook_events", "cupons", "senha_tokens",
+            "curadoria_candidatos", "reserva_resumos"]
 
 
 def _migrar_colunas():
@@ -264,6 +277,91 @@ def consumir_token_senha(token):
     """Marca o token como usado (uso único)."""
     with _conn() as c:
         c.execute("UPDATE senha_tokens SET usado=1 WHERE token=?", (token,))
+
+
+# ── Curadoria (candidatos) + Reserva (resumos prontos) — banco privado, NÃO publica ──
+def salvar_candidatos(cands):
+    """Insere candidatos novos (dedup por chave). Retorna quantos entraram."""
+    import secrets
+    from datetime import datetime
+    novos = 0
+    with _conn() as c:
+        for x in cands:
+            if not x.get("chave"):
+                continue
+            cur = c.execute(
+                """INSERT INTO curadoria_candidatos
+                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,status,criado_em)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
+                   ON CONFLICT (chave) DO NOTHING""",
+                (secrets.token_hex(8), x.get("tema", ""), x.get("titulo", ""), x.get("fonte", ""),
+                 x.get("data", ""), x.get("doi", ""), x.get("url", ""), x.get("abstract", ""),
+                 x.get("pergunta", ""), float(x.get("score", 0) or 0), x.get("chave"),
+                 datetime.now().isoformat()))
+            if cur.rowcount and cur.rowcount > 0:
+                novos += 1
+    return novos
+
+
+def listar_candidatos(status=None, tema=None):
+    q = "SELECT * FROM curadoria_candidatos"
+    conds, params = [], []
+    if status:
+        conds.append("status=?"); params.append(status)
+    if tema:
+        conds.append("tema=?"); params.append(tema)
+    if conds:
+        q += " WHERE " + " AND ".join(conds)
+    q += " ORDER BY tema, score DESC, criado_em DESC"
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+def definir_selecao(ids):
+    """Marca 'selecionado' os ids dados e volta p/ 'novo' os que saíram da seleção.
+    Não toca em 'resumido'/'descartado'."""
+    alvo = set(ids or [])
+    with _conn() as c:
+        atuais = [r["id"] for r in c.execute(
+            "SELECT id FROM curadoria_candidatos WHERE status IN ('novo','selecionado')").fetchall()]
+        for i in atuais:
+            c.execute("UPDATE curadoria_candidatos SET status=? WHERE id=?",
+                      ("selecionado" if i in alvo else "novo", i))
+
+
+def marcar_candidatos(ids, status):
+    with _conn() as c:
+        for i in (ids or []):
+            c.execute("UPDATE curadoria_candidatos SET status=? WHERE id=?", (status, i))
+
+
+def contar_candidatos():
+    with _conn() as c:
+        rows = c.execute("SELECT status, COUNT(*) n FROM curadoria_candidatos GROUP BY status").fetchall()
+    return {r["status"]: r["n"] for r in rows}
+
+
+def salvar_reserva(reg):
+    import secrets
+    from datetime import datetime
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO reserva_resumos
+               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?)""",
+            (secrets.token_hex(8), reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
+             reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
+             reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""), datetime.now().isoformat()))
+
+
+def listar_reserva(status=None):
+    q = "SELECT * FROM reserva_resumos"
+    params = []
+    if status:
+        q += " WHERE status=?"; params.append(status)
+    q += " ORDER BY criado_em DESC"
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
 
 
 def registrar_digest(art, conteudo, tmeta=None, data=None):

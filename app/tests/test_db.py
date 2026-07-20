@@ -91,6 +91,36 @@ class TestDb(unittest.TestCase):
                       ((datetime.now() - timedelta(minutes=1)).isoformat(), tok))
         self.assertIsNone(self.db.obter_token_senha(tok))
 
+    def _cand(self, chave, tema="Obesidade", titulo="X"):
+        return {"tema": tema, "titulo": titulo, "fonte": "NEJM", "data": "2026-02-01",
+                "doi": chave, "url": "", "abstract": "abc", "pergunta": "Funciona?",
+                "score": 8.0, "chave": chave}
+
+    def test_candidatos_dedup_e_selecao(self):
+        n = self.db.salvar_candidatos([self._cand("10.1/a"), self._cand("10.1/b"), self._cand("10.1/a")])
+        self.assertEqual(n, 2)                                    # dedup por chave
+        self.assertEqual(self.db.salvar_candidatos([self._cand("10.1/a")]), 0)   # já existe
+        cands = self.db.listar_candidatos(status="novo")
+        self.assertEqual(len(cands), 2)
+        ids = [c["id"] for c in cands]
+        self.db.definir_selecao([ids[0]])
+        self.assertEqual(len(self.db.listar_candidatos(status="selecionado")), 1)
+        # tirar da seleção volta p/ novo
+        self.db.definir_selecao([])
+        self.assertEqual(len(self.db.listar_candidatos(status="selecionado")), 0)
+        self.assertEqual(len(self.db.listar_candidatos(status="novo")), 2)
+
+    def test_reserva_roundtrip(self):
+        self.db.salvar_candidatos([self._cand("10.1/z")])
+        cid = self.db.listar_candidatos()[0]["id"]
+        self.db.marcar_candidatos([cid], "resumido")
+        self.db.salvar_reserva({"candidato_id": cid, "tema": "Obesidade", "titulo_pt": "Título",
+                                "resumo": "corpo", "gancho": "g", "grafico": "", "doi": "10.1/z"})
+        res = self.db.listar_reserva(status="pronto")
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["titulo_pt"], "Título")
+        self.assertEqual(self.db.contar_candidatos().get("resumido"), 1)
+
     def test_cupom(self):
         import importlib
         os.environ["DSCURSO_CUPONS"] = "DIEGO2026, cortesia"

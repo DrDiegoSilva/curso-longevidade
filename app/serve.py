@@ -102,6 +102,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
             return self._html(review_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN), 200)
+        if path.startswith("/curadoria"):
+            import config, db, site_web
+            q = up.parse_qs(up.urlparse(self.path).query)
+            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            cands = db.listar_candidatos(status="novo") + db.listar_candidatos(status="selecionado")
+            return self._html(site_web.pagina_curadoria(
+                cands, db.listar_reserva(), db.contar_candidatos(), config.ADMIN_TOKEN,
+                msg=q.get("msg", [""])[0]), 200)
         if self._site():
             return self._site_get(path)
         # fallback: ebook (host curso./demais) — comportamento original
@@ -210,6 +219,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif g("acao") == "remover":
                 subscribers.remover(g("id"))
             return self._html("<meta http-equiv='refresh' content='0;url=/admin?token=" + config.ADMIN_TOKEN + "'>")
+        if path == "/curadoria":
+            import config, db, curadoria
+            if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            acao, msg = g("acao"), ""
+            if acao == "selecionar":
+                ids = form.get("sel", [])
+                db.definir_selecao(ids)
+                msg = f"Seleção salva ({len(ids)} marcados)."
+            elif acao == "varrer":
+                try:
+                    msg = f"Varredura concluída: {curadoria.rodar_varredura()} novos candidatos."
+                except Exception as e:
+                    print(f"[curadoria] varredura erro: {e}", flush=True); msg = "Falha na varredura (ver logs)."
+            elif acao == "gerar":
+                try:
+                    msg = f"{curadoria.gerar_selecionados()} resumo(s) gerado(s) para a reserva."
+                except Exception as e:
+                    print(f"[curadoria] gerar erro: {e}", flush=True); msg = "Falha ao gerar resumos (ver logs)."
+            return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/entrar":
             import site_web, auth_web
             wpp = g("whatsapp")

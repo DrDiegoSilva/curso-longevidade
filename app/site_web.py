@@ -82,6 +82,15 @@ label{display:block;font-family:system-ui,sans-serif;font-size:12px;letter-spaci
 input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;
   color:var(--creme);font-size:20px;font-family:Georgia,serif;padding:14px 16px;margin-bottom:18px;letter-spacing:.04em}
 .infobox{background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.4);color:var(--creme);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
+.candi{display:flex;gap:14px;align-items:flex-start;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:.15s}
+.candi:hover{border-color:rgba(201,162,39,.55);background:rgba(255,255,255,.06)}
+.candi input[type=checkbox]{margin-top:4px;width:20px;height:20px;flex:none;accent-color:var(--ouro);cursor:pointer}
+.cbody{display:flex;flex-direction:column;gap:4px}
+.ctitle{font-family:"Cormorant Garamond",Georgia,serif;font-size:19px;color:var(--creme);line-height:1.22}
+.cperg{font-family:system-ui,sans-serif;font-size:14px;color:var(--ouro2)}
+.cmeta{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--suave)}
+.actbtn{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.03em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));border:none;cursor:pointer;padding:11px 22px;border-radius:100px}
+.actbtn.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5)}
 input:focus{outline:none;border-color:var(--ouro)}
 button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
 .erro{background:rgba(180,40,40,.18);border:1px solid rgba(220,90,90,.4);color:#ffd9d9;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
@@ -324,6 +333,63 @@ def pagina_msg(titulo, texto, logado=False):
       <p style="margin-top:18px"><a class="cta ghost" href="/entrar">Voltar para o login</a></p>
     </div></div>"""
     return _pagina(f"{titulo} · {PRODUTO}", corpo, logado=logado, meta_extra='<meta name="robots" content="noindex">')
+
+
+# ── Curadoria / Reserva (admin, token) — banco privado, NÃO publica no arquivo ──
+def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
+    from collections import OrderedDict
+    tok = _esc(token)
+    grupos = OrderedDict()
+    for c in candidatos:
+        grupos.setdefault(c.get("tema", "—"), []).append(c)
+    stats = (f'{contagem.get("novo", 0)} novos · {contagem.get("selecionado", 0)} selecionados · '
+             f'{contagem.get("resumido", 0)} já resumidos · {len(reserva)} na reserva')
+    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+    acoes = f"""
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 22px">
+        <form method="post" action="/curadoria" onsubmit="return confirm('Rodar a varredura de 2026 no Europe PMC (Haiku)? Pode levar 1–2 min.')">
+          <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="varrer">
+          <button class="actbtn" type="submit">🔎 Rodar varredura 2026</button>
+        </form>
+        <form method="post" action="/curadoria" onsubmit="return confirm('Gerar os resumos (padrão de qualidade) dos selecionados? Usa IA.')">
+          <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="gerar">
+          <button class="actbtn ghost" type="submit">✍️ Gerar resumos dos selecionados</button>
+        </form>
+      </div>"""
+    blocos = []
+    for tema, lst in grupos.items():
+        itens = "".join(
+            f'<label class="candi">'
+            f'<input type="checkbox" name="sel" value="{_esc(c.get("id"))}"{" checked" if c.get("status") == "selecionado" else ""}>'
+            f'<span class="cbody"><span class="ctitle">{_esc(c.get("titulo"))}</span>'
+            f'<span class="cperg">❓ {_esc(c.get("pergunta") or "—")}</span>'
+            f'<span class="cmeta">{_esc(c.get("fonte", ""))} · {_esc(c.get("data", ""))} · score {_esc(round(float(c.get("score") or 0), 1))}'
+            f'{" · DOI " + _esc(c.get("doi")) if c.get("doi") else ""}</span></span></label>'
+            for c in lst)
+        emoji = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵", "Performance": "🏃", "Longevidade": "🧬"}.get(tema, "•")
+        blocos.append(f'<div class="sectag" style="margin-top:24px">{emoji} {_esc(tema)} · {len(lst)}</div>{itens}')
+    lista = "".join(blocos) or '<p class="hint">Nenhum candidato ainda. Clique em <strong>Rodar varredura 2026</strong>.</p>'
+    form_lista = f"""
+      <form method="post" action="/curadoria">
+        <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="selecionar">
+        {lista}
+        <div style="position:sticky;bottom:0;padding:14px 0;margin-top:8px;background:linear-gradient(0deg,var(--verde) 40%,transparent)">
+          <button class="actbtn" type="submit">💾 Salvar seleção</button>
+        </div>
+      </form>"""
+    res_html = "".join(
+        f'<div class="item"><div class="d">{_esc(r.get("tema"))}</div><div class="t">{_esc(r.get("titulo_pt"))}</div></div>'
+        for r in reserva) or '<p class="hint">Reserva vazia. Selecione candidatos e clique em <strong>Gerar resumos</strong>.</p>'
+    corpo = f"""
+    <div class="wrap">
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:10px 0 4px">Curadoria · Reserva 2026</h2>
+      <p class="hint">{stats}</p>
+      {msg_html}{acoes}
+      <p class="hint">Leia o <strong>título</strong> + a <strong>pergunta</strong> e marque os que valem resumir. Nada vai pro arquivo dos assinantes — é sua reserva privada.</p>
+      {form_lista}
+      <section class="sec"><h2 class="disp" style="font-size:30px">Reserva pronta</h2>{res_html}</section>
+    </div>"""
+    return _pagina("Curadoria · Reserva", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
 
 
 # ── Arquivo (protegido) ──
