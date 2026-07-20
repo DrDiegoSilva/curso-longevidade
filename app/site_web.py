@@ -312,7 +312,7 @@ def landing():
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(p["nota"])}</div>' if p.get("nota") else "")
-        + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS)
+        + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS if not p.get("oculto"))
     corpo = f"""
     <div class="wrap">
       <section class="hero">
@@ -911,7 +911,7 @@ def _pick_planos():
     cards = "".join(
         f'<a href="/assinar?plano={_esc(p["slug"])}"><div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"])}</div><div class="pe">{_esc(p["periodo"])}</div></a>'
-        for p in config.PLANOS)
+        for p in config.PLANOS if not p.get("oculto"))
     return (f'<div class="wrap"><section class="sec"><h2 class="disp">Escolha seu plano</h2>'
             f'<p class="sub">O mensal renova sozinho (cancela quando quiser). Os planos maiores '
             f'saem mais barato por mês.</p><div class="pick">{cards}</div>'
