@@ -69,9 +69,35 @@ def enviar_pdf(whatsapp, pdf_path, caption=""):
     return _zapi_post("send-document/pdf", {"phone": whatsapp, "document": pdf_path, "caption": caption})
 
 
+def numeros_curadores():
+    """Números que recebem a revisão das 18h: o(s) admin(s) (Dr. Diego, sempre) +
+    assinantes marcados como 'curador' na tela de Assinantes. Normalizado e sem
+    repetição. NÃO usa mais a env WHATSAPP_DESTINO (apontava p/ o nº automático)."""
+    import phone
+    nums = [phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])]
+    try:
+        import subscribers
+        nums += [phone.normalizar(s.get("whatsapp", "")) for s in subscribers.curadores()]
+    except Exception as e:
+        print(f"[curador] falha ao carregar curadores: {e}", flush=True)
+    vistos, out = set(), []
+    for n in nums:
+        if n and n not in vistos:
+            vistos.add(n)
+            out.append(n)
+    return out
+
+
 def enviar_curador(msg):
-    """Aviso ao curador (Dr. Diego) — usado pelos jobs 18h/08h."""
-    return enviar_texto(config.whatsapp_destino(), msg)
+    """Aviso ao curador (Dr. Diego + curadores convidados) — jobs 18h/08h.
+    Envia a cada curador; falha de um não derruba os outros."""
+    res = None
+    for num in numeros_curadores():
+        try:
+            res = enviar_texto(num, msg)
+        except Exception as e:
+            print(f"[curador] envio p/ {num} falhou: {e}", flush=True)
+    return res
 
 
 def distribuir(rascunho, assinantes, delay_sec, enviar_fn):

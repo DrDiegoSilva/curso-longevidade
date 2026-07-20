@@ -337,12 +337,29 @@ def pagina_msg(titulo, texto, logado=False):
 
 def pagina_admin(assinantes, token=""):
     """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
+    import phone
     tk = _esc(token)
+    admins = {phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])}
     def badge(st):
         cor = {"ATIVO": "#2f9e6b", "INADIMPLENTE": "#c9a227", "CANCELADO": "#c0562f"}.get(st, "#7a8a84")
         return (f'<span style="font-family:system-ui;font-size:11px;font-weight:700;letter-spacing:.05em;'
                 f'padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">'
                 f'{_esc(st or "—")}</span>')
+    def cel_curador(s):
+        eh_admin = phone.normalizar(s.get("whatsapp", "")) in admins
+        if eh_admin:
+            return ('<span style="font-family:system-ui;font-size:11px;font-weight:700;letter-spacing:.05em;'
+                    'padding:4px 11px;border-radius:100px;background:#c9a22722;color:var(--ouro2);'
+                    'border:1px solid #c9a22766">★ sempre</span>')
+        ativo = bool(s.get("curador"))
+        prox = "0" if ativo else "1"
+        rotulo = "✔ curador" if ativo else "tornar curador"
+        cls = "actbtn" if ativo else "actbtn ghost"
+        return (f'<form method="post" action="/admin" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="curador">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<input type="hidden" name="on" value="{prox}">'
+                f'<button class="{cls}" style="padding:6px 13px;font-size:12px">{rotulo}</button></form>')
     linhas = "".join(
         '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
         f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
@@ -351,23 +368,26 @@ def pagina_admin(assinantes, token=""):
         f'<td style="padding:13px 10px;font-size:13px;color:var(--ouro2)">{_esc(s.get("plano") or "—")}</td>'
         f'<td style="padding:13px 10px">{badge(s.get("status"))}</td>'
         f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--suave)">{_esc(s.get("proximo_vencimento") or "—")}</td>'
+        f'<td style="padding:13px 10px">{cel_curador(s)}</td>'
         f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
         f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
         f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
         f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px">remover</button></form></td></tr>'
         for s in assinantes)
     ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
+    n_cur = sum(1 for s in assinantes if s.get("curador"))
     corpo = f"""
     <div class="wrap">
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
-      <p class="hint">{len(assinantes)} no total · {ativos} ativos &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      <div class="infobox" style="margin:14px 0"><strong>Curadoria:</strong> quem estiver marcado como <strong>curador</strong> recebe, todo dia útil às <strong>18h</strong>, o resumo do dia com o link para revisar/aprovar antes do envio das 8h. Você (admin) recebe <em>sempre</em>. Marque um médico convidado aqui para ele ajudar na revisão.</div>
       <div style="overflow-x:auto;margin:18px 0">
-        <table style="width:100%;border-collapse:collapse;min-width:760px">
+        <table style="width:100%;border-collapse:collapse;min-width:820px">
           <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
             <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
-            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th></th></tr></thead>
-          <tbody>{linhas or '<tr><td colspan="7" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
+            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th></th></tr></thead>
+          <tbody>{linhas or '<tr><td colspan="8" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
         </table>
       </div>
       <div class="panel" style="max-width:520px;margin:10px 0">

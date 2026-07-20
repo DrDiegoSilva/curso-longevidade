@@ -121,7 +121,7 @@ def init():
                 asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
                 proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
                 criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT,
-                senha_hash TEXT
+                senha_hash TEXT, curador INTEGER DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS pending_signups (
                 token TEXT PRIMARY KEY,
@@ -186,6 +186,7 @@ def _migrar_colunas():
     p/ o Supabase de produção que foi criado antes desta coluna existir."""
     with _conn() as c:
         _add_coluna(c, "subscribers", "senha_hash", "TEXT")
+        _add_coluna(c, "subscribers", "curador", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")

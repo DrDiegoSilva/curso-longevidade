@@ -147,3 +147,16 @@ def definir_senha(id, senha_hash):
     _ensure()
     with db._conn() as c:
         c.execute("UPDATE subscribers SET senha_hash=? WHERE id=?", (senha_hash, id))
+
+
+def definir_curador(id, on):
+    """Liga/desliga o flag 'curador' (recebe a revisão das 18h). Fora de _COLS de
+    propósito: o upsert de pagamento não pode zerar essa escolha."""
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET curador=? WHERE id=?", (1 if on else 0, id))
+
+
+def curadores():
+    """Assinantes ATIVOS marcados como curador (recebem o resumo do dia p/ revisar)."""
+    return [s for s in ativos() if s.get("curador")]

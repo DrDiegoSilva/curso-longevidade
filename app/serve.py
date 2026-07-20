@@ -222,14 +222,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             draft_store.aplicar(r["data"], g("acao"), g("texto"))
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
         if path == "/admin":
-            import config, subscribers
-            if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
+            import config, subscribers, auth_web
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
-            if g("acao") == "adicionar":
+            acao = g("acao")
+            if acao == "adicionar":
                 subscribers.adicionar(g("nome"), g("whatsapp"))
-            elif g("acao") == "remover":
+            elif acao == "remover":
                 subscribers.remover(g("id"))
-            return self._html("<meta http-equiv='refresh' content='0;url=/admin?token=" + config.ADMIN_TOKEN + "'>")
+            elif acao == "curador":
+                subscribers.definir_curador(g("id"), g("on") == "1")
+            return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
         if path == "/curadoria":
             import config, db, curadoria
             if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
