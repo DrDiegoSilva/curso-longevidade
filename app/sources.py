@@ -118,6 +118,39 @@ def _openalex_normalizado(query, desde, ate):
     return out
 
 
+def parse_semanticscholar(data):
+    """Normaliza a resposta do Semantic Scholar. Só artigos COM abstract. Puro/testável."""
+    out = []
+    for p in (data or {}).get("data", []) or []:
+        ab = (p.get("abstract") or "").strip()
+        if len(ab) < 120:
+            continue
+        doi = (p.get("externalIds") or {}).get("DOI") or ""
+        out.append({
+            "titulo": (p.get("title") or "").strip(),
+            "resumo": " ".join(ab.split()),
+            "fonte": p.get("venue") or "",
+            "doi": doi,
+            "url": (f"https://doi.org/{doi}" if doi else (p.get("url") or "")),
+            "data": p.get("publicationDate") or (str(p.get("year")) if p.get("year") else ""),
+            "tipo": "",
+            "banco": "semanticscholar",
+        })
+    return out
+
+
+def _semanticscholar_normalizado(query, desde, ate):
+    """Semantic Scholar (200M+ papers, abstract + TLDR). EXIGE chave grátis
+    (SEMANTIC_SCHOLAR_KEY); sem chave, devolve [] (evita o 429 do pool público)."""
+    key = os.environ.get("SEMANTIC_SCHOLAR_KEY")
+    if not key:
+        return []
+    anos = f"{(desde or '')[:4]}-{(ate or '')[:4]}"
+    url = ("https://api.semanticscholar.org/graph/v1/paper/search?query=" + urllib.parse.quote(query)
+           + "&fields=title,abstract,venue,year,publicationDate,externalIds&limit=40&year=" + urllib.parse.quote(anos))
+    return parse_semanticscholar(_get(url, headers={"User-Agent": "DSCurso/1.0", "x-api-key": key}))
+
+
 def _pubmed(query, desde, ate):
     q = urllib.parse.quote(f"{query} AND ({desde}[dp] : {ate}[dp])")
     ids = _get(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=30&term={q}")
@@ -137,9 +170,9 @@ def _clinicaltrials(query, desde, ate):
 def search_all(query, desde, ate):
     """Agrega os bancos que ENTREGAM abstract. Falha de um NÃO derruba os outros.
     PubMed (esummary) foi aposentado: vem SEM abstract e o Europe PMC já indexa o MEDLINE.
-    Semantic Scholar exige chave (429 sem ela) — fica de fora até termos chave."""
+    Semantic Scholar entra só se SEMANTIC_SCHOLAR_KEY estiver setada (sem chave → [], sem 429)."""
     arts = []
-    for fn in (_epmc_normalizado, _openalex_normalizado, _clinicaltrials):
+    for fn in (_epmc_normalizado, _openalex_normalizado, _semanticscholar_normalizado, _clinicaltrials):
         try:
             arts += fn(query, desde, ate)
         except Exception as e:

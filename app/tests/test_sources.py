@@ -38,5 +38,27 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(out[0]["resumo"], "resumo do ensaio")
 
 
+class TestSemanticScholar(unittest.TestCase):
+    def test_parse_so_com_abstract(self):
+        data = {"data": [
+            {"title": "A", "abstract": "x" * 200, "venue": "NEJM", "year": 2026,
+             "publicationDate": "2026-02-01", "externalIds": {"DOI": "10.1/a"}},
+            {"title": "B", "abstract": "curto", "venue": "BMJ"},          # < 120 -> fora
+            {"title": "C", "abstract": None, "venue": "Lancet"}]}         # sem abstract -> fora
+        out = sources.parse_semanticscholar(data)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["doi"], "10.1/a")
+        self.assertEqual(out[0]["url"], "https://doi.org/10.1/a")
+        self.assertEqual(out[0]["banco"], "semanticscholar")
+
+    def test_sem_chave_nao_chama(self):
+        antigo = os.environ.pop("SEMANTIC_SCHOLAR_KEY", None)
+        try:
+            self.assertEqual(sources._semanticscholar_normalizado("q", "2026-01-01", "2026-07-19"), [])
+        finally:
+            if antigo is not None:
+                os.environ["SEMANTIC_SCHOLAR_KEY"] = antigo
+
+
 if __name__ == "__main__":
     unittest.main()
