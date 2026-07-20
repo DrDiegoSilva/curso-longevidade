@@ -427,6 +427,13 @@ def listar_reserva(status=None):
         return [dict(r) for r in c.execute(q, params).fetchall()]
 
 
+def contar_reserva_pronto():
+    """Quantos resumos 'pronto' (estoque disponível p/ enviar) há na reserva."""
+    with _conn() as c:
+        r = c.execute("SELECT COUNT(*) n FROM reserva_resumos WHERE status='pronto'").fetchone()
+    return r["n"] if r else 0
+
+
 def proximo_da_reserva():
     """Próximo resumo a enviar da fila: prioridade (artigos do Diego) primeiro, depois
     os mais antigos. Só 'pronto'. Retorna dict ou None (não marca — o envio confirma)."""

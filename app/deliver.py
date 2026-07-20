@@ -108,6 +108,23 @@ def enviar_curador(msg):
     return res
 
 
+def enviar_admin(msg):
+    """Aviso SÓ pro(s) admin(s) (Dr. Diego) — não vai pros curadores convidados.
+    Usado p/ alertas operacionais (ex.: estoque de estudos baixo)."""
+    import phone
+    res, vistos = None, set()
+    for w in (config.ADMIN_WHATSAPPS or []):
+        n = phone.normalizar(w)
+        if not n or n in vistos:
+            continue
+        vistos.add(n)
+        try:
+            res = enviar_texto(n, msg)
+        except Exception as e:
+            print(f"[admin] envio p/ {n} falhou: {e}", flush=True)
+    return res
+
+
 def distribuir(rascunho, assinantes, delay_sec, enviar_fn):
     """Loop com throttle. enviar_fn(whatsapp, nome) injetável (testável sem rede).
     Falha em um assinante não derruba o lote."""

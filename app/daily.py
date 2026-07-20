@@ -27,6 +27,7 @@ import buscar_estudos as be
 DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
 REFILL_MINIMO = 2          # reabastece quando a fila cai abaixo disso
 JANELA_BUSCA_DIAS = 21     # janela da busca ao reabastecer
+ESTOQUE_MINIMO = 10        # avisa o admin quando a reserva de resumos prontos cai abaixo disso
 
 
 def _cfg():
@@ -64,6 +65,22 @@ def reabastecer():
         except Exception as e:
             print(f"[reabastecer] {nome} falhou: {e}", flush=True)
     return total
+
+
+def avisar_estoque_baixo():
+    """Se a reserva (estoque de resumos prontos) cair abaixo de ESTOQUE_MINIMO, avisa
+    o admin p/ rodar a curadoria e reabastecer. Fail-safe: nunca derruba o envio."""
+    try:
+        import db
+        n = db.contar_reserva_pronto()
+    except Exception as e:
+        print(f"[estoque] falha ao contar reserva: {e}", flush=True)
+        return
+    if n < ESTOQUE_MINIMO:
+        deliver.enviar_admin(f"⚠️ Estoque de estudos baixo: *{n}* prontos na reserva "
+                             f"(mínimo {ESTOQUE_MINIMO}). Abra a *Curadoria* no painel e rode uma "
+                             f"varredura pra reabastecer.")
+    print(f"[estoque] reserva com {n} prontos (mínimo {ESTOQUE_MINIMO})", flush=True)
 
 
 def _conteudo_do_rascunho(r):
@@ -232,3 +249,4 @@ def enviar_08h():
     rd.registrar([art["doi"]] if art.get("doi") else [])
     deliver.enviar_curador(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
                            + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))
+    avisar_estoque_baixo()      # depois de consumir, avisa se a reserva ficou abaixo do mínimo
