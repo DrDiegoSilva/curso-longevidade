@@ -395,6 +395,25 @@ def marcar_reserva_enviado(rid):
                   (datetime.now().isoformat(), rid))
 
 
+def atualizar_reserva(rid, titulo_pt=None, resumo=None):
+    """Edita título e/ou resumo de um item da reserva (curador ajusta o que a IA gerou)."""
+    sets, params = [], []
+    if titulo_pt is not None:
+        sets.append("titulo_pt=?"); params.append(titulo_pt)
+    if resumo is not None:
+        sets.append("resumo=?"); params.append(resumo)
+    if not sets:
+        return
+    params.append(rid)
+    with _conn() as c:
+        c.execute(f"UPDATE reserva_resumos SET {','.join(sets)} WHERE id=?", params)
+
+
+def remover_reserva(rid):
+    with _conn() as c:
+        c.execute("DELETE FROM reserva_resumos WHERE id=?", (rid,))
+
+
 def registrar_digest(art, conteudo, tmeta=None, data=None):
     """Upsert de um digest enviado (chave = data + tema_slug)."""
     from datetime import datetime

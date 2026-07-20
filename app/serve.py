@@ -269,6 +269,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"{curadoria.gerar_selecionados()} resumo(s) gerado(s) para a reserva."
                 except Exception as e:
                     print(f"[curadoria] gerar erro: {e}", flush=True); msg = "Falha ao gerar resumos (ver logs)."
+            elif acao == "editar_reserva":
+                db.atualizar_reserva(g("id"), titulo_pt=g("titulo_pt"), resumo=g("resumo"))
+                msg = "Item da reserva atualizado."
+            elif acao == "remover_reserva":
+                db.remover_reserva(g("id"))
+                msg = "Item removido da reserva."
             return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/entrar":
             import site_web, auth_web

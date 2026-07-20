@@ -487,6 +487,20 @@ def pagina_msg(titulo, texto, logado=False):
     return _pagina(f"{titulo} · {PRODUTO}", corpo, logado=logado, meta_extra='<meta name="robots" content="noindex">')
 
 
+def _admin_nav(token="", atual=""):
+    """Barra de navegação entre as telas de admin (Assinantes · Curadoria · Minha conta)."""
+    tk = f"?token={_esc(token)}" if token else ""
+    def lk(href, rot, key):
+        cls = "actbtn" if key == atual else "actbtn ghost"
+        return (f'<a class="{cls}" href="{href}{tk}" '
+                f'style="text-decoration:none;padding:8px 15px;font-size:13px">{rot}</a>')
+    return ('<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:4px 0 18px">'
+            + lk("/admin", "👥 Assinantes", "assinantes")
+            + lk("/curadoria", "🔬 Curadoria", "curadoria")
+            + '<a class="actbtn ghost" href="/minha" style="text-decoration:none;padding:8px 15px;font-size:13px">← Minha conta</a>'
+            + '</div>')
+
+
 def pagina_admin(assinantes, token=""):
     """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
     import phone
@@ -530,6 +544,7 @@ def pagina_admin(assinantes, token=""):
     n_cur = sum(1 for s in assinantes if s.get("curador"))
     corpo = f"""
     <div class="wrap">
+      {_admin_nav(token, "assinantes")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
@@ -597,9 +612,33 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
           <button class="actbtn" type="submit">💾 Salvar seleção</button>
         </div>
       </form>"""
-    res_html = "".join(
-        f'<div class="item"><div class="d">{_esc(r.get("tema"))}</div><div class="t">{_esc(r.get("titulo_pt"))}</div></div>'
-        for r in reserva) or '<p class="hint">Reserva vazia. Selecione candidatos e clique em <strong>Gerar resumos</strong>.</p>'
+    def _reserva_item(r):
+        rid = _esc(r.get("id"))
+        prio = ' · <span style="color:var(--ouro2)">★ prioridade</span>' if r.get("prioridade") else ""
+        return (
+            f'<div class="item">'
+            f'<div class="d">{_esc(r.get("tema"))} · {_esc(r.get("status"))}{prio}</div>'
+            f'<div class="t">{_esc(r.get("titulo_pt"))}</div>'
+            f'<details style="margin-top:8px">'
+            f'<summary style="cursor:pointer;color:var(--ouro2);font-family:system-ui,sans-serif;font-size:13px">✏️ editar / remover</summary>'
+            f'<form method="post" action="/curadoria" style="margin-top:12px">'
+            f'<input type="hidden" name="token" value="{tok}">'
+            f'<input type="hidden" name="acao" value="editar_reserva">'
+            f'<input type="hidden" name="id" value="{rid}">'
+            f'<label>Título</label>'
+            f'<input type="text" name="titulo_pt" value="{_esc(r.get("titulo_pt"))}" style="width:100%">'
+            f'<label style="margin-top:10px">Resumo (pode ajustar o texto que a IA gerou)</label>'
+            f'<textarea name="resumo" rows="10">{_esc(r.get("resumo"))}</textarea>'
+            f'<button class="actbtn" type="submit">Salvar alterações</button>'
+            f'</form>'
+            f'<form method="post" action="/curadoria" onsubmit="return confirm(\'Remover este item da reserva?\')" style="margin-top:10px">'
+            f'<input type="hidden" name="token" value="{tok}">'
+            f'<input type="hidden" name="acao" value="remover_reserva">'
+            f'<input type="hidden" name="id" value="{rid}">'
+            f'<button class="actbtn ghost" type="submit">🗑️ Remover da reserva</button>'
+            f'</form>'
+            f'</details></div>')
+    res_html = "".join(_reserva_item(r) for r in reserva) or '<p class="hint">Reserva vazia. Selecione candidatos e clique em <strong>Gerar resumos</strong>.</p>'
     add_form = f"""
       <div class="panel" style="max-width:none;margin:0 0 24px">
         <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:25px;color:var(--ouro2);margin-bottom:6px">➕ Adicionar meu estudo</h3>
@@ -620,14 +659,15 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
       </div>"""
     corpo = f"""
     <div class="wrap">
-      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:10px 0 4px">Curadoria · Reserva 2026</h2>
+      {_admin_nav(token, "curadoria")}
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:6px 0 4px">Curadoria · Reserva 2026</h2>
       <p class="hint">{stats}</p>
       {msg_html}{acoes}{add_form}
       <p class="hint">Leia o <strong>título</strong> + a <strong>pergunta</strong> e marque os que valem resumir. Nada vai pro arquivo dos assinantes — é sua reserva privada.</p>
       {form_lista}
       <section class="sec"><h2 class="disp" style="font-size:30px">Reserva pronta</h2>{res_html}</section>
     </div>"""
-    return _pagina("Curadoria · Reserva", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
+    return _pagina("Curadoria · Reserva", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
 # ── Arquivo (protegido) ──
