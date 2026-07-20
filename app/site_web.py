@@ -572,7 +572,7 @@ def pagina_whatsapp(info_dict, conn, token=""):
     return _pagina("WhatsApp · Admin", corpo, logado=True, meta_extra=refresh + '<meta name="robots" content="noindex">')
 
 
-def pagina_admin(assinantes, token=""):
+def pagina_admin(assinantes, token="", cupons=None):
     """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
     import phone
     tk = _esc(token)
@@ -613,6 +613,15 @@ def pagina_admin(assinantes, token=""):
         for s in assinantes)
     ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
     n_cur = sum(1 for s in assinantes if s.get("curador"))
+    def _cupom_row(c):
+        on = bool(c.get("ativo"))
+        cor = "#2f9e6b" if on else "#7a8a84"
+        uu = "uso único" if c.get("uso_unico") else "multi-uso"
+        return (f'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid rgba(233,225,198,.1)">'
+                f'<div><span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;color:var(--ouro2);letter-spacing:.06em">{_esc(c.get("codigo"))}</span>'
+                f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {c.get("usos", 0)} uso(s)</div></div>'
+                f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{"ATIVO" if on else "USADO"}</span></div>')
+    cupons_lista = "".join(_cupom_row(c) for c in (cupons or [])) or '<p class="hint" style="margin-top:8px">Nenhum cupom gerado ainda.</p>'
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "assinantes")}
@@ -628,14 +637,28 @@ def pagina_admin(assinantes, token=""):
           <tbody>{linhas or '<tr><td colspan="8" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
         </table>
       </div>
-      <div class="panel" style="max-width:520px;margin:10px 0">
-        <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:10px">Adicionar cortesia</h3>
-        <form method="post" action="/admin">
-          <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
-          <label>Nome</label><input type="text" name="nome">
-          <label>WhatsApp (com DDD)</label><input type="text" name="whatsapp" placeholder="(43) 99999-0000">
-          <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
-        </form>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
+        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Adicionar cortesia</h3>
+          <p class="hint" style="margin-bottom:12px">Cadastra a pessoa direto como assinante ativo (sem cupom).</p>
+          <form method="post" action="/admin">
+            <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
+            <label>Nome</label><input type="text" name="nome">
+            <label>WhatsApp (com DDD)</label><input type="text" name="whatsapp" placeholder="(43) 99999-0000">
+            <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
+          </form>
+        </div>
+        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Cupons de cortesia</h3>
+          <p class="hint" style="margin-bottom:12px">Gere um cupom de <strong>uso único</strong>. Quem digitar no cadastro entra grátis; depois de 1 uso, ele desativa sozinho.</p>
+          <form method="post" action="/admin">
+            <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="gerar_cupom">
+            <label>Descrição (opcional — pra você lembrar de quem é)</label>
+            <input type="text" name="descricao" placeholder="ex.: Dr. Fulano, cortesia evento">
+            <button class="actbtn" type="submit" style="margin-top:14px">➕ Gerar cupom de uso único</button>
+          </form>
+          <div style="margin-top:16px">{cupons_lista}</div>
+        </div>
       </div>
     </div>"""
     return _pagina("Assinantes · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')

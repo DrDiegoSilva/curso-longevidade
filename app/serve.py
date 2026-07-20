@@ -127,13 +127,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             conn = evolution_admin.conectar() if inf.get("estado") != "open" else None
             return self._html(site_web.pagina_whatsapp(inf, conn, config.ADMIN_TOKEN or ""), 200)
         if path.startswith("/admin"):
-            import config, subscribers, site_web, auth_web
+            import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
             sess = self._sessao()
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
-            return self._html(site_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN or ""), 200)
+            db.init()
+            return self._html(site_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons()), 200)
         if path.startswith("/curadoria"):
             import config, db, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -271,7 +272,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 evolution_admin.desconectar()
             return self._redirect(f"/admin/whatsapp?token={config.ADMIN_TOKEN}" if token_ok else "/admin/whatsapp")
         if path == "/admin":
-            import config, subscribers, auth_web
+            import config, subscribers, auth_web, db
             sess = self._sessao()
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
@@ -283,6 +284,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 subscribers.remover(g("id"))
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
+            elif acao == "gerar_cupom":
+                db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True)
             return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
         if path == "/curadoria":
             import config, db, curadoria
@@ -495,6 +498,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Cupom de cortesia: ativa na hora, sem Asaas
         if cupom and db.cupom_valido(cupom):
             subscribers.criar_de_pagamento({**dados, "plano": plano["slug"], "metodo": "CUPOM"}, {}, status="ATIVO")
+            db.consumir_cupom(cupom)          # gasta o cupom (uso único desativa)
             try:
                 import deliver
                 deliver.enviar_texto(subscribers._norm(dados["whatsapp"]),

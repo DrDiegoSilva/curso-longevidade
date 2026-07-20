@@ -195,6 +195,8 @@ def _migrar_colunas():
     with _conn() as c:
         _add_coluna(c, "subscribers", "senha_hash", "TEXT")
         _add_coluna(c, "subscribers", "curador", "INTEGER DEFAULT 0")
+        _add_coluna(c, "cupons", "usos", "INTEGER DEFAULT 0")
+        _add_coluna(c, "cupons", "uso_unico", "INTEGER DEFAULT 1")
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
@@ -214,8 +216,9 @@ def _seed_cupons():
         return
     with _conn() as c:
         for cod in codigos:
-            c.execute("INSERT INTO cupons (codigo,ativo,descricao,criado_em) VALUES (?,1,'seed',?) "
-                      "ON CONFLICT (codigo) DO NOTHING", (cod, datetime.now().isoformat()))
+            # cupons do env = multi-uso (o Diego compartilha o mesmo código)
+            c.execute("INSERT INTO cupons (codigo,ativo,descricao,uso_unico,criado_em) VALUES (?,1,'seed',0,?) "
+                      "ON CONFLICT (codigo) DO UPDATE SET uso_unico=0", (cod, datetime.now().isoformat()))
 
 
 def criar_pending(dados):
@@ -256,6 +259,35 @@ def cupom_valido(codigo):
     with _conn() as c:
         r = c.execute("SELECT ativo FROM cupons WHERE codigo=?", ((codigo or "").strip().upper(),)).fetchone()
     return bool(r and r["ativo"])
+
+
+def criar_cupom(descricao="", uso_unico=True, codigo=None):
+    """Gera um cupom de cortesia. Sem código informado, cria um aleatório. Retorna o código."""
+    import secrets
+    from datetime import datetime
+    cod = (codigo or secrets.token_hex(4)).strip().upper()
+    with _conn() as c:
+        c.execute("INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,criado_em) VALUES (?,1,?,0,?,?) "
+                  "ON CONFLICT (codigo) DO NOTHING",
+                  (cod, descricao or "", 1 if uso_unico else 0, datetime.now().isoformat()))
+    return cod
+
+
+def listar_cupons():
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM cupons ORDER BY criado_em DESC").fetchall()]
+
+
+def consumir_cupom(codigo):
+    """Marca 1 uso do cupom. Se for de uso único, desativa (ativo=0)."""
+    cod = (codigo or "").strip().upper()
+    with _conn() as c:
+        r = c.execute("SELECT uso_unico,usos FROM cupons WHERE codigo=?", (cod,)).fetchone()
+        if not r:
+            return
+        novos = (r["usos"] or 0) + 1
+        ativo = 0 if r["uso_unico"] else 1
+        c.execute("UPDATE cupons SET usos=?, ativo=? WHERE codigo=?", (novos, ativo, cod))
 
 
 # ── Tokens de definição/redefinição de senha ──
