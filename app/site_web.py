@@ -497,8 +497,53 @@ def _admin_nav(token="", atual=""):
     return ('<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:4px 0 18px">'
             + lk("/admin", "👥 Assinantes", "assinantes")
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
+            + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
             + '<a class="actbtn ghost" href="/minha" style="text-decoration:none;padding:8px 15px;font-size:13px">← Minha conta</a>'
             + '</div>')
+
+
+def pagina_whatsapp(info_dict, conn, token=""):
+    """Tela de conexão do WhatsApp do curso (status + QR/código + reconectar)."""
+    tk = _esc(token)
+    conectado = info_dict.get("estado") == "open"
+    if conectado:
+        num = _esc(info_dict.get("numero") or "?")
+        prof = f' · {_esc(info_dict.get("profile"))}' if info_dict.get("profile") else ""
+        status = (
+            f'<div class="infobox" style="background:rgba(47,158,107,.14);border-color:#2f9e6b66;color:var(--creme)">'
+            f'✅ <strong>Conectado</strong> — número <span class="mono">{num}</span>{prof}</div>'
+            f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">'
+            f'<form method="post" action="/admin/whatsapp" onsubmit="return confirm(\'Reiniciar a conexão do WhatsApp?\')" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="reiniciar">'
+            f'<button class="actbtn ghost" type="submit">🔄 Reiniciar conexão</button></form>'
+            f'<form method="post" action="/admin/whatsapp" onsubmit="return confirm(\'Desconectar este número? Vai precisar parear de novo pra enviar.\')" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="desconectar">'
+            f'<button class="actbtn ghost" type="submit">🔌 Desconectar</button></form></div>')
+        refresh = ""
+    else:
+        qr = (conn or {}).get("qr")
+        pc = (conn or {}).get("pairingCode")
+        qr_html = (f'<img src="{_esc(qr)}" alt="QR de conexão" style="width:260px;height:260px;background:#fff;border-radius:12px;padding:8px">'
+                   if qr else '<p class="hint">Gerando o QR… a página atualiza sozinha em instantes.</p>')
+        pc_html = (f'<div style="font-family:ui-monospace,monospace;font-size:27px;letter-spacing:.16em;color:var(--ouro2);margin-top:8px">{_esc(pc)}</div>'
+                   if pc else "")
+        status = (
+            f'<div class="infobox">⚠️ <strong>Desconectado</strong> — pareie o número que vai enviar o curso (no celular desse número).</div>'
+            f'<div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;margin-top:18px">'
+            f'<div>{qr_html}</div>'
+            f'<div style="flex:1;min-width:250px">'
+            f'<p class="hint"><strong>Jeito 1 — QR:</strong> WhatsApp do número novo → <em>Aparelhos conectados → Conectar um aparelho</em> → aponte a câmera pro QR ao lado.</p>'
+            f'<p class="hint" style="margin-top:14px"><strong>Jeito 2 — código:</strong> na mesma tela, toque em <em>"Conectar com número de telefone"</em> e digite:</p>{pc_html}'
+            f'<p class="hint" style="margin-top:16px">Esta página se atualiza sozinha — quando conectar, aparece o ✅ verde.</p>'
+            f'</div></div>')
+        refresh = '<meta http-equiv="refresh" content="10">'
+    corpo = (f'<div class="wrap">{_admin_nav(token, "whatsapp")}'
+             f'<div class="sectag" style="margin-top:8px">Painel do curador</div>'
+             f'<h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 10px">WhatsApp do curso</h2>'
+             f'<p class="hint">É por esta conexão que os estudos são enviados aos assinantes. '
+             f'Instância <span class="mono">{_esc(info_dict.get("instance"))}</span>.</p>'
+             f'{status}</div>')
+    return _pagina("WhatsApp · Admin", corpo, logado=True, meta_extra=refresh + '<meta name="robots" content="noindex">')
 
 
 def pagina_admin(assinantes, token=""):
@@ -786,7 +831,8 @@ def pagina_digest(meta, d, vizinhos=None):
 def pagina_minha(sub, admin=False):
     admin_html = ('<div class="infobox" style="margin:16px 0"><strong>Painel do curador</strong><br>'
                   '<a href="/curadoria" style="color:var(--ouro2)">🔬 Curadoria / Reserva</a> &nbsp;·&nbsp; '
-                  '<a href="/admin" style="color:var(--ouro2)">👥 Assinantes</a></div>') if admin else ""
+                  '<a href="/admin" style="color:var(--ouro2)">👥 Assinantes</a> &nbsp;·&nbsp; '
+                  '<a href="/admin/whatsapp" style="color:var(--ouro2)">📱 WhatsApp</a></div>') if admin else ""
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Minha assinatura</h2>

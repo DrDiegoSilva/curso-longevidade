@@ -116,6 +116,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header("Content-Type", "application/pdf"); self.end_headers()
                 return self.wfile.write(body)
             return self._html("<h3>PDF não encontrado</h3>", 404)
+        if path == "/admin/whatsapp":
+            import config, site_web, auth_web, evolution_admin
+            q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            inf = evolution_admin.info()
+            conn = evolution_admin.conectar() if inf.get("estado") != "open" else None
+            return self._html(site_web.pagina_whatsapp(inf, conn, config.ADMIN_TOKEN or ""), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -248,6 +258,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Link inválido</h3>", 404)
             draft_store.aplicar(r["data"], g("acao"), g("texto"))
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
+        if path == "/admin/whatsapp":
+            import config, auth_web, evolution_admin
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            acao = g("acao")
+            if acao == "reiniciar":
+                evolution_admin.reiniciar()
+            elif acao == "desconectar":
+                evolution_admin.desconectar()
+            return self._redirect(f"/admin/whatsapp?token={config.ADMIN_TOKEN}" if token_ok else "/admin/whatsapp")
         if path == "/admin":
             import config, subscribers, auth_web
             sess = self._sessao()
