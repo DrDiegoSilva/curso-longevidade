@@ -155,6 +155,15 @@ def enviar_08h():
     conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
     tmeta = _tema_meta(art.get("tema", ""))
 
+    audio_bytes = None                          # áudio é o MESMO p/ todos: gera 1x
+    if config.audio_ligado():
+        try:
+            import audio as audiomod
+            audio_bytes = audiomod.gerar_audio_do_estudo(art, conteudo)
+            print(f"[enviar] áudio gerado ({len(audio_bytes)} bytes)", flush=True)
+        except Exception as e:
+            print(f"[enviar] áudio falhou (segue sem): {e}", flush=True)
+
     def _envia(whatsapp, nome):
         import phone
         whatsapp = phone.normalizar(whatsapp)   # garante o 55 (registros antigos)
@@ -164,6 +173,11 @@ def enviar_08h():
         msg = deliver.personalizar_rodape(f"🔬 *{titulo}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
         deliver.enviar_pdf(whatsapp, ppath, caption=titulo)  # PDF local -> base64 (Evolution)
+        if audio_bytes:                          # + áudio narrado (não derruba o envio se falhar)
+            try:
+                deliver.enviar_audio(whatsapp, audio_bytes)
+            except Exception as e:
+                print(f"[enviar] áudio p/ {whatsapp} falhou: {e}", flush=True)
 
     res = deliver.distribuir(r, subscribers.ativos(), config.SEND_DELAY_SEC, _envia)
     r["status"] = "SENT"

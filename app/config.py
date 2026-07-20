@@ -107,6 +107,17 @@ TAXA_FIXA = float(os.environ.get("DSCURSO_TAXA_FIXA") or "0.49")
 def cupons_seed():
     return [c.strip().upper() for c in (os.environ.get("DSCURSO_CUPONS") or "").split(",") if c.strip()]
 
+# ── Áudio (OpenAI TTS): roteiro falado + narração. Sem chave => áudio desligado. ──
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+TTS_MODEL = os.environ.get("DSCURSO_TTS_MODEL") or "tts-1-hd"
+TTS_VOICE = os.environ.get("DSCURSO_TTS_VOICE") or "onyx"
+
+
+def audio_ligado():
+    """Envia áudio junto com o estudo? Precisa da chave OpenAI e não estar desligado."""
+    return bool(OPENAI_API_KEY) and (os.environ.get("DSCURSO_AUDIO") or "1") != "0"
+
+
 # ── E-mail (Resend — já usado no ecossistema do Diego). Sem chave => só loga. ──
 RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 EMAIL_FROM = os.environ.get("DSCURSO_EMAIL_FROM") or "Atualização Científica <nao-responda@drdiegosilva.com.br>"

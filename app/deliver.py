@@ -88,6 +88,14 @@ def numeros_curadores():
     return out
 
 
+def enviar_audio(whatsapp, mp3_bytes):
+    """Envia o mp3 como mensagem de voz (WhatsApp PTT) via Evolution."""
+    if config.WHATSAPP_BACKEND != "evolution":
+        return None
+    b64 = base64.b64encode(mp3_bytes).decode("ascii")
+    return _evolution_post("message/sendWhatsAppAudio", {"number": whatsapp, "audio": b64})
+
+
 def enviar_curador(msg):
     """Aviso ao curador (Dr. Diego + curadores convidados) — jobs 18h/08h.
     Envia a cada curador; falha de um não derruba os outros."""
