@@ -149,7 +149,8 @@ def _cta():
 
 
 def _topbar(logado=False):
-    direita = ('<a href="/artigos">Arquivo</a>' if logado else '<a href="/entrar">Entrar</a>')
+    direita = ('<a href="/artigos">Arquivo</a> <a href="/minha">Minha conta</a>'
+               if logado else '<a href="/entrar">Entrar</a>')
     return (f'<div class="wrap"><div class="top">'
             f'<a href="/" style="text-decoration:none"><div class="brand">'
             f'<span class="m">{_esc(MARCA)}</span><span class="c">{_esc(CRM)}</span></div></a>'
