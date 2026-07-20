@@ -610,6 +610,7 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
           <input type="file" name="pdf" accept="application/pdf" style="color:var(--suave);font-family:system-ui,sans-serif;margin-bottom:14px">
           <label>…ou cole o texto/resumo (se não tiver PDF)</label>
           <textarea name="texto" rows="3" placeholder="Cole aqui o abstract/texto do estudo…"></textarea>
+          <input type="text" name="titulo" placeholder="Título do estudo (opcional — se vazio, eu crio a partir do texto)" style="width:100%;margin-bottom:10px">
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <input type="text" name="fonte" placeholder="Revista (opcional)" style="flex:1">
             <input type="text" name="doi" placeholder="DOI (opcional)" style="flex:1">

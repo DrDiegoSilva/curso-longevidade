@@ -371,6 +371,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     texto, titulo=campos.get("titulo", ""), fonte=campos.get("fonte", ""),
                     doi=campos.get("doi", ""))
                 msg = f"✅ Adicionado à fila (prioridade): {tit}"
+        except ValueError as e:
+            msg = str(e)                            # motivo claro p/ o Diego (ex.: PDF sem texto)
         except Exception as e:
             print(f"[curadoria] adicionar meu estudo erro: {e}", flush=True)
             msg = "Falha ao processar o estudo (ver logs)."

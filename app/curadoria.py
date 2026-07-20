@@ -172,8 +172,18 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
     import json
     import db
     db.init()
+    corpo = (texto or "").strip()
+    if len(corpo) < 200 and not (titulo or "").strip():
+        raise ValueError("Não consegui ler texto suficiente do PDF (parece escaneado/imagem). "
+                         "Envie um PDF com texto selecionável ou cole o resumo do estudo.")
     cand = {"titulo": titulo, "fonte": fonte, "doi": doi, "url": url, "data": data,
-            "abstract": (texto or "")[:14000]}      # corta p/ caber no prompt
+            "abstract": corpo[:14000]}              # corta p/ caber no prompt
+    # Sem título informado -> gerar o título a partir do TEXTO. Senão a IA de título é
+    # instruída a reescrever um "título em inglês" vazio e devolve um recado de erro.
+    if not (titulo or "").strip() and "gerar_titulo" not in geradores:
+        import content
+        from resumo_diario import claude, HAIKU
+        geradores["gerar_titulo"] = lambda a: claude(HAIKU, content._prompt_titulo_do_texto(a), max_tokens=80)
     r = gerar_resumo(cand, modelo=modelo, **geradores)
     rid = db.salvar_reserva({
         "tema": "Meus estudos", "titulo_pt": r["titulo_pt"], "resumo": r["resumo"],

@@ -23,6 +23,16 @@ def _prompt_titulo(artigo):
             "'reposição hormonal'). Responda SÓ o título, sem aspas e sem ponto final.")
 
 
+def _prompt_titulo_do_texto(artigo):
+    """Título pt-BR a partir do TEXTO do estudo (uploads sem título em inglês)."""
+    corpo = (artigo.get("resumo") or artigo.get("abstract") or "")[:2500]
+    return ("Abaixo está o texto de um estudo científico (pode estar em inglês). "
+            "Crie um TÍTULO curto e claro em PORTUGUÊS DO BRASIL para um médico "
+            "(no máximo ~12 palavras), com a terminologia correta em pt-BR "
+            "(ex.: 'lipedema' e NÃO 'lipoedema'; 'menopausa'; 'reposição hormonal'). "
+            "Responda SÓ o título, sem aspas e sem ponto final.\n\nTEXTO:\n" + corpo)
+
+
 def _prompt_gancho(artigo):
     return (f"Estudo: {artigo.get('titulo','')} ({artigo.get('fonte','')}).\n"
             f"Resumo: {(artigo.get('resumo','') or '')[:900]}\n\n"
