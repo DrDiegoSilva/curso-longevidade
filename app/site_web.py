@@ -335,6 +335,54 @@ def pagina_msg(titulo, texto, logado=False):
     return _pagina(f"{titulo} · {PRODUTO}", corpo, logado=logado, meta_extra='<meta name="robots" content="noindex">')
 
 
+def pagina_admin(assinantes, token=""):
+    """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
+    tk = _esc(token)
+    def badge(st):
+        cor = {"ATIVO": "#2f9e6b", "INADIMPLENTE": "#c9a227", "CANCELADO": "#c0562f"}.get(st, "#7a8a84")
+        return (f'<span style="font-family:system-ui;font-size:11px;font-weight:700;letter-spacing:.05em;'
+                f'padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">'
+                f'{_esc(st or "—")}</span>')
+    linhas = "".join(
+        '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
+        f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
+        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--suave)">{_esc(s.get("whatsapp") or "—")}</td>'
+        f'<td style="padding:13px 10px;font-size:13px;color:var(--suave)">{_esc(s.get("email") or "—")}</td>'
+        f'<td style="padding:13px 10px;font-size:13px;color:var(--ouro2)">{_esc(s.get("plano") or "—")}</td>'
+        f'<td style="padding:13px 10px">{badge(s.get("status"))}</td>'
+        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--suave)">{_esc(s.get("proximo_vencimento") or "—")}</td>'
+        f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
+        f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
+        f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+        f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px">remover</button></form></td></tr>'
+        for s in assinantes)
+    ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
+    corpo = f"""
+    <div class="wrap">
+      <div class="sectag" style="margin-top:8px">Painel do curador</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
+      <p class="hint">{len(assinantes)} no total · {ativos} ativos &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      <div style="overflow-x:auto;margin:18px 0">
+        <table style="width:100%;border-collapse:collapse;min-width:760px">
+          <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
+            <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
+            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th></th></tr></thead>
+          <tbody>{linhas or '<tr><td colspan="7" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="panel" style="max-width:520px;margin:10px 0">
+        <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:10px">Adicionar cortesia</h3>
+        <form method="post" action="/admin">
+          <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
+          <label>Nome</label><input type="text" name="nome">
+          <label>WhatsApp (com DDD)</label><input type="text" name="whatsapp" placeholder="(43) 99999-0000">
+          <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
+        </form>
+      </div>
+    </div>"""
+    return _pagina("Assinantes · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
 # ── Curadoria / Reserva (admin, token) — banco privado, NÃO publica no arquivo ──
 def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
     from collections import OrderedDict
