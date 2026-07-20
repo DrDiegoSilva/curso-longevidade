@@ -4,9 +4,13 @@ Cada artigo normalizado tem o formato:
   {"titulo","resumo","fonte","doi","url","data","tipo","banco"}
 banco ∈ europepmc|pubmed|clinicaltrials
 """
+import os
 import json
 import urllib.request
 import urllib.parse
+
+# OpenAlex pede um contato p/ o "polite pool" (grátis, sem chave).
+_MAILTO = os.environ.get("OPENALEX_MAILTO") or "contato@drdiegosilva.com.br"
 
 
 def _get(url, headers=None, timeout=40):
@@ -76,6 +80,44 @@ def _epmc_normalizado(query, desde, ate):
     return out
 
 
+def reconstruir_abstract(inv):
+    """OpenAlex entrega o abstract como índice invertido {palavra:[posições]}.
+    Reconstrói o texto na ordem. Puro/testável."""
+    if not inv:
+        return ""
+    pos = {}
+    for palavra, idxs in inv.items():
+        for i in idxs:
+            pos[i] = palavra
+    return " ".join(pos[i] for i in sorted(pos))
+
+
+def _openalex_normalizado(query, desde, ate):
+    """OpenAlex: 250M+ trabalhos, abstract + citações, sem chave. Só artigos COM abstract."""
+    filtro = f"from_publication_date:{desde},to_publication_date:{ate},type:article,has_abstract:true"
+    url = ("https://api.openalex.org/works?search=" + urllib.parse.quote(query)
+           + "&filter=" + urllib.parse.quote(filtro)
+           + "&per-page=40&sort=relevance_score:desc&mailto=" + urllib.parse.quote(_MAILTO))
+    out = []
+    for w in _get(url).get("results", []):
+        ab = reconstruir_abstract(w.get("abstract_inverted_index"))
+        if len(ab) < 120:
+            continue
+        src = (w.get("primary_location") or {}).get("source") or {}
+        doi = (w.get("doi") or "").replace("https://doi.org/", "")
+        out.append({
+            "titulo": (w.get("title") or "").strip(),
+            "resumo": " ".join(ab.split()),
+            "fonte": src.get("display_name") or "",
+            "doi": doi,
+            "url": w.get("doi") or w.get("id") or "",
+            "data": w.get("publication_date", ""),
+            "tipo": w.get("type", ""),
+            "banco": "openalex",
+        })
+    return out
+
+
 def _pubmed(query, desde, ate):
     q = urllib.parse.quote(f"{query} AND ({desde}[dp] : {ate}[dp])")
     ids = _get(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax=30&term={q}")
@@ -93,9 +135,11 @@ def _clinicaltrials(query, desde, ate):
 
 
 def search_all(query, desde, ate):
-    """Agrega todos os bancos. Falha de um banco NÃO derruba os outros."""
+    """Agrega os bancos que ENTREGAM abstract. Falha de um NÃO derruba os outros.
+    PubMed (esummary) foi aposentado: vem SEM abstract e o Europe PMC já indexa o MEDLINE.
+    Semantic Scholar exige chave (429 sem ela) — fica de fora até termos chave."""
     arts = []
-    for fn in (_epmc_normalizado, _pubmed, _clinicaltrials):
+    for fn in (_epmc_normalizado, _openalex_normalizado, _clinicaltrials):
         try:
             arts += fn(query, desde, ate)
         except Exception as e:
