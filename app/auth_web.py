@@ -226,7 +226,8 @@ def wa_msg_senha(link, primeiro):
                 f"📲 *Salve este contato* (Dr. Diego Silva) na sua agenda — assim os estudos "
                 f"chegam certinho e os *links ficam clicáveis*.\n\n"
                 f"Para ler os resumos no site, crie sua senha de acesso:\n{link}\n\n"
-                f"Depois é só entrar com seu WhatsApp + senha em {config.ARTIGOS_URL}.")
+                f"Com seu WhatsApp + senha você entra em {config.ARTIGOS_URL} e tem acesso ao "
+                f"*arquivo com todos os estudos já enviados* — pra reler quando quiser.")
     return (f"🔐 Para redefinir sua senha da *{config.PRODUTO}*, use este link "
             f"(vale 1 hora):\n{link}\n\nSe não foi você, ignore.")
 
@@ -237,7 +238,8 @@ def email_html_senha(nome, link, primeiro):
     if primeiro:
         titulo = "Crie sua senha de acesso"
         texto = (f"Sua assinatura da <strong>{config.PRODUTO}</strong> está confirmada. "
-                 f"Para ler os resumos no site, crie sua senha de acesso:")
+                 f"Crie sua senha de acesso para entrar no site e ler os resumos — lá você também "
+                 f"tem o <strong>arquivo com todos os estudos já enviados</strong>, pra reler quando quiser:")
         botao = "Criar minha senha"
     else:
         titulo = "Redefinir sua senha"
