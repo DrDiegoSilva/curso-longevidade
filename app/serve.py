@@ -192,6 +192,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         import urllib.parse as up
         path = up.urlparse(self.path).path
         length = int(self.headers.get("Content-Length", "0"))
+        if length > 30_000_000:            # PDFs de estudo são pequenos; corta abuso
+            return self._html("<h3>Arquivo muito grande (máx 30MB)</h3>", 413)
         raw = self.rfile.read(length) if length > 0 else b""
         if path == "/webhook/asaas":       # Asaas envia JSON (não form-urlencoded)
             import webhook_asaas, json as _json
@@ -201,6 +203,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("bad json", 400)
             st, msg = webhook_asaas.processar(body, self.headers.get("asaas-access-token"))
             return self._html(msg, st)
+        ctype = self.headers.get("Content-Type", "")
+        if path == "/curadoria" and ctype.startswith("multipart/form-data"):
+            return self._curadoria_upload(raw, ctype)   # upload de PDF do estudo
         form = up.parse_qs(raw.decode("utf-8"))
         g = lambda k: form.get(k, [""])[0]
         if path.startswith("/revisar/"):
@@ -295,6 +300,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not sess:
             return None
         return subscribers.por_whatsapp(sess["whatsapp"])
+
+    def _parse_multipart(self, ctype, body):
+        """Parser mínimo de multipart/form-data. Retorna (campos:dict, arquivos:{nome:(filename,bytes)})."""
+        import re
+        m = re.search(r'boundary=([^;]+)', ctype)
+        if not m:
+            return {}, {}
+        boundary = ("--" + m.group(1).strip().strip('"')).encode()
+        campos, arquivos = {}, {}
+        for parte in body.split(boundary):
+            parte = parte.strip(b"\r\n")
+            if not parte or parte == b"--" or b"\r\n\r\n" not in parte:
+                continue
+            cab, dados = parte.split(b"\r\n\r\n", 1)
+            cab_s = cab.decode("utf-8", "replace")
+            nome = re.search(r'name="([^"]*)"', cab_s)
+            if not nome:
+                continue
+            fnm = re.search(r'filename="([^"]*)"', cab_s)
+            if fnm and fnm.group(1):
+                arquivos[nome.group(1)] = (fnm.group(1), dados)
+            else:
+                campos[nome.group(1)] = dados.decode("utf-8", "replace")
+        return campos, arquivos
+
+    def _curadoria_upload(self, raw, ctype):
+        """POST /curadoria com PDF (ou texto colado) -> gera resumo -> fila com prioridade."""
+        import config, db, curadoria
+        campos, arquivos = self._parse_multipart(ctype, raw)
+        if not config.ADMIN_TOKEN or campos.get("token") != config.ADMIN_TOKEN:
+            return self._html("<h3>Acesso negado</h3>", 403)
+        db.init()
+        msg = ""
+        try:
+            texto = ""
+            _, pdf = arquivos.get("pdf", (None, None))
+            if pdf:
+                texto = curadoria.extrair_texto_pdf(pdf)
+            if not (texto or "").strip():
+                texto = campos.get("texto", "")     # fallback: colado
+            if not (texto or "").strip():
+                msg = "Envie um PDF com texto selecionável, ou cole o resumo do estudo."
+            else:
+                _, tit = curadoria.adicionar_meu_estudo(
+                    texto, titulo=campos.get("titulo", ""), fonte=campos.get("fonte", ""),
+                    doi=campos.get("doi", ""))
+                msg = f"✅ Adicionado à fila (prioridade): {tit}"
+        except Exception as e:
+            print(f"[curadoria] adicionar meu estudo erro: {e}", flush=True)
+            msg = "Falha ao processar o estudo (ver logs)."
+        import urllib.parse as _up
+        return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
 
     def _cancelar_motivo(self, g):
         import site_web

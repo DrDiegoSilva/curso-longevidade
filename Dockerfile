@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=3000
 
 # tzdata (08:00 BRT) + chromium (renderiza o PDF) + fonte de emoji (💡📊🧠 no PDF)
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata chromium fonts-noto-color-emoji \
+# + poppler-utils (pdftotext: extrai o texto do PDF que o Diego sobe na curadoria)
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata chromium fonts-noto-color-emoji poppler-utils \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 

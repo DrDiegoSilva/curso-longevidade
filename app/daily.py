@@ -66,6 +66,41 @@ def reabastecer():
     return total
 
 
+def _preparar_da_reserva():
+    """Fallback do 18h quando NÃO há estudo fresco: monta o rascunho a partir do
+    próximo resumo PRONTO da reserva (já gerado). Mantém o review das 18h."""
+    import db
+    r_res = db.proximo_da_reserva()
+    if not r_res:
+        deliver.enviar_curador("📭 Sem estudo fresco E reserva vazia. Nada preparado p/ amanhã.")
+        return None
+    art = {"titulo": r_res.get("titulo_pt", ""), "tema": r_res.get("tema", ""),
+           "fonte": r_res.get("fonte", ""), "doi": r_res.get("doi", ""),
+           "url": r_res.get("url", ""), "data": r_res.get("data", "")}
+    try:
+        grafico = json.loads(r_res.get("grafico") or "null")
+    except Exception:
+        grafico = None
+    c = {"titulo_pt": r_res.get("titulo_pt", ""), "resumo": r_res.get("resumo", ""),
+         "gancho": r_res.get("gancho", ""), "grafico": grafico}
+    hoje = _hoje_iso()
+    os.makedirs(config.drafts_dir(), exist_ok=True)
+    preview = os.path.join(config.drafts_dir(), f"{hoje}-preview.pdf")
+    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, "Dr. Diego (revisão)", _tema_meta(art.get("tema", ""))), preview)
+    r = draft_store.novo_rascunho(hoje, art, c["resumo"], preview)
+    r["gancho"] = c["gancho"]
+    r["grafico"] = c["grafico"]
+    r["titulo_pt"] = c["titulo_pt"]
+    r["reserva_id"] = r_res["id"]                 # p/ marcar 'enviado' após o envio
+    draft_store.salvar(r)
+    link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
+    origem = "SEU estudo" if r_res.get("origem") == "manual" else "reserva"
+    deliver.enviar_curador(f"📋 Amanhã (da {origem}) · {art.get('tema', '')}:\n*{c['titulo_pt']}*\n{art.get('fonte', '')}\n"
+                           f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
+                           f"(se não mexer, envio automático às 08h)")
+    return r
+
+
 def preparar_18h():
     amanha = datetime.now() + timedelta(days=1)
     if not _e_dia_util(amanha):
@@ -75,8 +110,7 @@ def preparar_18h():
         print(f"[reabastecer] +{reabastecer()} na fila", flush=True)
     art = queue_store.proximo()
     if not art:
-        deliver.enviar_curador("📭 Sem artigo forte para amanhã (fila vazia). Nada preparado — me chama se quiser forçar.")
-        return None
+        return _preparar_da_reserva()      # sem estudo fresco -> puxa da fila/reserva (pulmão)
     c = content.gerar_conteudo(art)
     hoje = _hoje_iso()
     os.makedirs(config.drafts_dir(), exist_ok=True)
@@ -140,6 +174,12 @@ def enviar_08h():
         db.registrar_digest(art, conteudo, tmeta, data=hoje)
     except Exception as e:
         print(f"[enviar] falha ao registrar no arquivo: {e}", flush=True)
+    if r.get("reserva_id"):        # veio da reserva/fila -> tira da fila (não reenvia)
+        try:
+            import db
+            db.marcar_reserva_enviado(r["reserva_id"])
+        except Exception as e:
+            print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
     rd.registrar([art["doi"]] if art.get("doi") else [])
     deliver.enviar_curador(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
                            + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))

@@ -111,5 +111,39 @@ class TestGerarResumo(unittest.TestCase):
         self.assertEqual(visto["resumo_in"], "TEXTO-DO-ABSTRACT")
 
 
+class TestAdicionarMeuEstudo(unittest.TestCase):
+    def setUp(self):
+        import tempfile, importlib
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "curadoria"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import db, curadoria as cur2
+        importlib.reload(db); importlib.reload(cur2)
+        self.db, self.cur = db, cur2
+        db.init()
+
+    def test_entra_na_fila_com_prioridade(self):
+        rid, tit = self.cur.adicionar_meu_estudo(
+            "texto integral do estudo em PDF...", titulo="Meu PDF", fonte="NEJM", doi="10.1/meu",
+            gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
+            gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT do meu estudo")
+        self.assertEqual(tit, "Título PT do meu estudo")
+        fila = self.db.listar_reserva(status="pronto")
+        self.assertEqual(len(fila), 1)
+        self.assertEqual(fila[0]["prioridade"], 1)
+        self.assertEqual(fila[0]["origem"], "manual")
+        self.assertEqual(self.db.proximo_da_reserva()["id"], rid)     # fura a fila
+
+    def test_abstract_do_texto_vai_pro_gerador(self):
+        visto = {}
+        self.cur.adicionar_meu_estudo(
+            "CONTEUDO-DO-PDF", titulo="X",
+            gerar_resumo=lambda a: visto.setdefault("r", a.get("resumo")) or "ok",
+            gerar_gancho=lambda a: "g", gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "t")
+        self.assertEqual(visto["r"], "CONTEUDO-DO-PDF")
+
+
 if __name__ == "__main__":
     unittest.main()

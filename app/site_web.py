@@ -380,11 +380,28 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
     res_html = "".join(
         f'<div class="item"><div class="d">{_esc(r.get("tema"))}</div><div class="t">{_esc(r.get("titulo_pt"))}</div></div>'
         for r in reserva) or '<p class="hint">Reserva vazia. Selecione candidatos e clique em <strong>Gerar resumos</strong>.</p>'
+    add_form = f"""
+      <div class="panel" style="max-width:none;margin:0 0 24px">
+        <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:25px;color:var(--ouro2);margin-bottom:6px">➕ Adicionar meu estudo</h3>
+        <p class="hint" style="margin-bottom:14px">Sobe o PDF (ou cola o texto). Gero o resumo e ele entra na <strong>fila, na frente</strong> — vai pros assinantes no próximo dia útil (com seu review das 18h).</p>
+        <form method="post" action="/curadoria" enctype="multipart/form-data">
+          <input type="hidden" name="token" value="{tok}">
+          <label>PDF do estudo</label>
+          <input type="file" name="pdf" accept="application/pdf" style="color:var(--suave);font-family:system-ui,sans-serif;margin-bottom:14px">
+          <label>…ou cole o texto/resumo (se não tiver PDF)</label>
+          <textarea name="texto" rows="3" placeholder="Cole aqui o abstract/texto do estudo…"></textarea>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <input type="text" name="fonte" placeholder="Revista (opcional)" style="flex:1">
+            <input type="text" name="doi" placeholder="DOI (opcional)" style="flex:1">
+          </div>
+          <button class="actbtn" type="submit" style="margin-top:14px">Gerar resumo e adicionar à fila</button>
+        </form>
+      </div>"""
     corpo = f"""
     <div class="wrap">
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:10px 0 4px">Curadoria · Reserva 2026</h2>
       <p class="hint">{stats}</p>
-      {msg_html}{acoes}
+      {msg_html}{acoes}{add_form}
       <p class="hint">Leia o <strong>título</strong> + a <strong>pergunta</strong> e marque os que valem resumir. Nada vai pro arquivo dos assinantes — é sua reserva privada.</p>
       {form_lista}
       <section class="sec"><h2 class="disp" style="font-size:30px">Reserva pronta</h2>{res_html}</section>

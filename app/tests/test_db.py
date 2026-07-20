@@ -121,6 +121,21 @@ class TestDb(unittest.TestCase):
         self.assertEqual(res[0]["titulo_pt"], "Título")
         self.assertEqual(self.db.contar_candidatos().get("resumido"), 1)
 
+    def test_fila_prioridade_e_proximo(self):
+        self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "A (varredura)"})
+        self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "B (varredura)"})
+        pid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "C (meu, prioridade)",
+                                      "prioridade": 1, "origem": "manual"})
+        # o do Diego (prioridade) sai primeiro
+        prox = self.db.proximo_da_reserva()
+        self.assertEqual(prox["titulo_pt"], "C (meu, prioridade)")
+        self.db.marcar_reserva_enviado(prox["id"])
+        # depois, o mais antigo da varredura (A)
+        self.assertEqual(self.db.proximo_da_reserva()["titulo_pt"], "A (varredura)")
+        # enviado sai da fila 'pronto'
+        self.assertEqual(len(self.db.listar_reserva(status="pronto")), 2)
+        self.assertEqual(self.db.listar_reserva(status="enviado")[0]["id"], pid)
+
     def test_cupom(self):
         import importlib
         os.environ["DSCURSO_CUPONS"] = "DIEGO2026, cortesia"

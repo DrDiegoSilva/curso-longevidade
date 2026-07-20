@@ -126,15 +126,62 @@ def gerar_perguntas(cands, llm_fn=None, chunk=15):
 
 
 # ── Resumo final dos selecionados (PADRÃO de qualidade do app) ──
-def gerar_resumo(cand, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=None, gerar_titulo=None):
-    """Gera {titulo_pt, resumo, gancho, grafico} no padrão normal do app (NÃO Haiku).
-    Mapeia o 'abstract' do candidato para o campo 'resumo' que os geradores esperam."""
+def gerar_resumo(cand, modelo="sonnet", gerar_resumo=None, gerar_gancho=None,
+                 gerar_grafico_json=None, gerar_titulo=None):
+    """Gera {titulo_pt, resumo, gancho, grafico}. modelo='sonnet' (padrão da reserva,
+    ótimo + barato) ou 'opus' (máximo). Mapeia 'abstract' -> 'resumo' que o gerador espera."""
     import content
     art = dict(cand)
     art["resumo"] = cand.get("abstract") or cand.get("resumo") or ""
-    return content.gerar_conteudo(
-        art, gerar_resumo=gerar_resumo, gerar_gancho=gerar_gancho,
-        gerar_grafico_json=gerar_grafico_json, gerar_titulo=gerar_titulo)
+    f_resumo = gerar_resumo
+    if f_resumo is None:
+        from resumo_diario import claude, OPUS, SONNET, SYS_APROF
+        mdl = SONNET if (modelo or "").lower() == "sonnet" else OPUS
+        def f_resumo(a):
+            blob = ("### " + a.get("titulo", "") + "\nData: " + a.get("data", "") +
+                    "\nFonte: " + a.get("fonte", "") + " | doi:" + a.get("doi", "") +
+                    "\n" + a.get("resumo", ""))
+            return claude(mdl, "Aprofunde ESTE estudo para o médico (abra pela data de publicação):\n\n" + blob,
+                          system=SYS_APROF, max_tokens=3200)
+    return content.gerar_conteudo(art, gerar_resumo=f_resumo, gerar_gancho=gerar_gancho,
+                                  gerar_grafico_json=gerar_grafico_json, gerar_titulo=gerar_titulo)
+
+
+# ── Adicionar MEU estudo (PDF ou colado) -> gera resumo -> fila com PRIORIDADE ──
+def extrair_texto_pdf(pdf_bytes):
+    """Extrai o texto de um PDF via pdftotext (poppler). Retorna string (pode ser vazia)."""
+    import subprocess
+    import tempfile
+    import os as _os
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(pdf_bytes)
+        caminho = f.name
+    try:
+        out = subprocess.run(["pdftotext", "-q", caminho, "-"], capture_output=True, timeout=60)
+        return out.stdout.decode("utf-8", "replace")
+    finally:
+        try:
+            _os.unlink(caminho)
+        except Exception:
+            pass
+
+
+def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet", **geradores):
+    """Gera o resumo de um estudo do Diego (texto do PDF ou colado) e coloca na fila
+    COM PRIORIDADE (fura a fila). Retorna (id_reserva, titulo_pt)."""
+    import json
+    import db
+    db.init()
+    cand = {"titulo": titulo, "fonte": fonte, "doi": doi, "url": url, "data": data,
+            "abstract": (texto or "")[:14000]}      # corta p/ caber no prompt
+    r = gerar_resumo(cand, modelo=modelo, **geradores)
+    rid = db.salvar_reserva({
+        "tema": "Meus estudos", "titulo_pt": r["titulo_pt"], "resumo": r["resumo"],
+        "gancho": r.get("gancho", ""),
+        "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
+        "doi": doi, "fonte": fonte, "url": url, "data": data,
+        "prioridade": 1, "origem": "manual"})
+    return rid, r["titulo_pt"]
 
 
 # ── Orquestração com banco (servidor/CLI) ──

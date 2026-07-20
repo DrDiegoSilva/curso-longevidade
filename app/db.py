@@ -152,7 +152,8 @@ def init():
                 id TEXT PRIMARY KEY, candidato_id TEXT,
                 tema TEXT, titulo_pt TEXT, resumo TEXT, gancho TEXT, grafico TEXT,
                 doi TEXT, fonte TEXT, url TEXT, data TEXT,
-                status TEXT DEFAULT 'pronto', criado_em TEXT
+                status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
+                origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT
             );
             """
         )
@@ -168,18 +169,26 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "curadoria_candidatos", "reserva_resumos"]
 
 
+def _add_coluna(c, tabela, coluna, tipo):
+    """ADD COLUMN idempotente (pg: IF NOT EXISTS; sqlite: try/except duplicata)."""
+    if _is_pg():
+        c.execute(f"ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}")
+    else:
+        try:
+            c.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
+        except Exception:
+            pass  # coluna já existe (banco recém-criado pela CREATE TABLE)
+
+
 def _migrar_colunas():
     """Adiciona colunas novas a bancos JÁ existentes (idempotente).
     Banco novo/testes já nasce com a coluna via CREATE TABLE — aqui o ALTER é
     p/ o Supabase de produção que foi criado antes desta coluna existir."""
     with _conn() as c:
-        if _is_pg():
-            c.execute("ALTER TABLE subscribers ADD COLUMN IF NOT EXISTS senha_hash TEXT")
-        else:
-            try:
-                c.execute("ALTER TABLE subscribers ADD COLUMN senha_hash TEXT")
-            except Exception:
-                pass  # coluna já existe (banco recém-criado pela CREATE TABLE)
+        _add_coluna(c, "subscribers", "senha_hash", "TEXT")
+        _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
+        _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
+        _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
 
 
 def _habilitar_rls():
@@ -342,16 +351,21 @@ def contar_candidatos():
 
 
 def salvar_reserva(reg):
+    """Salva um resumo pronto na reserva/fila. prioridade>0 = fura fila (artigo do Diego).
+    Retorna o id."""
     import secrets
     from datetime import datetime
+    rid = secrets.token_hex(8)
     with _conn() as c:
         c.execute(
             """INSERT INTO reserva_resumos
-               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?)""",
-            (secrets.token_hex(8), reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
+               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?)""",
+            (rid, reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
              reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
-             reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""), datetime.now().isoformat()))
+             reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""),
+             int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat()))
+    return rid
 
 
 def listar_reserva(status=None):
@@ -359,9 +373,25 @@ def listar_reserva(status=None):
     params = []
     if status:
         q += " WHERE status=?"; params.append(status)
-    q += " ORDER BY criado_em DESC"
+    q += " ORDER BY prioridade DESC, criado_em DESC"
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+def proximo_da_reserva():
+    """Próximo resumo a enviar da fila: prioridade (artigos do Diego) primeiro, depois
+    os mais antigos. Só 'pronto'. Retorna dict ou None (não marca — o envio confirma)."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM reserva_resumos WHERE status='pronto' "
+                      "ORDER BY prioridade DESC, criado_em ASC LIMIT 1").fetchone()
+    return dict(r) if r else None
+
+
+def marcar_reserva_enviado(rid):
+    from datetime import datetime
+    with _conn() as c:
+        c.execute("UPDATE reserva_resumos SET status='enviado', enviado_em=? WHERE id=?",
+                  (datetime.now().isoformat(), rid))
 
 
 def registrar_digest(art, conteudo, tmeta=None, data=None):
