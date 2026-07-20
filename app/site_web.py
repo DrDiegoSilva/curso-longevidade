@@ -972,8 +972,8 @@ def _pick_planos():
         f'<div class="pr">{_esc(p["preco"])}</div><div class="pe">{_esc(p["periodo"])}</div></a>'
         for p in config.PLANOS if not p.get("oculto"))
     return (f'<div class="wrap"><section class="sec"><h2 class="disp">Escolha seu plano</h2>'
-            f'<p class="sub">O mensal renova sozinho (cancela quando quiser). Os planos maiores '
-            f'saem mais barato por mês.</p><div class="pick">{cards}</div>'
+            f'<p class="sub">O mensal renova sozinho (cancela quando quiser). O anual '
+            f'sai mais barato por mês.</p><div class="pick">{cards}</div>'
             f'<p class="hint">Já é assinante? <a href="/entrar" style="color:var(--ouro2)">Entrar</a></p>'
             f'</section></div>')
 

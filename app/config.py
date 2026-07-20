@@ -61,8 +61,10 @@ def cta_url():
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [
     {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": ""},
-    {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês"},
-    {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês"},
+    # Trimestral/Semestral OCULTOS da venda (decisão do Diego 2026-07-20: só Mensal e Anual).
+    # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
+    {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},
+    {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês", "oculto": True},
     {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 960.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 960", "nota": "≈ R$ 80/mês · melhor preço"},
     # Plano de TESTE (R$5) — OCULTO da landing; só via link direto /assinar?plano=teste. Pagar por Pix (à vista).
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
