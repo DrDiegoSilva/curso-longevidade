@@ -107,6 +107,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             q = up.parse_qs(up.urlparse(self.path).query)
             if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
             cands = db.listar_candidatos(status="novo") + db.listar_candidatos(status="selecionado")
             return self._html(site_web.pagina_curadoria(
                 cands, db.listar_reserva(), db.contar_candidatos(), config.ADMIN_TOKEN,
@@ -223,6 +224,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             import config, db, curadoria
             if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
             acao, msg = g("acao"), ""
             if acao == "selecionar":
                 ids = form.get("sel", [])

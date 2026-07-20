@@ -135,6 +135,7 @@ def gerar_resumo(cand, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=
 def rodar_varredura(desde=None, ate=None, caps=None):
     """Varre + gera perguntas (Haiku) + salva candidatos no Supabase. Retorna quantos entraram."""
     import db
+    db.init()                       # garante as tabelas (deploy novo / CLI)
     desde = desde or "2026-01-01"
     ate = ate or date.today().isoformat()
     cands = varrer(desde, ate, caps=caps)
@@ -147,6 +148,7 @@ def rodar_varredura(desde=None, ate=None, caps=None):
 def gerar_selecionados():
     """Gera o resumo (padrão) de cada candidato 'selecionado' -> reserva. Retorna quantos."""
     import db
+    db.init()                       # garante as tabelas (deploy novo / CLI)
     feitos = 0
     for c in db.listar_candidatos(status="selecionado"):
         try:
