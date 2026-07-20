@@ -191,7 +191,6 @@ def landing():
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(p["nota"])}</div>' if p.get("nota") else "")
-        + f'<div class="pcard">no cartão a partir de {_esc(pricing.fmt_brl(pricing.valor_cartao(p["base"], 1)))}</div>'
         + f'<a class="planbtn" href="/assinar?plano={_esc(p["slug"])}">Assinar</a>'
         + '</div>' for p in config.PLANOS)
     corpo = f"""
