@@ -60,5 +60,52 @@ class TestSemanticScholar(unittest.TestCase):
                 os.environ["SEMANTIC_SCHOLAR_KEY"] = antigo
 
 
+class TestBackoff(unittest.TestCase):
+    def _fake_get(self, respostas):
+        """Retorna uma função que consome `respostas` (Exception ou valor) a cada chamada."""
+        it = iter(respostas)
+        def g(url, headers=None, timeout=40):
+            r = next(it)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        return g
+
+    def _http(self, code):
+        import urllib.error
+        return urllib.error.HTTPError("u", code, "", {}, None)
+
+    def test_repete_no_429_e_sucede(self):
+        orig = sources._get
+        sources._get = self._fake_get([self._http(429), self._http(429), {"ok": 1}])
+        try:
+            self.assertEqual(sources._get_backoff("u", sleep=lambda s: None), {"ok": 1})
+        finally:
+            sources._get = orig
+
+    def test_desiste_apos_tentativas(self):
+        orig = sources._get
+        sources._get = self._fake_get([self._http(429)] * 4)
+        try:
+            with self.assertRaises(Exception):
+                sources._get_backoff("u", tentativas=4, sleep=lambda s: None)
+        finally:
+            sources._get = orig
+
+    def test_erro_fatal_nao_repete(self):
+        orig = sources._get
+        chamado = {"n": 0}
+        def g(url, headers=None, timeout=40):
+            chamado["n"] += 1
+            raise self._http(404)                       # 404 não é retry
+        sources._get = g
+        try:
+            with self.assertRaises(Exception):
+                sources._get_backoff("u", sleep=lambda s: None)
+            self.assertEqual(chamado["n"], 1)           # chamou só 1 vez
+        finally:
+            sources._get = orig
+
+
 if __name__ == "__main__":
     unittest.main()

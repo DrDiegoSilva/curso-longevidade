@@ -5,9 +5,11 @@ Cada artigo normalizado tem o formato:
 banco ∈ europepmc|pubmed|clinicaltrials
 """
 import os
+import time
 import json
 import urllib.request
 import urllib.parse
+import urllib.error
 
 # OpenAlex pede um contato p/ o "polite pool" (grátis, sem chave).
 _MAILTO = os.environ.get("OPENALEX_MAILTO") or "contato@drdiegosilva.com.br"
@@ -17,6 +19,21 @@ def _get(url, headers=None, timeout=40):
     req = urllib.request.Request(url, headers=headers or {"User-Agent": "DSCurso/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
+
+
+def _get_backoff(url, headers=None, tentativas=4, base=1.0, sleep=time.sleep):
+    """GET com BACKOFF EXPONENCIAL em 429/5xx (protege a API do parceiro — ex.: Semantic
+    Scholar). Espera base, 2·base, 4·base… entre tentativas; relança no fim ou em erro fatal."""
+    espera = base
+    for i in range(tentativas):
+        try:
+            return _get(url, headers=headers)
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 500, 502, 503, 504) and i < tentativas - 1:
+                sleep(espera)
+                espera *= 2
+                continue
+            raise
 
 
 def parse_pubmed_esummary(data):
@@ -148,7 +165,7 @@ def _semanticscholar_normalizado(query, desde, ate):
     anos = f"{(desde or '')[:4]}-{(ate or '')[:4]}"
     url = ("https://api.semanticscholar.org/graph/v1/paper/search?query=" + urllib.parse.quote(query)
            + "&fields=title,abstract,venue,year,publicationDate,externalIds&limit=40&year=" + urllib.parse.quote(anos))
-    return parse_semanticscholar(_get(url, headers={"User-Agent": "DSCurso/1.0", "x-api-key": key}))
+    return parse_semanticscholar(_get_backoff(url, headers={"User-Agent": "DSCurso/1.0", "x-api-key": key}))
 
 
 def _pubmed(query, desde, ate):
