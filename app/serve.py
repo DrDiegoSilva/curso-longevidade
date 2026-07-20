@@ -176,15 +176,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sub = self._sessao()
             if not sub:
                 return self._redirect("/entrar")
-            if len(parts) == 1:
-                return self._html(site_web.hub_temas(db.listar_temas()))
+            temas = db.listar_temas()
+            if len(parts) == 1:                      # arquivo: abre no 1º tema (com abas)
+                if not temas:
+                    return self._html(site_web.hub_temas([]))
+                slug = temas[0]["slug"]
+                return self._html(site_web.lista_tema(db.meta_tema(slug), db.listar_por_tema(slug), temas))
             slug = parts[1]
             if len(parts) == 2:
-                return self._html(site_web.lista_tema(db.meta_tema(slug), db.listar_por_tema(slug)))
-            d = db.obter(slug, parts[2])
-            if not d:
+                return self._html(site_web.lista_tema(db.meta_tema(slug), db.listar_por_tema(slug), temas))
+            lst = db.listar_por_tema(slug)           # ordenado por data DESC
+            i = next((k for k, x in enumerate(lst) if x["data"] == parts[2]), None)
+            if i is None:
                 return self._html("<h3>Edição não encontrada</h3>", 404)
-            return self._html(site_web.pagina_digest(db.meta_tema(slug), d))
+            ant = lst[i + 1] if i + 1 < len(lst) else None   # edição mais antiga
+            prox = lst[i - 1] if i - 1 >= 0 else None         # edição mais recente
+            return self._html(site_web.pagina_digest(db.meta_tema(slug), lst[i], (ant, prox)))
         return self._html("<h3>Página não encontrada</h3>", 404)
 
     def _html(self, s, code=200):

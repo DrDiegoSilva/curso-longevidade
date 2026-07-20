@@ -22,57 +22,116 @@ _FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 
 _CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--verde:#0e211a;--verde2:#14332a;--verde3:#1e5045;--ouro:#c9a227;--ouro2:#e7c766;
-  --creme:#f4f1e7;--creme2:#ece4c6;--texto:#e8efe9;--suave:#a9bcb2}
-body{background:radial-gradient(120% 80% at 80% -10%,#1a3a2e 0%,var(--verde) 55%,#0a1a14 100%);
-  color:#e8efe9;font-family:Georgia,"Times New Roman",serif;line-height:1.65;min-height:100vh;
-  -webkit-font-smoothing:antialiased}
-.disp{font-family:"Cormorant Garamond",Georgia,serif;font-weight:600;line-height:1.1}
-.wrap{max-width:960px;margin:0 auto;padding:0 24px}
-a{color:inherit}
+:root{
+  /* legado (telas de login/checkout/curadoria/digest usam estes nomes) */
+  --verde:#0e211a;--verde2:#14332a;--verde3:#1e5045;--ouro:#c9a227;--ouro2:#e7c766;
+  --creme:#f4f1e7;--creme2:#ece4c6;--texto:#e8efe9;--suave:#a9bcb2;
+  /* redesign */
+  --ink:#0a1712;--g900:#0e211a;--g800:#14332a;--g700:#1e5045;--g600:#2c6656;
+  --gold:#c9a227;--gold2:#e7c766;--cream:#f4f1e7;--paper:#f7f4ec;--inkpaper:#16302a;
+  --muted:#9fb3a9;--line:rgba(233,225,198,.14);
+  --disp:"Hoefler Text","Iowan Old Style","Cormorant Garamond",Georgia,serif;
+  --body:Georgia,"Times New Roman",serif;--ui:system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace}
+html{scroll-behavior:smooth}
+body{background:
+    radial-gradient(120% 80% at 82% -8%,#1c4638 0%,rgba(14,33,26,0) 55%),
+    radial-gradient(90% 60% at 0% 0%,#123027 0%,rgba(10,23,18,0) 50%),
+    var(--ink);
+  color:var(--cream);font-family:var(--body);line-height:1.65;min-height:100vh;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.05;
+  background-image:radial-gradient(rgba(255,255,255,.5) .5px,transparent .5px);background-size:3px 3px}
+.disp{font-family:var(--disp);font-weight:600;line-height:1.08;letter-spacing:-.01em}
+.wrap{max-width:1200px;margin:0 auto;padding:0 28px;position:relative;z-index:1}
+a{color:inherit;text-decoration:none}
+.mono{font-family:var(--mono)}
 /* top bar */
-.top{display:flex;align-items:center;justify-content:space-between;padding:22px 0;gap:12px;flex-wrap:wrap}
-.brand{display:flex;flex-direction:column;line-height:1.15}
-.brand .m{font-family:"Cormorant Garamond",Georgia,serif;font-size:22px;color:var(--creme);font-weight:700}
-.brand .c{font-family:system-ui,sans-serif;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--suave)}
-.nav a{font-family:system-ui,sans-serif;font-size:13px;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--creme);text-decoration:none;border:1px solid rgba(201,162,39,.5);border-radius:100px;padding:9px 18px;transition:.2s}
-.nav a:hover{background:var(--ouro);color:#1a1300;border-color:var(--ouro)}
+.top{display:flex;align-items:center;justify-content:space-between;padding:24px 0;gap:14px;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;line-height:1.13}
+.brand .m{font-family:var(--disp);font-size:23px;color:var(--cream);font-weight:700}
+.brand .c{font-family:var(--ui);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.nav a{font-family:var(--ui);font-size:12.5px;letter-spacing:.05em;color:var(--cream);padding:9px 15px;border-radius:100px;transition:.18s}
+.nav a.pill{border:1px solid rgba(201,162,39,.55)}
+.nav a.pill:hover{background:var(--gold);color:#1a1300;border-color:var(--gold)}
+.nav a.plain:hover{color:var(--gold2)}
+.nav a.here{color:var(--gold2)}
 /* hero */
-.hero{padding:56px 0 40px}
-.eyebrow{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--ouro2);margin-bottom:20px}
-.hero h1{font-size:clamp(40px,7vw,74px);color:var(--creme);letter-spacing:-.01em;text-wrap:balance;margin-bottom:22px}
-.hero h1 em{font-style:normal;color:var(--ouro2)}
-.lead{font-size:20px;color:var(--suave);max-width:620px;margin-bottom:34px}
-.cta{display:inline-block;background:linear-gradient(180deg,var(--ouro2),var(--ouro));color:#1a1300;
-  font-family:system-ui,sans-serif;font-weight:700;font-size:16px;letter-spacing:.02em;text-decoration:none;
-  padding:16px 34px;border-radius:100px;box-shadow:0 10px 30px -8px rgba(201,162,39,.5);transition:.2s}
-.cta:hover{transform:translateY(-2px);box-shadow:0 16px 38px -8px rgba(201,162,39,.6)}
-.cta.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.55);box-shadow:none}
+.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:center;padding:40px 0 30px}
+.eyebrow{font-family:var(--ui);font-size:11.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold2);margin-bottom:16px}
+.hero h1{font-size:clamp(42px,6.2vw,76px);color:var(--cream);text-wrap:balance;margin:6px 0 20px}
+.hero h1 em{font-style:normal;color:var(--gold2)}
+.lead{font-size:19.5px;color:var(--muted);max-width:34ch;margin-bottom:26px}
+.ctas{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.btn{font-family:var(--ui);font-weight:700;font-size:15px;letter-spacing:.01em;padding:15px 30px;border-radius:100px;transition:.18s;display:inline-block}
+.btn.solid{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1a1300;box-shadow:0 12px 30px -10px rgba(201,162,39,.55)}
+.btn.solid:hover{transform:translateY(-2px);box-shadow:0 18px 40px -10px rgba(201,162,39,.65)}
+.btn.ghost{color:var(--cream);border:1px solid rgba(201,162,39,.5)}
+.btn.ghost:hover{border-color:var(--gold);color:var(--gold2)}
+.trust{margin-top:20px;font-family:var(--ui);font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center}
+.trust b{color:var(--cream);font-weight:600}
+/* sample dispatch (papel) */
+.dispatch{background:var(--paper);color:var(--inkpaper);border-radius:14px;padding:26px 28px;
+  box-shadow:0 30px 70px -24px rgba(0,0,0,.7);position:relative;transform:rotate(.5deg)}
+.dtag{display:inline-flex;align-items:center;gap:7px;background:var(--g800);color:var(--gold2);
+  font-family:var(--ui);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 11px;border-radius:100px}
+.dmeta{font-family:var(--mono);font-size:11.5px;color:#6f7d78;margin:14px 0 6px;border-bottom:2px solid var(--gold);padding-bottom:10px;letter-spacing:.02em}
+.dtitle{font-family:var(--disp);font-size:26px;line-height:1.14;color:var(--g800);margin:12px 0 10px}
+.dbody{font-size:15px;color:#33443e}.dbody p{margin:.55em 0}
+.dispatch .chart{margin:16px 0 6px;background:none;border:none;padding:0}
+.crow{display:flex;align-items:center;gap:10px;margin:7px 0}
+.clab{width:88px;font-family:var(--ui);font-size:12px;color:#3a4c46;flex:none}
+.ctrack{flex:1;background:#e6e0d0;border-radius:100px;height:16px;overflow:hidden}
+.cfill{height:100%;border-radius:100px;background:linear-gradient(90deg,var(--g700),var(--g600))}
+.cval{font-family:var(--mono);font-size:12px;font-weight:700;width:56px;text-align:right;flex:none;color:var(--g800)}
+.hook{margin-top:14px;border:1.5px solid var(--gold);border-radius:11px;background:linear-gradient(180deg,#fff8e8,#fbf2d6);padding:13px 15px}
+.hook .hl{font-family:var(--ui);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8a6a06;font-weight:800;margin-bottom:5px}
+.hook .ht{font-size:14.5px;color:#3a2f10;font-style:italic}
 /* seções */
-.sec{padding:46px 0;border-top:1px solid rgba(233,225,198,.1)}
-.sec h2{font-size:clamp(28px,4vw,40px);color:var(--creme);margin-bottom:10px}
-.sec .sub{color:var(--suave);margin-bottom:30px;max-width:640px}
-.grid{display:grid;gap:16px}
-.g3{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
-.g4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
-.card{background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.12);border-radius:16px;padding:24px}
-.card h3{font-family:"Cormorant Garamond",Georgia,serif;font-size:24px;color:var(--creme);margin-bottom:8px}
-.card p{color:var(--suave);font-size:15.5px}
-.chip{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.12);
-  border-radius:14px;padding:16px 18px}
-.chip .e{font-size:26px}
-.chip .t{font-family:"Cormorant Garamond",Georgia,serif;font-size:20px;color:var(--creme)}
-.chip .n{font-family:system-ui,sans-serif;font-size:12px;color:var(--suave)}
-/* planos */
+.sec{padding:54px 0;border-top:1px solid var(--line)}
+.sec h2{font-size:clamp(28px,4vw,42px);color:var(--cream);margin-bottom:10px}
+.sec .sub{color:var(--muted);margin-bottom:30px;max-width:56ch;font-size:17px}
+.sectag{font-family:var(--ui);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold2);margin-bottom:14px}
+/* themes strip */
+.themes{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.theme{background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:16px;padding:26px 20px;transition:.18s;display:block}
+.theme:hover{border-color:rgba(201,162,39,.5);transform:translateY(-3px);background:rgba(255,255,255,.06)}
+.theme .e{font-size:26px}
+.theme .t{font-family:var(--disp);font-size:19px;color:var(--cream);margin-top:8px;line-height:1.15}
+.theme .n{font-family:var(--ui);font-size:11px;color:var(--muted);margin-top:3px}
+/* value bento */
+.bento{display:grid;grid-template-columns:repeat(6,1fr);gap:20px}
+.card{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:18px;padding:32px 30px}
+.card h3{font-family:var(--disp);font-size:24px;color:var(--cream);margin-bottom:8px}
+.card p{color:var(--muted);font-size:15px}
+.card .k{font-family:var(--mono);font-size:12px;color:var(--gold2);letter-spacing:.04em;margin-bottom:12px;display:block}
+.c-a{grid-column:span 3}.c-b{grid-column:span 3}.c-c{grid-column:span 2}.c-d{grid-column:span 2}.c-e{grid-column:span 2}
+.card.big{background:linear-gradient(150deg,rgba(30,80,69,.5),rgba(20,51,42,.35));border-color:rgba(201,162,39,.25)}
+/* planos (redesign) */
+.plans{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.plan{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:18px;padding:34px 24px;text-align:center;position:relative;transition:.18s;display:block}
+.plan:hover{transform:translateY(-4px);border-color:rgba(201,162,39,.5)}
+.plan.best{border-color:var(--gold);background:linear-gradient(160deg,rgba(201,162,39,.14),rgba(20,51,42,.4))}
+.plan .badge{position:absolute;top:-11px;left:50%;transform:translateX(-50%);background:linear-gradient(180deg,var(--gold2),var(--gold));color:#1a1300;font-family:var(--ui);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;padding:5px 13px;border-radius:100px}
+.plan .nm{font-family:var(--disp);font-size:25px;color:var(--gold2)}
+.plan .pr{font-size:34px;color:var(--cream);margin:8px 0 0}
+.plan .pe{font-family:var(--ui);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+.plan .pn{font-family:var(--ui);font-size:12.5px;color:var(--gold2);margin-top:12px}
+.plan .pick2{display:inline-block;margin-top:16px;font-family:var(--ui);font-size:12.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1a1300;background:linear-gradient(180deg,var(--gold2),var(--gold));padding:10px 24px;border-radius:100px}
+/* autoridade */
+.auth{display:flex;gap:26px;align-items:center;flex-wrap:wrap;background:rgba(255,255,255,.035);border:1px solid var(--line);border-radius:18px;padding:26px 30px}
+.auth .big{font-family:var(--disp);font-size:clamp(26px,3.4vw,38px);color:var(--cream);flex:1;min-width:280px;line-height:1.2}
+.auth .big em{font-style:normal;color:var(--gold2)}
+.auth .sig{font-family:var(--ui);font-size:13px;color:var(--muted);text-align:right}
+.auth .sig b{display:block;font-family:var(--disp);font-size:22px;color:var(--cream);font-weight:700}
+/* chip/plano legado (mantidos p/ compat) */
+.chip{display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.chip .e{font-size:26px}.chip .t{font-family:var(--disp);font-size:20px;color:var(--cream)}.chip .n{font-family:var(--ui);font-size:12px;color:var(--muted)}
 .plano{position:relative;text-align:center}
-.plano .nm{font-family:"Cormorant Garamond",Georgia,serif;font-size:26px;color:var(--ouro2);margin-bottom:4px}
-.plano .pr{font-size:30px;color:var(--creme);margin:8px 0 2px}
-.plano .pe{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--suave)}
-.plano .pn{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--ouro2);margin-top:10px}
-.plano .pcard{font-family:system-ui,sans-serif;font-size:12px;color:var(--suave);margin-top:8px}
-.planbtn{display:inline-block;margin-top:16px;font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));text-decoration:none;padding:10px 26px;border-radius:100px}
-.planbtn:hover{filter:brightness(1.06)}
+.plano .nm{font-family:var(--disp);font-size:26px;color:var(--gold2);margin-bottom:4px}
+.plano .pr{font-size:30px;color:var(--cream);margin:8px 0 2px}
+.plano .pe{font-family:var(--ui);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.plano .pn{font-family:var(--ui);font-size:12.5px;color:var(--gold2);margin-top:10px}
 /* login/forms */
 .panel{max-width:440px;margin:40px auto;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);
   border-radius:20px;padding:38px 32px}
@@ -103,7 +162,7 @@ button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
 .item .d{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.06em;color:var(--ouro2);margin-bottom:6px}
 .item .t{font-family:"Cormorant Garamond",Georgia,serif;font-size:23px;color:var(--creme);line-height:1.2}
 /* documento (papel claro sobre o fundo escuro) — reusa estilos do PDF */
-.doc{background:var(--creme);color:#20302b;border-radius:16px;padding:40px 44px;margin:8px 0 26px;box-shadow:0 20px 60px -20px rgba(0,0,0,.6)}
+.doc{background:var(--creme);color:#20302b;border-radius:16px;padding:40px 44px;margin:8px auto 26px;max-width:860px;box-shadow:0 20px 60px -20px rgba(0,0,0,.6)}
 .doc .title{font-family:"Cormorant Garamond",Georgia,serif;font-size:34px;line-height:1.18;color:#14332a;margin-bottom:12px}
 .doc .meta{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#6f7d78;border-bottom:2px solid var(--ouro);padding-bottom:12px;margin-bottom:20px}
 .doc .corpo p{margin:.8em 0;font-size:17px;color:#2b3a35}
@@ -137,6 +196,49 @@ textarea:focus{outline:none;border-color:var(--ouro)}
 .pay label{display:flex;align-items:center;gap:8px;flex:1;min-width:150px;background:rgba(0,0,0,.2);border:1px solid rgba(233,225,198,.18);border-radius:12px;padding:13px 14px;color:var(--creme);text-transform:none;letter-spacing:0;font-family:Georgia,serif;font-size:15px;cursor:pointer;margin:0}
 .pay .sub2{display:block;font-family:system-ui,sans-serif;font-size:12px;color:var(--suave)}
 .resumo{background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.35);border-radius:12px;padding:14px 16px;margin-bottom:20px;font-family:system-ui,sans-serif;font-size:14px;color:var(--creme)}
+/* ===== arquivo (redesign: abas por tema + mês/semana + leitura) ===== */
+.back{display:inline-flex;align-items:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--cream);border:1px solid var(--line);border-radius:100px;padding:9px 18px;margin-bottom:22px;transition:.18s}
+.back:hover{border-color:var(--gold);color:var(--gold2)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:2px;margin-bottom:26px}
+.tab{display:inline-flex;align-items:center;gap:9px;font-family:var(--ui);font-size:13.5px;color:var(--muted);padding:12px 16px;border-radius:12px 12px 0 0;position:relative;transition:.15s}
+.tab .cnt{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.07);padding:2px 8px;border-radius:100px;color:var(--muted)}
+.tab:hover{color:var(--cream)}
+.tab.on{color:var(--gold2)}
+.tab.on .cnt{background:rgba(201,162,39,.18);color:var(--gold2)}
+.tab.on::after{content:"";position:absolute;left:14px;right:14px;bottom:-2px;height:2px;background:var(--gold)}
+.entry{display:grid;grid-template-columns:132px 1fr;gap:18px;align-items:baseline;border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-bottom:10px;transition:.15s;background:rgba(255,255,255,.02)}
+.entry:hover{border-color:rgba(201,162,39,.5);background:rgba(255,255,255,.05)}
+.entry .date{font-family:var(--mono);font-size:12.5px;color:var(--gold2);letter-spacing:.02em}
+.entry .etag{font-family:var(--ui);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:6px}
+.entry .etitle{font-family:var(--disp);font-size:22px;color:var(--cream);line-height:1.2;margin-top:2px}
+.entry .esrc{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:8px}
+.month{border:1px solid var(--line);border-radius:14px;margin-bottom:14px;overflow:hidden;background:rgba(255,255,255,.02)}
+.month-h{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;cursor:pointer;user-select:none}
+.month-h .mt{font-family:var(--disp);font-size:22px;color:var(--cream)}
+.month-h .rt{display:flex;align-items:center;gap:12px}
+.month-h .mc{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.month-h .chev{color:var(--gold2);transition:.2s;font-size:13px}
+.month.collapsed .month-body{display:none}
+.month.collapsed .chev{transform:rotate(-90deg)}
+.month-body{padding:2px 16px 14px}
+.week-h{font-family:var(--ui);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold2);margin:16px 0 10px;display:flex;align-items:center;gap:12px}
+.week-h::after{content:"";flex:1;height:1px;background:var(--line)}
+.empty-note{font-family:var(--ui);font-size:13px;color:var(--muted);padding:16px 2px}
+.rtag{display:inline-flex;gap:7px;align-items:center;background:var(--g800);color:var(--gold2);font-family:var(--ui);font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:5px 11px;border-radius:100px;margin-bottom:12px}
+.prevnext{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;max-width:860px;margin:0 auto}
+.pn-btn{flex:1;min-width:200px;background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:12px;padding:14px 18px;transition:.15s}
+.pn-btn:hover{border-color:var(--gold);background:rgba(255,255,255,.06)}
+.pn-btn .k{font-family:var(--ui);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.pn-btn .v{font-family:var(--disp);font-size:16.5px;color:var(--cream);margin-top:3px}
+.pn-btn.next{text-align:right}
+@media(max-width:820px){
+  .hero{grid-template-columns:1fr;gap:30px}
+  .themes{grid-template-columns:repeat(2,1fr)}
+  .bento{grid-template-columns:1fr}.c-a,.c-b,.c-c,.c-d,.c-e{grid-column:auto}
+  .plans{grid-template-columns:repeat(2,1fr)}
+  .entry{grid-template-columns:1fr;gap:4px}
+  .doc{padding:28px 22px}
+}
 """
 
 
@@ -149,10 +251,14 @@ def _cta():
 
 
 def _topbar(logado=False):
-    direita = ('<a href="/artigos">Arquivo</a> <a href="/minha">Minha conta</a>'
-               if logado else '<a href="/entrar">Entrar</a>')
+    direita = ('<a class="plain" href="/artigos">Arquivo</a>'
+               '<a class="plain" href="/minha">Minha conta</a>'
+               '<a class="pill" href="/sair">Sair</a>'
+               if logado else
+               '<a class="plain" href="/#planos">Planos</a>'
+               '<a class="pill" href="/entrar">Entrar</a>')
     return (f'<div class="wrap"><div class="top">'
-            f'<a href="/" style="text-decoration:none"><div class="brand">'
+            f'<a href="/"><div class="brand">'
             f'<span class="m">{_esc(MARCA)}</span><span class="c">{_esc(CRM)}</span></div></a>'
             f'<nav class="nav">{direita}</nav></div></div>')
 
@@ -174,44 +280,81 @@ def _pagina(titulo, corpo, logado=False, meta_extra=""):
 
 # ── Landing (pública) ──
 def landing():
-    temas = [("⚖️", "Obesidade"), ("⚕️", "Menopausa & Reposição Hormonal"),
+    temas = [("⚖️", "Obesidade"), ("⚕️", "Menopausa & Reposição"),
              ("🦵", "Lipedema"), ("🏃", "Performance"), ("🧬", "Longevidade")]
-    chips = "".join(
-        f'<div class="chip"><span class="e">{_esc(e)}</span>'
-        f'<div><div class="t">{_esc(t)}</div><div class="n">estudo do dia</div></div></div>'
+    themes = "".join(
+        f'<div class="theme"><div class="e">{_esc(e)}</div>'
+        f'<div class="t">{_esc(t)}</div><div class="n">estudo do dia</div></div>'
         for e, t in temas)
     valores = [
-        ("Curadoria + revisão médica", "Uma IA tria a literatura da semana; o Dr. Diego revisa antes de sair. Você recebe o que importa, sem ruído."),
-        ("1 estudo por dia útil", "De segunda a sexta, um artigo relevante — resumo clínico direto ao ponto, no seu WhatsApp."),
-        ("Pronto para as redes", "Cada edição traz uma dica de como levar o tema para os seus pacientes nas redes sociais."),
-        ("Arquivo consultável", "Tudo que você recebeu fica organizado por tema e data, sempre à mão neste portal."),
+        ("01 · curadoria", "Curadoria + revisão médica", "Uma IA tria a literatura da semana; o Dr. Diego revisa antes de sair. Você recebe o que importa, sem ruído.", "card big c-a"),
+        ("02 · cadência", "1 estudo por dia útil", "De segunda a sexta, um artigo relevante — resumo clínico direto ao ponto, no seu WhatsApp.", "card c-b"),
+        ("03 · redes", "Pronto para as redes", "Cada edição traz um gancho para levar o tema aos seus pacientes.", "card c-c"),
+        ("04 · pdf", "PDF elegante", "Um documento assinado, com gráfico e fonte — pronto para guardar ou compartilhar.", "card c-d"),
+        ("05 · arquivo", "Arquivo consultável", "Tudo por tema e data, sempre à mão neste portal.", "card c-e"),
     ]
-    cards = "".join(f'<div class="card"><h3>{_esc(n)}</h3><p>{_esc(d)}</p></div>' for n, d in valores)
+    bento = "".join(
+        f'<div class="{cls}"><span class="k">{_esc(k)}</span><h3>{_esc(n)}</h3><p>{_esc(d)}</p></div>'
+        for k, n, d, cls in valores)
     planos = "".join(
-        f'<div class="card plano"><div class="nm">{_esc(p["nome"])}</div>'
+        f'<a class="plan{" best" if p["slug"] == "anual" else ""}" href="/assinar?plano={_esc(p["slug"])}">'
+        + ('<div class="badge">Melhor preço</div>' if p["slug"] == "anual" else "")
+        + f'<div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(p["nota"])}</div>' if p.get("nota") else "")
-        + f'<a class="planbtn" href="/assinar?plano={_esc(p["slug"])}">Assinar</a>'
-        + '</div>' for p in config.PLANOS)
+        + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS)
     corpo = f"""
     <div class="wrap">
       <section class="hero">
-        <div class="eyebrow">{_esc(PRODUTO)}</div>
-        <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — todo dia útil, no seu WhatsApp.</h1>
-        <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
-        <a class="cta" href="{_cta()}">Quero assinar</a>
+        <div>
+          <div class="eyebrow">{_esc(PRODUTO)}</div>
+          <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — todo dia útil.</h1>
+          <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
+          <div class="ctas">
+            <a class="btn solid" href="{_cta()}">Quero assinar</a>
+            <a class="btn ghost" href="/entrar">Já sou assinante</a>
+          </div>
+          <div class="trust">✳︎ <span>De segunda a sexta · <b>revisão médica</b> antes de cada envio</span></div>
+        </div>
+        <aside class="dispatch">
+          <span class="dtag">⚖️ Obesidade · edição do dia</span>
+          <div class="dmeta">NEJM · 18 JUL 2026 · DOI 10.1056/NEJMoa2410000</div>
+          <div class="dtitle">Tirzepatida sustenta a perda de peso em 3 anos — extensão do SURMOUNT-1</div>
+          <div class="dbody"><p>Na extensão aberta, a perda ponderal se manteve com <strong>boa tolerância</strong>; descontinuação por eventos GI ficou abaixo de 6%.</p></div>
+          <div class="chart">
+            <div class="crow"><span class="clab">15 mg</span><span class="ctrack"><span class="cfill" style="width:92%"></span></span><span class="cval">−22,5%</span></div>
+            <div class="crow"><span class="clab">10 mg</span><span class="ctrack"><span class="cfill" style="width:78%"></span></span><span class="cval">−19,1%</span></div>
+            <div class="crow"><span class="clab">5 mg</span><span class="ctrack"><span class="cfill" style="width:62%"></span></span><span class="cval">−15,0%</span></div>
+          </div>
+          <div class="hook"><div class="hl">Para as suas redes</div><div class="ht">"Manter o resultado é tão importante quanto alcançá-lo — e os dados de 3 anos reforçam isso."</div></div>
+        </aside>
       </section>
-      <section class="sec"><h2 class="disp">O que você recebe</h2>
-        <div class="grid g4">{cards}</div></section>
-      <section class="sec"><h2 class="disp">Cinco frentes, uma rotina</h2>
-        <p class="sub">A fila varia os temas para você não receber dois dias seguidos do mesmo assunto.</p>
-        <div class="grid g3">{chips}</div></section>
-      <section class="sec"><h2 class="disp">Planos</h2>
-        <p class="sub">Escolha a recorrência que faz sentido para você. Renova automaticamente até você cancelar.</p>
-        <div class="grid g4">{planos}</div>
-        <div style="margin-top:26px"><a class="cta" href="{_cta()}">Quero assinar</a>
-        <a class="cta ghost" href="/entrar" style="margin-left:10px">Já sou assinante</a></div>
+
+      <section class="sec" style="border-top:none;padding-top:16px">
+        <div class="sectag">Cinco frentes, uma rotina</div>
+        <div class="themes">{themes}</div>
+      </section>
+
+      <section class="sec">
+        <h2 class="disp">O que chega até você</h2>
+        <p class="sub">A fila varia os temas para você não receber dois dias seguidos do mesmo assunto — e tudo fica guardado no seu arquivo.</p>
+        <div class="bento">{bento}</div>
+      </section>
+
+      <section class="sec" id="planos">
+        <h2 class="disp">Planos</h2>
+        <p class="sub">Escolha a recorrência que faz sentido. Renova automaticamente até você cancelar.</p>
+        <div class="plans">{planos}</div>
+        <div style="margin-top:28px"><a class="btn solid" href="{_cta()}">Quero assinar</a>
+        <a class="btn ghost" href="/entrar" style="margin-left:10px">Já sou assinante</a></div>
+      </section>
+
+      <section class="sec">
+        <div class="auth">
+          <div class="big">"Leio a literatura para que você não precise abrir <em>vinte abas</em> — e chego com o que muda a conduta."</div>
+          <div class="sig">curadoria e revisão<b>{_esc(MARCA)}</b>{_esc(CRM)}</div>
+        </div>
       </section>
     </div>"""
     return _pagina(f"{PRODUTO} · {MARCA}", corpo, logado=False)
@@ -478,41 +621,94 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
 
 
 # ── Arquivo (protegido) ──
-def hub_temas(temas):
+def _arquivo_tabs(temas, ativo):
+    """Barra de abas por tema (links). ativo = slug destacado."""
     if not temas:
-        corpo = ('<div class="wrap"><section class="sec"><h2 class="disp">Arquivo</h2>'
-                 '<p class="sub">Ainda não há edições publicadas. Assim que a primeira for enviada, ela aparece aqui.</p></section></div>')
-        return _pagina(f"Arquivo · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
-    cards = "".join(
-        f'<a class="item" href="/artigos/{_esc(t["slug"])}" style="display:flex;align-items:center;gap:16px">'
-        f'<span style="font-size:30px">{_esc(t["emoji"])}</span>'
-        f'<span><span class="t">{_esc(t["rotulo"])}</span><br>'
-        f'<span class="d">{t["total"]} edi{"ção" if t["total"]==1 else "ções"}</span></span></a>'
+        return ""
+    tabs = "".join(
+        f'<a class="tab{" on" if t["slug"] == ativo else ""}" href="/artigos/{_esc(t["slug"])}">'
+        f'{_esc(t.get("emoji",""))} {_esc(t["rotulo"])} <span class="cnt">{t["total"]}</span></a>'
         for t in temas)
-    corpo = (f'<div class="wrap"><section class="sec"><h2 class="disp">Arquivo por tema</h2>'
-             f'<p class="sub">Tudo que você já recebeu, organizado por frente e por data.</p>{cards}</section></div>')
+    return f'<div class="tabs">{tabs}</div>'
+
+
+def _entry_html(meta, d, dt):
+    fonte = _esc(d.get("fonte", "") or "")
+    doi = f' · DOI {_esc(d.get("doi"))}' if d.get("doi") else ""
+    return (f'<a class="entry" href="/artigos/{_esc(meta["slug"])}/{_esc(d["data"])}">'
+            f'<div class="date">{_esc(_data_br_curto(dt))}</div>'
+            f'<div><div class="etag">{_esc(meta["rotulo"])}</div>'
+            f'<div class="etitle">{_esc(d["titulo_pt"])}</div>'
+            f'<div class="esrc">{fonte}{doi}</div></div></a>')
+
+
+def _agrupar_por_mes_semana(meta, digests):
+    """Agrupa as edições por MÊS (mais recente aberto) e, dentro, por SEMANA.
+    Evita o scroll gigante: meses antigos vêm recolhidos."""
+    from datetime import date, timedelta
+    from collections import OrderedDict
+    parsed = []
+    for d in digests:
+        try:
+            dt = date.fromisoformat(d["data"])
+        except Exception:
+            continue
+        parsed.append((dt, d))
+    parsed.sort(key=lambda x: x[0], reverse=True)
+    meses = OrderedDict()
+    for dt, d in parsed:
+        meses.setdefault((dt.year, dt.month), []).append((dt, d))
+    blocos = []
+    for idx, (mk, itens) in enumerate(meses.items()):
+        semanas = OrderedDict()
+        for dt, d in itens:
+            seg = dt - timedelta(days=dt.weekday())
+            semanas.setdefault(seg, []).append((dt, d))
+        corpo_sem = "".join(
+            f'<div class="week-h">{_esc(_semana_label(seg))}</div>'
+            + "".join(_entry_html(meta, d, dt) for dt, d in ents)
+            for seg, ents in semanas.items())
+        n = len(itens)
+        cls = "month" if idx == 0 else "month collapsed"
+        blocos.append(
+            f'<div class="{cls}"><div class="month-h" onclick="this.parentElement.classList.toggle(\'collapsed\')">'
+            f'<span class="mt disp">{_esc(_mes_nome(mk[1]))} {mk[0]}</span>'
+            f'<span class="rt"><span class="mc">{n} edi{"ção" if n == 1 else "ções"}</span>'
+            f'<span class="chev">▾</span></span></div>'
+            f'<div class="month-body">{corpo_sem}</div></div>')
+    return "".join(blocos)
+
+
+def hub_temas(temas):
+    """Estado vazio do arquivo (quando há temas, o serve chama lista_tema no 1º)."""
+    corpo = ('<div class="wrap">'
+             '<div class="sectag" style="margin-top:8px">Portal do assinante</div>'
+             '<h2 class="disp" style="font-size:clamp(30px,4.4vw,44px);color:var(--cream);margin-bottom:6px">Arquivo</h2>'
+             '<p class="sub">Ainda não há edições publicadas. Assim que a primeira for enviada, ela aparece '
+             'aqui — organizada por tema, mês e semana.</p></div>')
     return _pagina(f"Arquivo · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def lista_tema(meta, digests):
-    itens = "".join(
-        f'<a class="item" href="/artigos/{_esc(meta["slug"])}/{_esc(d["data"])}">'
-        f'<div class="d">{_esc(_data_br(d["data"]))}</div>'
-        f'<div class="t">{_esc(d["titulo_pt"])}</div></a>'
-        for d in digests) or '<p class="sub">Nenhuma edição neste tema ainda.</p>'
-    corpo = (f'<div class="wrap"><div class="crumb"><a href="/artigos">Arquivo</a> › {_esc(meta["rotulo"])}</div>'
-             f'<section style="padding-bottom:40px"><h2 class="disp" style="font-size:38px;color:var(--creme)">'
-             f'{_esc(meta["emoji"])} {_esc(meta["rotulo"])}</h2>'
-             f'<p class="sub">{len(digests)} edi{"ção" if len(digests)==1 else "ções"}</p>{itens}</section></div>')
+def lista_tema(meta, digests, temas=None):
+    tabs = _arquivo_tabs(temas, meta["slug"])
+    grupos = (_agrupar_por_mes_semana(meta, digests) if digests
+              else '<div class="empty-note">Nenhuma edição neste tema ainda.</div>')
+    corpo = (f'<div class="wrap">'
+             f'<div class="sectag" style="margin-top:8px">Portal do assinante</div>'
+             f'<h2 class="disp" style="font-size:clamp(30px,4.4vw,44px);color:var(--cream);margin-bottom:6px">Arquivo por tema</h2>'
+             f'<p class="sub" style="margin-bottom:22px">Tudo que você já recebeu, organizado por frente, por mês e por semana.</p>'
+             f'{tabs}{grupos}</div>')
     return _pagina(f'{meta["rotulo"]} · {PRODUTO}', corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_digest(meta, d):
+def pagina_digest(meta, d, vizinhos=None):
     try:
         grafico = json.loads(d.get("grafico") or "null")
     except Exception:
         grafico = None
+    tag = f'{_esc(meta.get("emoji",""))} {_esc(meta["rotulo"])} · edição'.strip()
     corpo_doc = (f'<div class="doc">'
+                 f'<span class="rtag">{tag}</span>'
                  f'<h1 class="title">{_esc(d["titulo_pt"])}</h1>'
                  f'<div class="meta">{_esc(d.get("fonte",""))} · {_esc(_data_br(d["data"]))} · DOI {_esc(d.get("doi","") or "—")}</div>'
                  f'<div class="corpo">{pdf._resumo_html(d.get("resumo",""))}</div>'
@@ -520,9 +716,20 @@ def pagina_digest(meta, d):
     if d.get("url"):
         corpo_doc += f'<div style="margin-top:22px"><a class="docbtn" href="{_esc(d["url"])}" target="_blank" rel="noopener">Ver o estudo original ↗</a></div>'
     corpo_doc += '</div>'
+    pn = ""
+    if vizinhos and (vizinhos[0] or vizinhos[1]):
+        ant, prox = vizinhos
+        esq = (f'<a class="pn-btn prev" href="/artigos/{_esc(meta["slug"])}/{_esc(ant["data"])}">'
+               f'<div class="k">← Edição anterior</div><div class="v">{_esc(_data_br(ant["data"]))}</div></a>'
+               ) if ant else '<span class="pn-btn" style="visibility:hidden"></span>'
+        dire = (f'<a class="pn-btn next" href="/artigos/{_esc(meta["slug"])}/{_esc(prox["data"])}">'
+                f'<div class="k">Próxima edição →</div><div class="v">{_esc(_data_br(prox["data"]))}</div></a>'
+                ) if prox else '<span class="pn-btn" style="visibility:hidden"></span>'
+        pn = f'<div class="prevnext">{esq}{dire}</div>'
     corpo = (f'<div class="wrap"><div class="crumb">'
              f'<a href="/artigos">Arquivo</a> › <a href="/artigos/{_esc(meta["slug"])}">{_esc(meta["rotulo"])}</a> › {_esc(_data_br(d["data"]))}</div>'
-             f'{corpo_doc}</div>')
+             f'<a class="back" href="/artigos/{_esc(meta["slug"])}">← Voltar ao arquivo</a>'
+             f'{corpo_doc}{pn}</div>')
     return _pagina(f'{d["titulo_pt"]} · {PRODUTO}', corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
@@ -674,6 +881,9 @@ def robots_txt():
 
 
 _MESES = ["", "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+_MESES_LONGO = ["", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+_DIAS_ABREV = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
 
 
 def _data_br(iso):
@@ -682,3 +892,24 @@ def _data_br(iso):
         return f"{int(dd)} {_MESES[int(m)]} {a}"
     except Exception:
         return iso
+
+
+def _mes_nome(m):
+    try:
+        return _MESES_LONGO[int(m)]
+    except Exception:
+        return str(m)
+
+
+def _data_br_curto(dt):
+    """date -> '10 jul · sex'."""
+    return f"{dt.day:02d} {_MESES[dt.month]} · {_DIAS_ABREV[dt.weekday()]}"
+
+
+def _semana_label(seg):
+    """seg (segunda-feira, date) -> 'Semana 07–11 jul' (ou cruzando o mês)."""
+    from datetime import timedelta
+    sex = seg + timedelta(days=4)
+    if seg.month == sex.month:
+        return f"Semana {seg.day:02d}–{sex.day:02d} {_MESES[seg.month]}"
+    return f"Semana {seg.day:02d} {_MESES[seg.month]}–{sex.day:02d} {_MESES[sex.month]}"
