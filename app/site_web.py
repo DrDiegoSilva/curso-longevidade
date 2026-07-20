@@ -16,6 +16,14 @@ MARCA = "Dr. Diego Silva"
 CRM = "CRM-PR 54310"
 PRODUTO = "Atualização Científica"
 
+# Favicon SVG (verde-escuro + monograma dourado). Servido em /favicon.svg e /favicon.ico.
+FAVICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"
+    "<rect width='64' height='64' rx='14' fill='#0e211a'/>"
+    "<text x='32' y='43' text-anchor='middle' font-family='Georgia,\"Times New Roman\",serif' "
+    "font-size='36' font-weight='700' fill='#e7c766'>D</text>"
+    "<rect x='21' y='49' width='22' height='3' rx='1.5' fill='#c9a227'/></svg>")
+
 _FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
           '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
           '<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">')
@@ -274,6 +282,7 @@ def _foot():
 def _pagina(titulo, corpo, logado=False, meta_extra=""):
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
             f'<title>{_esc(titulo)}</title>{meta_extra}{_FONTS}<style>{_CSS}</style></head><body>'
             f'{_topbar(logado)}{corpo}{_foot()}</body></html>')
 

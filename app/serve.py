@@ -72,6 +72,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path in ("/health", "/healthz"):
             self.send_response(200); self.send_header("Content-Type", "text/plain"); self.end_headers()
             self.wfile.write(b"ok"); return
+        if path in ("/favicon.ico", "/favicon.svg"):
+            import site_web
+            self.send_response(200)
+            self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+            self.send_header("Cache-Control", "public, max-age=604800")
+            self.end_headers()
+            self.wfile.write(site_web.FAVICON_SVG.encode("utf-8")); return
         if path == "/robots.txt":
             import site_web
             body = site_web.robots_txt() if self._site() else "User-agent: *\nAllow: /\n"
