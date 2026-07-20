@@ -98,6 +98,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:                # /pdf/<data> -> prévia do rascunho
                 r = draft_store.carregar(data_iso)
                 fpath = r.get("pdf_path", "") if r else ""
+                if r and (not fpath or not os.path.exists(fpath)):
+                    try:                # /data é efêmero: regenera a prévia do rascunho persistido
+                        import pdf as pdfmod, daily
+                        art = r["artigo"]
+                        conteudo = {"titulo_pt": r.get("titulo_pt") or art.get("titulo", ""),
+                                    "resumo": r.get("resumo", ""), "gancho": r.get("gancho", ""),
+                                    "grafico": r.get("grafico")}
+                        fpath = os.path.join(config.drafts_dir(), f"{data_iso}-preview.pdf")
+                        os.makedirs(config.drafts_dir(), exist_ok=True)
+                        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, "Dr. Diego (revisão)",
+                                         daily._tema_meta(art.get("tema", ""))), fpath)
+                    except Exception as e:
+                        print(f"[pdf] regen preview falhou: {e}", flush=True)
             if fpath and os.path.exists(fpath):
                 body = open(fpath, "rb").read()
                 self.send_response(200); self.send_header("Content-Type", "application/pdf"); self.end_headers()

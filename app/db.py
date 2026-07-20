@@ -155,6 +155,14 @@ def init():
                 status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
                 origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS daily_drafts (
+                data TEXT PRIMARY KEY,
+                review_token TEXT,
+                status TEXT DEFAULT 'DRAFT',
+                payload TEXT,
+                criado_em TEXT,
+                atualizado_em TEXT
+            );
             """
         )
     _migrar_colunas()
@@ -166,7 +174,7 @@ def init():
 
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
-            "curadoria_candidatos", "reserva_resumos"]
+            "curadoria_candidatos", "reserva_resumos", "daily_drafts"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -412,6 +420,34 @@ def atualizar_reserva(rid, titulo_pt=None, resumo=None):
 def remover_reserva(rid):
     with _conn() as c:
         c.execute("DELETE FROM reserva_resumos WHERE id=?", (rid,))
+
+
+# ── Rascunho do dia (persistido no banco — sobrevive a deploy/restart) ──
+def salvar_draft(data, review_token, status, payload):
+    from datetime import datetime
+    agora = datetime.now().isoformat()
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO daily_drafts (data,review_token,status,payload,criado_em,atualizado_em)
+               VALUES (?,?,?,?,?,?)
+               ON CONFLICT(data) DO UPDATE SET review_token=excluded.review_token,
+                 status=excluded.status, payload=excluded.payload, atualizado_em=excluded.atualizado_em""",
+            (data, review_token or "", status or "DRAFT",
+             json.dumps(payload, ensure_ascii=False), agora, agora))
+
+
+def obter_draft(data):
+    with _conn() as c:
+        r = c.execute("SELECT payload FROM daily_drafts WHERE data=?", (data,)).fetchone()
+    return json.loads(r["payload"]) if r and r["payload"] else None
+
+
+def obter_draft_por_token(token):
+    if not token:
+        return None
+    with _conn() as c:
+        r = c.execute("SELECT payload FROM daily_drafts WHERE review_token=?", (token,)).fetchone()
+    return json.loads(r["payload"]) if r and r["payload"] else None
 
 
 def registrar_digest(art, conteudo, tmeta=None, data=None):

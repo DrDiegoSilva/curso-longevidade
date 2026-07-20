@@ -1,16 +1,15 @@
-"""Rascunho do dia: persistência em /data/drafts + máquina de estado."""
-import os
-import json
+"""Rascunho do dia + máquina de estado.
+
+PERSISTIDO NO BANCO (Supabase/`daily_drafts`), não mais em /data/drafts.
+Motivo: /data é efêmero — apagado a cada deploy/restart do container. O estudo
+preparado às 18h precisa sobreviver até o envio das 08h. API pública inalterada
+(novo_rascunho/salvar/carregar/por_token/pode_enviar/aplicar) — daily.py não muda.
+"""
 import secrets
-import glob
 from datetime import datetime
-import config
+import db
 
 VALIDOS = {"DRAFT", "APPROVED", "EDITED", "SKIPPED", "SENT"}
-
-
-def _path(data_iso):
-    return os.path.join(config.drafts_dir(), f"{data_iso}.json")
 
 
 def novo_rascunho(data_iso, artigo, resumo, pdf_path):
@@ -27,27 +26,18 @@ def novo_rascunho(data_iso, artigo, resumo, pdf_path):
 
 
 def salvar(r):
-    os.makedirs(config.drafts_dir(), exist_ok=True)
-    with open(_path(r["data"]), "w", encoding="utf-8") as f:
-        json.dump(r, f, ensure_ascii=False, indent=1)
+    db.init()
+    db.salvar_draft(r["data"], r.get("review_token", ""), r.get("status", "DRAFT"), r)
 
 
 def carregar(data_iso):
-    try:
-        return json.load(open(_path(data_iso), encoding="utf-8"))
-    except Exception:
-        return None
+    db.init()
+    return db.obter_draft(data_iso)
 
 
 def por_token(token):
-    for p in glob.glob(os.path.join(config.drafts_dir(), "*.json")):
-        try:
-            r = json.load(open(p, encoding="utf-8"))
-            if r.get("review_token") == token:
-                return r
-        except Exception:
-            pass
-    return None
+    db.init()
+    return db.obter_draft_por_token(token)
 
 
 def pode_enviar(status):
