@@ -285,7 +285,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
             elif acao == "gerar_cupom":
-                db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True)
+                try:
+                    dias = max(0, int(g("dias") or "0"))
+                except ValueError:
+                    dias = 0
+                db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True, dias_acesso=dias)
             return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
         if path == "/curadoria":
             import config, db, curadoria
@@ -497,7 +501,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         cupom = g("cupom").strip()
         # Cupom de cortesia: ativa na hora, sem Asaas
         if cupom and db.cupom_valido(cupom):
-            subscribers.criar_de_pagamento({**dados, "plano": plano["slug"], "metodo": "CUPOM"}, {}, status="ATIVO")
+            info = db.obter_cupom(cupom) or {}
+            reg = subscribers.criar_de_pagamento({**dados, "plano": plano["slug"], "metodo": "CUPOM"}, {}, status="ATIVO")
+            dias = int(info.get("dias_acesso") or 0)
+            if dias > 0:                       # cortesia com prazo -> define o fim do acesso
+                from datetime import datetime, timedelta
+                subscribers.marcar_status(reg["id"], "ATIVO",
+                                          acesso_ate=(datetime.now() + timedelta(days=dias)).isoformat())
             db.consumir_cupom(cupom)          # gasta o cupom (uso único desativa)
             try:
                 import deliver

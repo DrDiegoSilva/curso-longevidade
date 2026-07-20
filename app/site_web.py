@@ -617,9 +617,10 @@ def pagina_admin(assinantes, token="", cupons=None):
         on = bool(c.get("ativo"))
         cor = "#2f9e6b" if on else "#7a8a84"
         uu = "uso único" if c.get("uso_unico") else "multi-uso"
+        dur = "acesso p/ sempre" if not c.get("dias_acesso") else f"{c.get('dias_acesso')} dias de acesso"
         return (f'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid rgba(233,225,198,.1)">'
                 f'<div><span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;color:var(--ouro2);letter-spacing:.06em">{_esc(c.get("codigo"))}</span>'
-                f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {c.get("usos", 0)} uso(s)</div></div>'
+                f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {dur} · {c.get("usos", 0)} uso(s)</div></div>'
                 f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{"ATIVO" if on else "USADO"}</span></div>')
     cupons_lista = "".join(_cupom_row(c) for c in (cupons or [])) or '<p class="hint" style="margin-top:8px">Nenhum cupom gerado ainda.</p>'
     corpo = f"""
@@ -655,6 +656,15 @@ def pagina_admin(assinantes, token="", cupons=None):
             <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="gerar_cupom">
             <label>Descrição (opcional — pra você lembrar de quem é)</label>
             <input type="text" name="descricao" placeholder="ex.: Dr. Fulano, cortesia evento">
+            <label style="margin-top:10px">Tempo de acesso</label>
+            <select name="dias">
+              <option value="0">Para sempre</option>
+              <option value="7">7 dias</option>
+              <option value="15">15 dias</option>
+              <option value="30">30 dias</option>
+              <option value="90">90 dias</option>
+              <option value="365">1 ano</option>
+            </select>
             <button class="actbtn" type="submit" style="margin-top:14px">➕ Gerar cupom de uso único</button>
           </form>
           <div style="margin-top:16px">{cupons_lista}</div>

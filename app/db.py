@@ -197,6 +197,7 @@ def _migrar_colunas():
         _add_coluna(c, "subscribers", "curador", "INTEGER DEFAULT 0")
         _add_coluna(c, "cupons", "usos", "INTEGER DEFAULT 0")
         _add_coluna(c, "cupons", "uso_unico", "INTEGER DEFAULT 1")
+        _add_coluna(c, "cupons", "dias_acesso", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
@@ -261,16 +262,23 @@ def cupom_valido(codigo):
     return bool(r and r["ativo"])
 
 
-def criar_cupom(descricao="", uso_unico=True, codigo=None):
-    """Gera um cupom de cortesia. Sem código informado, cria um aleatório. Retorna o código."""
+def criar_cupom(descricao="", uso_unico=True, dias_acesso=0, codigo=None):
+    """Gera um cupom de cortesia. dias_acesso=0 => acesso permanente; N => N dias.
+    Sem código informado, cria um aleatório. Retorna o código."""
     import secrets
     from datetime import datetime
     cod = (codigo or secrets.token_hex(4)).strip().upper()
     with _conn() as c:
-        c.execute("INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,criado_em) VALUES (?,1,?,0,?,?) "
+        c.execute("INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,dias_acesso,criado_em) VALUES (?,1,?,0,?,?,?) "
                   "ON CONFLICT (codigo) DO NOTHING",
-                  (cod, descricao or "", 1 if uso_unico else 0, datetime.now().isoformat()))
+                  (cod, descricao or "", 1 if uso_unico else 0, int(dias_acesso or 0), datetime.now().isoformat()))
     return cod
+
+
+def obter_cupom(codigo):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM cupons WHERE codigo=?", ((codigo or "").strip().upper(),)).fetchone()
+    return dict(r) if r else None
 
 
 def listar_cupons():

@@ -73,7 +73,9 @@ def tem_acesso(s, agora=None):
     agora = agora or datetime.now()
     st = s.get("status")
     if st == "ATIVO":
-        return True
+        ac = s.get("acesso_ate")          # cortesia com prazo: ATIVO + acesso_ate no futuro
+        return _futuro(ac, agora) if ac else True   # pago/vitalício sem data = sempre
+
     if st == "INADIMPLENTE":
         return _futuro(s.get("carencia_ate"), agora)
     if st == "CANCELADO":
