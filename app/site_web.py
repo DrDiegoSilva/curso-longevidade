@@ -457,11 +457,15 @@ def pagina_digest(meta, d):
     return _pagina(f'{d["titulo_pt"]} · {PRODUTO}', corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_minha(sub):
+def pagina_minha(sub, admin=False):
+    admin_html = ('<div class="infobox" style="margin:16px 0"><strong>Painel do curador</strong><br>'
+                  '<a href="/curadoria" style="color:var(--ouro2)">🔬 Curadoria / Reserva</a> &nbsp;·&nbsp; '
+                  '<a href="/admin" style="color:var(--ouro2)">👥 Assinantes</a></div>') if admin else ""
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Minha assinatura</h2>
       <p class="hint">Olá, {_esc(sub.get("nome") or "assinante")}. Sua assinatura está ativa.</p>
+      {admin_html}
       <p style="margin:18px 0"><a class="cta ghost" href="/artigos">Ir para o arquivo</a></p>
       <p class="hint" style="margin-top:20px"><a href="/sair" style="color:var(--suave)">Sair desta conta</a>
        &nbsp;·&nbsp; <a href="/cancelar" style="color:var(--suave)">Cancelar assinatura</a></p>

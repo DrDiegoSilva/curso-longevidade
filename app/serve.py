@@ -97,15 +97,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self.wfile.write(body)
             return self._html("<h3>PDF não encontrado</h3>", 404)
         if path.startswith("/admin"):
-            import config, subscribers, review_web
+            import config, subscribers, review_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
-            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
-            return self._html(review_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN), 200)
+            return self._html(review_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN or ""), 200)
         if path.startswith("/curadoria"):
-            import config, db, site_web
+            import config, db, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
-            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             cands = db.listar_candidatos(status="novo") + db.listar_candidatos(status="selecionado")
@@ -161,7 +165,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sub = self._sessao()
             if not sub:
                 return self._redirect("/entrar")
-            return self._html(site_web.pagina_minha(sub))
+            import auth_web
+            return self._html(site_web.pagina_minha(sub, admin=auth_web.eh_admin(sub["whatsapp"])))
         if path == "/cancelar":
             if not self._sessao():
                 return self._redirect("/entrar")

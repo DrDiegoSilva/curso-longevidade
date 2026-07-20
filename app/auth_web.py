@@ -120,6 +120,12 @@ def sessao(cookie_header):
     return {"whatsapp": row["whatsapp"], "nome": row["nome"]}
 
 
+def eh_admin(whatsapp):
+    """True se o WhatsApp é de um admin (Diego) — vê os atalhos de admin sem token."""
+    alvo = _norm(whatsapp)
+    return bool(alvo) and alvo in {_norm(w) for w in config.ADMIN_WHATSAPPS}
+
+
 def logout(token):
     if not token:
         return

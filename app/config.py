@@ -43,6 +43,9 @@ def artigos_db():
     return os.environ.get("DSCURSO_ARTIGOS_DB") or os.path.join(DATA, "artigos.db")
 
 ADMIN_TOKEN = os.environ.get("DSCURSO_ADMIN_TOKEN")
+# WhatsApps de admin (Diego): logados, veem os atalhos de admin sem token. CSV na env
+# (default = o número do Diego; sobrescreve com DSCURSO_ADMIN_WHATSAPP).
+ADMIN_WHATSAPPS = [w for w in (os.environ.get("DSCURSO_ADMIN_WHATSAPP") or "5543996578534").replace(" ", "").split(",") if w]
 PUBLIC_URL = (os.environ.get("DSCURSO_PUBLIC_URL") or "https://curso.drdiegosilva.com.br").rstrip("/")
 # URL absoluta do PORTAL de assinantes (host "artigos."). Usada em links de e-mail/WhatsApp
 # (webhook e recuperação de senha rodam fora de uma request → não dá pra derivar do Host).
