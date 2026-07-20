@@ -7,10 +7,12 @@ import config
 def faixa(parcelas):
     p = int(parcelas)
     if p <= 1:
-        return "avista"
+        return "avista"     # 1x
+    if p <= 3:
+        return "ate3"       # 2-3x
     if p <= 6:
-        return "ate6"
-    return "ate12"
+        return "ate6"       # 4-6x
+    return "ate12"          # 7-12x
 
 
 def valor_cartao(base, parcelas=1):

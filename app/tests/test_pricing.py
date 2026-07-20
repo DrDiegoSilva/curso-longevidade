@@ -15,10 +15,17 @@ class TestPricing(unittest.TestCase):
 
     def test_faixa(self):
         self.assertEqual(self.p.faixa(1), "avista")
-        self.assertEqual(self.p.faixa(2), "ate6")
+        self.assertEqual(self.p.faixa(2), "ate3")
+        self.assertEqual(self.p.faixa(3), "ate3")
+        self.assertEqual(self.p.faixa(4), "ate6")
         self.assertEqual(self.p.faixa(6), "ate6")
         self.assertEqual(self.p.faixa(7), "ate12")
         self.assertEqual(self.p.faixa(12), "ate12")
+
+    def test_taxas_definidas_pelo_diego(self):
+        self.assertEqual(self.cfg.TAXA_CARTAO["ate3"], 0.07)    # 3x
+        self.assertEqual(self.cfg.TAXA_CARTAO["ate6"], 0.10)    # 6x
+        self.assertEqual(self.cfg.TAXA_CARTAO["ate12"], 0.12)   # 12x
 
     def test_valor_cartao_gross_up(self):
         base = 960.0

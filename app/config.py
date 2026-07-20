@@ -93,8 +93,9 @@ ASAAS_BASE_URL = (os.environ.get("ASAAS_BASE_URL") or "https://api-sandbox.asaas
 ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY")
 ASAAS_WEBHOOK_TOKEN = os.environ.get("ASAAS_WEBHOOK_TOKEN")
 
-# Taxas de cartão (defaults Asaas; Diego troca pelas reais). gross-up embute a taxa no preço.
-TAXA_CARTAO = {"avista": 0.0299, "ate6": 0.0349, "ate12": 0.0399}
+# Taxas de cartão por faixa de parcelas. gross-up embute a taxa no preço (o Diego
+# recebe ~= o valor do Pix). Definidas pelo Diego (2026-07): 3x=7%, 6x=10%, 12x=12%.
+TAXA_CARTAO = {"avista": 0.0299, "ate3": 0.07, "ate6": 0.10, "ate12": 0.12}
 TAXA_FIXA = float(os.environ.get("DSCURSO_TAXA_FIXA") or "0.49")
 
 # Cupons de cortesia (cadastro grátis, sem Asaas): csv em DSCURSO_CUPONS.
