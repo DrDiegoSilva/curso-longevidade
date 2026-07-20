@@ -622,8 +622,13 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
     grupos = OrderedDict()
     for c in candidatos:
         grupos.setdefault(c.get("tema", "—"), []).append(c)
-    stats = (f'{contagem.get("novo", 0)} novos · {contagem.get("selecionado", 0)} selecionados · '
-             f'{contagem.get("resumido", 0)} já resumidos · {len(reserva)} na reserva')
+    prontos = sum(1 for r in reserva if r.get("status") == "pronto")
+    enviados = sum(1 for r in reserva if r.get("status") == "enviado")
+    stats = (
+        f'<strong>Candidatos da varredura</strong> <span style="color:var(--suave)">(estudos encontrados, ainda sem resumo)</span>: '
+        f'{contagem.get("novo", 0)} novos · {contagem.get("selecionado", 0)} selecionados · {contagem.get("resumido", 0)} já resumidos<br>'
+        f'<strong>Fila de envio (reserva)</strong> <span style="color:var(--suave)">(resumos prontos, inclui o que você subiu)</span>: '
+        f'{prontos} prontos p/ enviar · {enviados} já enviados = {len(reserva)} no total')
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     acoes = f"""
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 22px">
