@@ -35,11 +35,25 @@ _MOTIF = (
 )
 
 
+_SEP_RE = re.compile(r"^[\-_*—–=·•\s]{3,}$")               # linha só de traços/separadores
+_HEADER_RE = re.compile(r"\s*(\S{1,3}\s+)?\*([^*]+)\*\s*")   # linha TODA em negrito (emoji opcional) = título de seção
+
+
 def _resumo_html(resumo):
+    """Converte o resumo (estilo WhatsApp: *negrito*, --- separadores, emojis de
+    seção) em HTML. Título de seção não quebra do texto seguinte (break-after:avoid);
+    linhas só de '---' viram uma divisória sutil (não ficam soltas)."""
     out = []
     for linha in (resumo or "").split("\n"):
         linha = linha.strip()
         if not linha:
+            continue
+        if _SEP_RE.fullmatch(linha):
+            out.append('<hr class="rule">')
+            continue
+        if _HEADER_RE.fullmatch(linha):                     # ex.: "💡 *Em resumo*"
+            inner = _html.escape(re.sub(r"\*([^*]+)\*", r"\1", linha))
+            out.append(f'<p class="h">{inner}</p>')
             continue
         e = _html.escape(linha)
         e = re.sub(r"\*([^*]+)\*", r"<strong>\1</strong>", e)
@@ -101,8 +115,10 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
   .body {{ padding:34px 48px 40px; }}
   .title {{ font-size:34px; line-height:1.22; color:{cor}; margin:0 0 14px; }}
   .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:15px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
-  .corpo p {{ margin:.75em 0; font-size:20px; color:#2b3a35; break-inside:avoid; }}
+  .corpo p {{ margin:.75em 0; font-size:20px; color:#2b3a35; orphans:2; widows:2; }}
   .corpo strong {{ color:{cor}; }}
+  .corpo .h {{ font-size:21px; font-weight:700; color:{cor}; margin:22px 0 4px; line-height:1.3; break-after:avoid; break-inside:avoid; }}
+  .corpo hr.rule {{ border:none; border-top:1px solid #e2ddcb; margin:16px 0 14px; break-after:avoid; }}
   .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; break-inside:avoid; }}
   .chart .ct {{ font-family:system-ui,sans-serif; font-size:14px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
   .bar-row {{ display:flex; align-items:center; gap:14px; margin:12px 0; }}
