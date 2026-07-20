@@ -85,10 +85,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200); self.send_header("Content-Type", "text/plain; charset=utf-8"); self.end_headers()
             self.wfile.write(body.encode("utf-8")); return
         if path.startswith("/revisar/"):
-            import draft_store, review_web
+            import config, draft_store, review_web
             tok = path.split("/revisar/", 1)[1]
             r = draft_store.por_token(tok)
-            return self._html(review_web.pagina_revisao(r) if r else "<h3>Link inválido/expirado</h3>", 200 if r else 404)
+            if not r:
+                return self._html("<h3>Link inválido/expirado</h3>", 404)
+            return self._html(review_web.pagina_revisao(r, audio_on=config.audio_ligado()), 200)
         if path.startswith("/pdf/"):
             import config, draft_store
             parts = [p for p in path.split("/pdf/", 1)[1].split("/") if p]
@@ -252,11 +254,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
         form = up.parse_qs(raw.decode("utf-8"))
         g = lambda k: form.get(k, [""])[0]
         if path.startswith("/revisar/"):
-            import draft_store
+            import config, draft_store, review_web
             tok = path.split("/revisar/", 1)[1]
             r = draft_store.por_token(tok)
             if not r:
                 return self._html("<h3>Link inválido</h3>", 404)
+            if g("acao") == "regerar_audio":
+                import daily
+                r2 = draft_store.aplicar(r["data"], "editar", g("texto"))   # salva o texto atual antes
+                ok = daily.enviar_audio_preview(r2)
+                aviso = ("🎧 Novo áudio enviado no seu WhatsApp. Escute e, se aprovar, clique em Aprovar."
+                         if ok else "Não consegui gerar o áudio agora — tente de novo em instantes.")
+                return self._html(review_web.pagina_revisao(r2, aviso=aviso, audio_on=config.audio_ligado()))
             draft_store.aplicar(r["data"], g("acao"), g("texto"))
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
         if path == "/admin/whatsapp":

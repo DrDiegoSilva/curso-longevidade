@@ -66,6 +66,37 @@ def reabastecer():
     return total
 
 
+def _conteudo_do_rascunho(r):
+    """Reconstrói o dict de conteúdo (titulo_pt/resumo/gancho/grafico) a partir de
+    um rascunho salvo — usado pra gerar o áudio no preview e na regeração."""
+    art = r.get("artigo", {})
+    return {"titulo_pt": r.get("titulo_pt") or art.get("titulo", ""),
+            "resumo": r.get("resumo", ""), "gancho": r.get("gancho", ""),
+            "grafico": r.get("grafico")}
+
+
+def enviar_audio_preview(r):
+    """Gera o áudio do rascunho e envia aos curadores p/ ESCUTAREM antes de aprovar
+    (preview das 18h e botão 'regerar áudio' do review). Fail-safe: nunca derruba o
+    preparo. Retorna True se enviou a pelo menos um número."""
+    if not config.audio_ligado():
+        return False
+    try:
+        import audio as audiomod
+        mp3 = audiomod.gerar_audio_do_estudo(r.get("artigo", {}), _conteudo_do_rascunho(r))
+    except Exception as e:
+        print(f"[preparar] áudio preview falhou (segue sem): {e}", flush=True)
+        return False
+    enviou = False
+    for num in deliver.numeros_curadores():
+        try:
+            deliver.enviar_audio(num, mp3)
+            enviou = True
+        except Exception as e:
+            print(f"[preparar] áudio preview p/ {num} falhou: {e}", flush=True)
+    return enviou
+
+
 def _preparar_da_reserva():
     """Fallback do 18h quando NÃO há estudo fresco: monta o rascunho a partir do
     próximo resumo PRONTO da reserva (já gerado). Mantém o review das 18h."""
@@ -95,9 +126,11 @@ def _preparar_da_reserva():
     draft_store.salvar(r)
     link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
     origem = "SEU estudo" if r_res.get("origem") == "manual" else "reserva"
+    extra = "\n🎧 O áudio do estudo chega logo abaixo pra você escutar." if config.audio_ligado() else ""
     deliver.enviar_curador(f"📋 Amanhã (da {origem}) · {art.get('tema', '')}:\n*{c['titulo_pt']}*\n{art.get('fonte', '')}\n"
                            f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
-                           f"(se não mexer, envio automático às 08h)")
+                           f"(se não mexer, envio automático às 08h){extra}")
+    enviar_audio_preview(r)
     return r
 
 
@@ -122,9 +155,11 @@ def preparar_18h():
     r["titulo_pt"] = c["titulo_pt"]
     draft_store.salvar(r)
     link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
+    extra = "\n🎧 O áudio do estudo chega logo abaixo pra você escutar." if config.audio_ligado() else ""
     deliver.enviar_curador(f"📋 Amanhã · {art.get('tema','')}:\n*{c['titulo_pt']}*\n{art.get('fonte','')}\n"
                            f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
-                           f"(se não mexer, envio automático às 08h)")
+                           f"(se não mexer, envio automático às 08h){extra}")
+    enviar_audio_preview(r)
     return r
 
 
