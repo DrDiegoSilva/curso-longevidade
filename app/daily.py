@@ -114,11 +114,11 @@ def _preparar_da_reserva():
         grafico = None
     c = {"titulo_pt": r_res.get("titulo_pt", ""), "resumo": r_res.get("resumo", ""),
          "gancho": r_res.get("gancho", ""), "grafico": grafico}
-    hoje = _hoje_iso()
+    alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_08h
     os.makedirs(config.drafts_dir(), exist_ok=True)
-    preview = os.path.join(config.drafts_dir(), f"{hoje}-preview.pdf")
+    preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
     pdfmod.gerar_pdf(pdfmod.montar_html(art, c, "Dr. Diego (revisão)", _tema_meta(art.get("tema", ""))), preview)
-    r = draft_store.novo_rascunho(hoje, art, c["resumo"], preview)
+    r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
     r["titulo_pt"] = c["titulo_pt"]
@@ -145,11 +145,11 @@ def preparar_18h():
     if not art:
         return _preparar_da_reserva()      # sem estudo fresco -> puxa da fila/reserva (pulmão)
     c = content.gerar_conteudo(art)
-    hoje = _hoje_iso()
+    alvo = amanha.strftime("%Y-%m-%d")        # rascunho é do DIA DO ENVIO (amanhã) — casa com enviar_08h
     os.makedirs(config.drafts_dir(), exist_ok=True)
-    preview = os.path.join(config.drafts_dir(), f"{hoje}-preview.pdf")
+    preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
     pdfmod.gerar_pdf(pdfmod.montar_html(art, c, "Dr. Diego (revisão)", _tema_meta(art.get("tema", ""))), preview)
-    r = draft_store.novo_rascunho(hoje, art, c["resumo"], preview)
+    r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
     r["titulo_pt"] = c["titulo_pt"]
