@@ -1,6 +1,7 @@
 """Webhook do Asaas: valida token, idempotência e aplica a ação no assinante.
 `decidir` é puro/testável; `processar` orquestra (db + subscribers + WhatsApp).
 """
+import hmac
 from datetime import datetime, timedelta
 import config
 import db
@@ -54,23 +55,21 @@ def _boas_vindas(whatsapp, nome, email, enviar_fn):
             print(f"[webhook] boas-vindas e-mail falhou: {e}", flush=True)
 
 
-def processar(body, token_header, enviar_fn=None):
-    """Retorna (status_code, msg). Idempotente. token_header valida a origem."""
-    import phone
-    event = (body or {}).get("event")
-    pay = (body or {}).get("payment") or {}
-    pid = pay.get("id") or ""
-    token_ok = bool(config.ASAAS_WEBHOOK_TOKEN) and token_header == config.ASAAS_WEBHOOK_TOKEN
-    print(f"[webhook] event={event} pay={pid} sub={pay.get('subscription')} token_ok={token_ok}", flush=True)
-    if not token_ok:
-        return (401, "unauthorized")
-    if enviar_fn is None:
+def _alertar_admin(pid, sid, motivo):
+    """Avisa o Dr. Diego quando um pagamento não pôde ser ativado — sem isso, seria
+    dinheiro que entra e some sem ninguém perceber."""
+    try:
         import deliver
-        enviar_fn = deliver.enviar_texto
+        deliver.enviar_admin(f"⚠️ Pagamento no Asaas precisa de atenção: {motivo}. "
+                             f"Pagamento {pid or '—'} · assinatura {sid or '—'}. Confira em Assinantes.")
+    except Exception as e:
+        print(f"[webhook] alerta admin falhou: {e}", flush=True)
 
-    if not db.registrar_webhook(pid, event):
-        return (200, "duplicado")
 
+def _executar(event, pay, pid, enviar_fn):
+    """Aplica a ação do evento. Pode levantar exceção — o chamador (`processar`)
+    desfaz a idempotência e alerta o admin nesse caso, p/ o Asaas re-tentar."""
+    import phone
     sid = pay.get("subscription")
     sub = subscribers.por_subscription(sid)
     acao = decidir(event, sub is not None)
@@ -94,6 +93,7 @@ def processar(body, token_header, enviar_fn=None):
                                     or (pending or {}).get("whatsapp") or "")
         if not whatsapp:
             print("[webhook] ATIVAR sem whatsapp — pulei", flush=True)
+            _alertar_admin(pid, sid, "pagamento confirmado mas SEM WhatsApp p/ ativar — ative manualmente")
             return (200, "sem-whatsapp")
         plano = (config.plano_por_cycle(sub_obj.get("cycle"))
                  or config.plano_por_base(pay.get("value"))
@@ -124,3 +124,33 @@ def processar(body, token_header, enviar_fn=None):
         return (200, "suspenso")
 
     return (200, "ignorado")
+
+
+def processar(body, token_header, enviar_fn=None):
+    """Retorna (status_code, msg). Idempotente. token_header valida a origem.
+    A ativação roda protegida: se falhar no meio, DESFAZ a marca de idempotência e
+    devolve 500 pro Asaas re-tentar (senão o cliente pagaria e nunca seria liberado)."""
+    event = (body or {}).get("event")
+    pay = (body or {}).get("payment") or {}
+    pid = pay.get("id") or ""
+    token_ok = bool(config.ASAAS_WEBHOOK_TOKEN) and hmac.compare_digest(
+        str(token_header or ""), str(config.ASAAS_WEBHOOK_TOKEN))
+    print(f"[webhook] event={event} pay={pid} sub={pay.get('subscription')} token_ok={token_ok}", flush=True)
+    if not token_ok:
+        return (401, "unauthorized")
+    if enviar_fn is None:
+        import deliver
+        enviar_fn = deliver.enviar_texto
+
+    if not db.registrar_webhook(pid, event):
+        return (200, "duplicado")
+    try:
+        return _executar(event, pay, pid, enviar_fn)
+    except Exception as e:
+        print(f"[webhook] ERRO ao processar {event}/{pid}: {e}", flush=True)
+        try:
+            db.remover_webhook(pid, event)      # desfaz idempotência -> Asaas re-tenta o evento
+        except Exception as e2:
+            print(f"[webhook] remover_webhook falhou: {e2}", flush=True)
+        _alertar_admin(pid, pay.get("subscription"), f"falha ao processar o pagamento ({e})")
+        return (500, "erro-processando")

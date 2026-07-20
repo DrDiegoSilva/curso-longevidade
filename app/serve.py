@@ -46,9 +46,21 @@ def agendador():
             print(f"[agendador] {nome} erro: {e}", flush=True)
 
 class Handler(http.server.BaseHTTPRequestHandler):
+    timeout = 20          # tempo-limite de socket: conexão lenta/pendurada cai em vez de segurar a thread
+
     # host começa com "artigos" -> modo site (produto); senão -> ebook (curso.)
     def _site(self):
         return self.headers.get("Host", "").lower().startswith("artigos")
+
+    def _rate_ok(self, nome, maximo, janela_seg):
+        """Rate-limit por IP nos endpoints sensíveis (login/OTP/recuperação). Se estourar,
+        já responde 429 e retorna False -> o handler deve dar `return`."""
+        import rate_limit
+        ip = self.client_address[0] if self.client_address else "?"
+        if rate_limit.limitado(f"{nome}:{ip}", maximo, janela_seg):
+            self._html("<h3>Muitas tentativas. Aguarde alguns minutos e tente de novo.</h3>", 429)
+            return False
+        return True
 
     def _sessao(self):
         import auth_web
@@ -328,6 +340,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 msg = "Item removido da reserva."
             return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/entrar":
+            if not self._rate_ok("login", 15, 300):   # 15 tentativas / 5 min por IP
+                return
             import site_web, auth_web
             wpp = g("whatsapp")
             status, token = auth_web.login_senha(wpp, g("senha"))
@@ -337,6 +351,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html(site_web.pagina_login(sem_senha=True, whatsapp=wpp))
             return self._html(site_web.pagina_login(erro="WhatsApp ou senha incorretos.", whatsapp=wpp))
         if path == "/entrar-codigo":
+            if not self._rate_ok("otp", 5, 600):       # 5 envios/verificações / 10 min por IP
+                return
             import site_web, auth_web
             wpp = g("whatsapp")
             if g("etapa") == "codigo":
@@ -348,6 +364,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             auth_web.iniciar_login(wpp)  # neutro: só envia se for assinante ATIVO
             return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
         if path in ("/primeiro-acesso", "/esqueci"):
+            if not self._rate_ok("recover", 5, 600):   # 5 pedidos / 10 min por IP
+                return
             import site_web, auth_web
             motivo = "primeiro" if path == "/primeiro-acesso" else "esqueci"
             auth_web.iniciar_definir_senha(g("whatsapp"), motivo)  # neutro (anti-enumeração)

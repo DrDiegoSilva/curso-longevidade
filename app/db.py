@@ -70,7 +70,9 @@ class _Wrap:
 def _conn():
     if _is_pg():
         import psycopg2
-        return _Wrap(psycopg2.connect(config.DATABASE_URL), True)
+        # connect_timeout: se a rede/banco não responder, falha em 10s em vez de
+        # pendurar para sempre (o agendador roda em loop sequencial e travaria calado).
+        return _Wrap(psycopg2.connect(config.DATABASE_URL, connect_timeout=10), True)
     os.makedirs(os.path.dirname(config.artigos_db()) or ".", exist_ok=True)
     c = sqlite3.connect(config.artigos_db())
     c.row_factory = sqlite3.Row
@@ -252,6 +254,14 @@ def registrar_webhook(payment_id, event):
                         "ON CONFLICT (payment_id,event) DO NOTHING",
                         (payment_id or "", event or "", datetime.now().isoformat()))
         return cur.rowcount > 0
+
+
+def remover_webhook(payment_id, event):
+    """Desfaz a marca de idempotência — usado quando o processamento falha, p/ o
+    Asaas conseguir re-tentar o mesmo evento em vez de ser descartado como duplicado."""
+    with _conn() as c:
+        c.execute("DELETE FROM webhook_events WHERE payment_id=? AND event=?",
+                  (payment_id or "", event or ""))
 
 
 def cupom_valido(codigo):

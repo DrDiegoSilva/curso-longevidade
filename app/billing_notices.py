@@ -1,6 +1,7 @@
 """Aviso discreto por e-mail ~3 dias antes de renovar/vencer (reduz surpresa/chargeback).
 `assinantes_a_avisar` é puro/testável; `avisar_pre_renovacao` roda no agendador (08h).
 """
+import html as _html
 from datetime import date, timedelta
 
 
@@ -31,7 +32,7 @@ def avisar_pre_renovacao(dias=3):
     for s in alvo:
         pv = s.get("proximo_vencimento")
         if s.get("email"):
-            html = (f"<p>Olá {s.get('nome') or ''},</p>"
+            html = (f"<p>Olá {_html.escape(s.get('nome') or '')},</p>"
                     f"<p>Sua assinatura da <strong>Atualização Científica</strong> vence em {pv}. "
                     f"Se for recorrente (cartão ou Pix Automático), ela renova sozinha — nada a fazer. "
                     f"Se você pagou via Pix à vista, é só renovar para continuar recebendo os estudos.</p>"
