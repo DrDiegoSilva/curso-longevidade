@@ -116,7 +116,7 @@ a{color:inherit;text-decoration:none}
 .c-a{grid-column:span 3}.c-b{grid-column:span 3}.c-c{grid-column:span 2}.c-d{grid-column:span 2}.c-e{grid-column:span 2}
 .card.big{background:linear-gradient(150deg,rgba(30,80,69,.5),rgba(20,51,42,.35));border-color:rgba(201,162,39,.25)}
 /* planos (redesign) */
-.plans{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,300px));justify-content:center;gap:18px}
 .plan{background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:18px;padding:34px 24px;text-align:center;position:relative;transition:.18s;display:block}
 .plan:hover{transform:translateY(-4px);border-color:rgba(201,162,39,.5)}
 .plan.best{border-color:var(--gold);background:linear-gradient(160deg,rgba(201,162,39,.14),rgba(20,51,42,.4))}
@@ -269,7 +269,7 @@ textarea:focus{outline:none;border-color:var(--ouro)}
   .hero{grid-template-columns:1fr;gap:30px}
   .themes{grid-template-columns:repeat(2,1fr)}
   .bento{grid-template-columns:1fr}.c-a,.c-b,.c-c,.c-d,.c-e{grid-column:auto}
-  .plans{grid-template-columns:repeat(2,1fr)}
+  .plans{grid-template-columns:1fr;max-width:340px;margin-inline:auto}
   .entry{grid-template-columns:1fr;gap:4px}
   .doc{padding:28px 22px}
 }
@@ -333,7 +333,7 @@ def landing():
         for k, n, d, cls in valores)
     planos = "".join(
         f'<a class="plan{" best" if p["slug"] == "anual" else ""}" href="/assinar?plano={_esc(p["slug"])}">'
-        + ('<div class="badge">Melhor preço</div>' if p["slug"] == "anual" else "")
+        + ('<div class="badge">20% OFF</div>' if p["slug"] == "anual" else "")
         + f'<div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
