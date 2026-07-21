@@ -231,8 +231,11 @@ def enviar_08h():
         link = f"{config.PUBLIC_URL}/entrar"  # portal protegido (login por código)
         msg = deliver.personalizar_rodape(f"🔬 *{titulo}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
-        if master_pdf:
-            deliver.enviar_pdf(whatsapp, master_pdf, caption=titulo)  # PDF local -> base64 (Evolution)
+        if master_pdf:                           # PDF (não derruba o resto se falhar)
+            try:
+                deliver.enviar_pdf(whatsapp, master_pdf, caption=titulo)  # PDF local -> base64 (Evolution)
+            except Exception as e:
+                print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
         if audio_bytes:                          # + áudio narrado (não derruba o envio se falhar)
             try:
                 deliver.enviar_audio(whatsapp, audio_bytes)

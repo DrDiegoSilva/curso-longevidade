@@ -173,8 +173,12 @@ def gerar_pdf(html, out_path):
     try:
         subprocess.run(
             [_chromium_bin(), "--headless", "--no-sandbox", "--disable-gpu",
+             "--disable-dev-shm-usage", "--disable-software-rasterizer",
              f"--print-to-pdf={out_path}", "--no-pdf-header-footer", f"file://{src}"],
             check=True, timeout=90, capture_output=True)
     finally:
         os.unlink(src)
+    # Chromium às vezes crasha e ainda retorna 0 (sem gerar o arquivo). Confere de verdade:
+    if not (os.path.exists(out_path) and os.path.getsize(out_path) > 1000):
+        raise RuntimeError("Chromium não gerou o PDF (crash silencioso ou saída vazia)")
     return out_path
