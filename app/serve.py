@@ -121,7 +121,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                     "grafico": r.get("grafico")}
                         fpath = os.path.join(config.drafts_dir(), f"{data_iso}-preview.pdf")
                         os.makedirs(config.drafts_dir(), exist_ok=True)
-                        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, "Dr. Diego (revisão)",
+                        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo,
                                          daily._tema_meta(art.get("tema", ""))), fpath)
                     except Exception as e:
                         print(f"[pdf] regen preview falhou: {e}", flush=True)

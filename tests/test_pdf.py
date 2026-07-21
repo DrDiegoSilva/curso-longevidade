@@ -18,13 +18,14 @@ class TestPdfHtml(unittest.TestCase):
             "grafico": {"titulo": "Peso (%)", "unidade": "%", "barras": [
                 {"rotulo": "Tirzepatida", "valor": 20.9}, {"rotulo": "Placebo", "valor": 3.1}]},
         }
-        h = pdf.montar_html(self._art(), conteudo, "Dr. Fulano", TEMA)
+        h = pdf.montar_html(self._art(), conteudo, TEMA)
         self.assertIn("Tirzepatida preserva músculo", h)   # título em PT (não o inglês)
         self.assertIn("NEJM", h)                    # fonte
-        self.assertIn("Dr. Fulano", h)              # marca d'água
+        self.assertIn("conteúdo exclusivo para assinantes", h)  # nota de direitos (PDF único)
+        self.assertIn("Dr. Diego Silva", h)         # marca do curso no rodapé
         self.assertIn("10.1/a", h)                  # DOI
         self.assertIn("Obesidade", h)               # tag do tema
-        self.assertIn("<strong>Em resumo</strong>", h)   # *bold* convertido
+        self.assertIn("Em resumo", h)               # linha toda em bold vira cabeçalho .h
         self.assertIn("seus pacientes", h)          # gancho
         self.assertIn("Tirzepatida", h)             # barra do gráfico
         self.assertIn("#14332a", h)                 # cor do tema na capa

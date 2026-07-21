@@ -89,7 +89,15 @@ def _gancho_html(gancho):
             f'<div class="post">{corpo}</div></div>')
 
 
-def montar_html(artigo, conteudo, nome_medico, tema_meta):
+def _rodape_direitos():
+    """Nota de direitos fixa no rodapé — o PDF é único (mesmo arquivo p/ todos os
+    assinantes), com a marca do curso no lugar do nome individual."""
+    from datetime import datetime
+    return (f"© {datetime.now().year} Atualização Científica · Dr. Diego Silva · "
+            f"CRM-PR 54310 — conteúdo exclusivo para assinantes")
+
+
+def montar_html(artigo, conteudo, tema_meta):
     esc = _html.escape
     cor = tema_meta.get("cor", "#14332a")
     rotulo = tema_meta.get("rotulo", artigo.get("tema", ""))
@@ -145,7 +153,7 @@ def montar_html(artigo, conteudo, nome_medico, tema_meta):
     {gancho_html}
     <div class="foot">
       <span>Refer&ecirc;ncia: {esc(artigo.get('url',''))}</span>
-      <span class="wm">Exclusivo &middot; {esc(nome_medico)}</span>
+      <span class="wm">{_rodape_direitos()}</span>
     </div>
   </div>
 </body></html>"""

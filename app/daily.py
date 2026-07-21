@@ -134,7 +134,7 @@ def _preparar_da_reserva():
     alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_08h
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
-    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, "Dr. Diego (revisão)", _tema_meta(art.get("tema", ""))), preview)
+    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
     r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
@@ -165,7 +165,7 @@ def preparar_18h():
     alvo = amanha.strftime("%Y-%m-%d")        # rascunho é do DIA DO ENVIO (amanhã) — casa com enviar_08h
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
-    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, "Dr. Diego (revisão)", _tema_meta(art.get("tema", ""))), preview)
+    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
     r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
@@ -216,15 +216,23 @@ def enviar_08h():
         except Exception as e:
             print(f"[enviar] áudio falhou (segue sem): {e}", flush=True)
 
+    # PDF ÚNICO: gera 1x (marca do curso, sem nome) e manda o MESMO arquivo a todos —
+    # menos carga no servidor e menos ponto de falha. Fail-safe: se falhar, envia sem PDF.
+    master_pdf = os.path.join(config.drafts_dir(), f"{hoje}-master.pdf")
+    try:
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, tmeta), master_pdf)
+    except Exception as e:
+        print(f"[enviar] PDF mestre falhou (segue sem PDF): {e}", flush=True)
+        master_pdf = None
+
     def _envia(whatsapp, nome):
         import phone
         whatsapp = phone.normalizar(whatsapp)   # garante o 55 (registros antigos)
-        ppath = os.path.join(config.drafts_dir(), f"{hoje}-{whatsapp}.pdf")
-        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, nome or "Assinante", tmeta), ppath)
         link = f"{config.PUBLIC_URL}/entrar"  # portal protegido (login por código)
         msg = deliver.personalizar_rodape(f"🔬 *{titulo}*\n\n{r['resumo']}", nome, link)
         deliver.enviar_texto(whatsapp, msg)
-        deliver.enviar_pdf(whatsapp, ppath, caption=titulo)  # PDF local -> base64 (Evolution)
+        if master_pdf:
+            deliver.enviar_pdf(whatsapp, master_pdf, caption=titulo)  # PDF local -> base64 (Evolution)
         if audio_bytes:                          # + áudio narrado (não derruba o envio se falhar)
             try:
                 deliver.enviar_audio(whatsapp, audio_bytes)
@@ -248,5 +256,6 @@ def enviar_08h():
             print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
     rd.registrar([art["doi"]] if art.get("doi") else [])
     deliver.enviar_curador(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
-                           + (f" · {len(res['falhas'])} falhas" if res["falhas"] else ""))
+                           + (f" · {len(res['falhas'])} falhas" if res["falhas"] else "")
+                           + (" · ⚠️ SEM PDF (erro na geração)" if master_pdf is None else ""))
     avisar_estoque_baixo()      # depois de consumir, avisa se a reserva ficou abaixo do mínimo
