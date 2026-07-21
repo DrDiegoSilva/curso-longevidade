@@ -512,14 +512,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas
+        import site_web, config, db, subscribers, pricing, asaas, cpf as cpfval
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
         dados = {"nome": g("nome").strip(), "email": g("email").strip(),
                  "cpf": g("cpf").strip(), "whatsapp": g("whatsapp").strip()}
-        if not (dados["nome"] and dados["whatsapp"] and dados["email"]):
-            return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail e WhatsApp."))
+        if not (dados["nome"] and dados["whatsapp"] and dados["email"] and dados["cpf"]):
+            return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail, WhatsApp e CPF."))
+        if not cpfval.valida(dados["cpf"]):
+            return self._html(site_web.pagina_assinar(plano["slug"], "CPF inválido — confira os números."))
+        dados["cpf"] = cpfval.so_digitos(dados["cpf"])          # guarda só os dígitos
+        ja = subscribers.por_cpf(dados["cpf"]) or subscribers.por_whatsapp(dados["whatsapp"])
+        if ja and subscribers.tem_acesso(ja):                   # já tem assinatura ativa -> não duplica
+            return self._html(site_web.pagina_assinar(plano["slug"],
+                "Já existe uma assinatura ativa com esse CPF ou WhatsApp. Se for você, entre em /entrar."))
         metodo = "CARTAO" if g("metodo").upper() == "CARTAO" else "PIX"
         try:
             parcelas = max(1, min(12, int(g("parcelas") or "1")))

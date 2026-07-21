@@ -116,6 +116,15 @@ def por_whatsapp(w):
     return next((s for s in listar() if _norm(s.get("whatsapp", "")) == n), None)
 
 
+def por_cpf(c):
+    """Assinante com esse CPF (compara só os dígitos). None se não achar/vazio."""
+    import cpf as cpfmod
+    n = cpfmod.so_digitos(c)
+    if not n:
+        return None
+    return next((s for s in listar() if cpfmod.so_digitos(s.get("cpf", "")) == n), None)
+
+
 def criar_de_pagamento(pending, dados_asaas=None, status="ATIVO"):
     """Cria/ativa assinante a partir do cadastro (pending) + ids do Asaas."""
     _ensure()
