@@ -165,6 +165,17 @@ def init():
                 criado_em TEXT,
                 atualizado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS agenda (
+                data TEXT PRIMARY KEY,
+                tipo TEXT DEFAULT 'vazio',
+                ref_id TEXT,
+                payload TEXT,
+                tema TEXT,
+                titulo TEXT,
+                fixado INTEGER DEFAULT 0,
+                criado_em TEXT,
+                atualizado_em TEXT
+            );
             """
         )
     _migrar_colunas()
@@ -176,7 +187,7 @@ def init():
 
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
-            "curadoria_candidatos", "reserva_resumos", "daily_drafts"]
+            "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -458,6 +469,98 @@ def marcar_reserva_enviado(rid):
     with _conn() as c:
         c.execute("UPDATE reserva_resumos SET status='enviado', enviado_em=? WHERE id=?",
                   (datetime.now().isoformat(), rid))
+
+
+# ── Status da reserva p/ a agenda ──
+def marcar_reserva_agendado(rid):
+    """Tira o resumo da reserva 'pronto' e prende na agenda (não conta como estoque)."""
+    with _conn() as c:
+        c.execute("UPDATE reserva_resumos SET status='agendado' WHERE id=?", (rid,))
+
+
+def marcar_reserva_pronto(rid):
+    """Devolve o resumo agendado ao estoque 'pronto'."""
+    with _conn() as c:
+        c.execute("UPDATE reserva_resumos SET status='pronto' WHERE id=?", (rid,))
+
+
+# ── Agenda (data -> estudo) ──
+def agenda_slot(data):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM agenda WHERE data=?", (data,)).fetchone()
+    return dict(r) if r else None
+
+
+def agenda_listar(desde, ate):
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM agenda WHERE data BETWEEN ? AND ? ORDER BY data",
+                         (desde, ate)).fetchall()
+    return {r["data"]: dict(r) for r in rows}
+
+
+def agenda_upsert(data, tipo="vazio", ref_id=None, payload=None, tema="", titulo="", fixado=0):
+    from datetime import datetime
+    now = datetime.now().isoformat()
+    with _conn() as c:
+        existe = c.execute("SELECT 1 FROM agenda WHERE data=?", (data,)).fetchone()
+        if existe:
+            c.execute("UPDATE agenda SET tipo=?, ref_id=?, payload=?, tema=?, titulo=?, "
+                      "fixado=?, atualizado_em=? WHERE data=?",
+                      (tipo, ref_id, payload, tema, titulo, int(fixado), now, data))
+        else:
+            c.execute("INSERT INTO agenda (data,tipo,ref_id,payload,tema,titulo,fixado,criado_em,atualizado_em) "
+                      "VALUES (?,?,?,?,?,?,?,?,?)",
+                      (data, tipo, ref_id, payload, tema, titulo, int(fixado), now, now))
+
+
+def agenda_fixar(data, on=True):
+    with _conn() as c:
+        c.execute("UPDATE agenda SET fixado=? WHERE data=?", (1 if on else 0, data))
+
+
+def agenda_devolver(data):
+    """Tira o item do slot e devolve ao estoque; slot vira 'vazio'. Preserva 'fixado'."""
+    s = agenda_slot(data)
+    if not s:
+        return
+    if s.get("tipo") == "reserva" and s.get("ref_id"):
+        marcar_reserva_pronto(s["ref_id"])
+    elif s.get("tipo") == "fila" and s.get("payload"):
+        try:
+            import json
+            import queue_store
+            queue_store.devolver(json.loads(s["payload"]))
+        except Exception as e:
+            print(f"[agenda] devolver fila falhou: {e}", flush=True)
+    agenda_upsert(data, tipo="vazio", fixado=s.get("fixado", 0))
+
+
+def agenda_pular(data, on=True):
+    """on=True: devolve item ao estoque e marca 'pulado'. on=False: volta a 'vazio'."""
+    if on:
+        agenda_devolver(data)
+        agenda_upsert(data, tipo="pulado")
+    else:
+        agenda_upsert(data, tipo="vazio")
+
+
+def _escrever_slot(data, s):
+    if not s:
+        agenda_upsert(data, tipo="vazio")
+    else:
+        agenda_upsert(data, tipo=s.get("tipo", "vazio"), ref_id=s.get("ref_id"),
+                      payload=s.get("payload"), tema=s.get("tema", ""),
+                      titulo=s.get("titulo", ""), fixado=s.get("fixado", 0))
+
+
+def agenda_mover(data_orig, data_dest):
+    """Troca (swap) os slots das duas datas. Retorna False se o destino está fixado."""
+    a, b = agenda_slot(data_orig), agenda_slot(data_dest)
+    if b and b.get("fixado"):
+        return False
+    _escrever_slot(data_orig, b)
+    _escrever_slot(data_dest, a)
+    return True
 
 
 def atualizar_reserva(rid, titulo_pt=None, resumo=None):
