@@ -23,6 +23,13 @@ class TestDiasUteis(unittest.TestCase):
         envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
         self.assertEqual(len(ap.dias_uteis_desde(datetime(2026, 7, 20), 15, envio)), 15)
 
+    def test_dias_envio_vazio_levanta(self):
+        # sem dia útil válido -> falha rápido em vez de loop infinito
+        with self.assertRaises(ValueError):
+            ap.dias_uteis_desde(datetime(2026, 7, 20), 5, set())
+        with self.assertRaises(ValueError):
+            ap.dias_uteis_desde(datetime(2026, 7, 20), 5, {"feriado"})
+
 
 class TestPlanejar(unittest.TestCase):
     def _dias(self, datas):

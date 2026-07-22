@@ -97,8 +97,10 @@ def listar():
 
 def remover(artigo):
     """Remove o artigo (por chave) da fila — usado ao materializar na agenda."""
-    d = _load()
     k = _chave(artigo)
+    if k is None:                       # sem chave: não apaga tudo que também é None
+        return
+    d = _load()
     d["fila"] = [a for a in d["fila"] if _chave(a) != k]
     _save(d)
 

@@ -520,6 +520,10 @@ def agenda_upsert(data, tipo="vazio", ref_id=None, payload=None, tema="", titulo
 
 
 def agenda_fixar(data, on=True):
+    """Fixa/solta um dia. Cria a linha (vazio) se ainda não existir, p/ o pino persistir
+    mesmo num dia que a agenda ainda não materializou."""
+    if agenda_slot(data) is None:
+        agenda_upsert(data, tipo="vazio")
     with _conn() as c:
         c.execute("UPDATE agenda SET fixado=? WHERE data=?", (1 if on else 0, data))
 
@@ -569,6 +573,21 @@ def agenda_mover(data_orig, data_dest):
     _escrever_slot(data_orig, b)
     _escrever_slot(data_dest, a)
     return True
+
+
+def agenda_ref_ids_reserva():
+    """Conjunto de ref_ids de reserva referenciados por QUALQUER slot da agenda.
+    Usado pela reconciliação do materializar (evita agendar o mesmo item 2x)."""
+    with _conn() as c:
+        rows = c.execute("SELECT ref_id FROM agenda WHERE tipo='reserva' AND ref_id IS NOT NULL").fetchall()
+    return {r["ref_id"] for r in rows}
+
+
+def agenda_payloads_fila():
+    """Lista dos payloads (JSON cru) dos slots de fila — p/ reconciliar a fila fresca."""
+    with _conn() as c:
+        rows = c.execute("SELECT payload FROM agenda WHERE tipo='fila' AND payload IS NOT NULL").fetchall()
+    return [r["payload"] for r in rows]
 
 
 def atualizar_reserva(rid, titulo_pt=None, resumo=None):

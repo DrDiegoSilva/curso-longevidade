@@ -802,25 +802,26 @@ def _slot_card(s, token, opcoes_html):
     from datetime import datetime
     dt = datetime.strptime(s["data"], "%Y-%m-%d")
     dia = _DIA_BR[dt.weekday()]
+    de = _esc(s["data"])
     tipo = s.get("tipo") or "vazio"
     fixado = s.get("fixado")
     titulo = _esc(s.get("titulo") or "—")
     tema = _esc(s.get("tema") or "")
-    badge = _BADGE.get(tipo, tipo)
+    badge = _esc(_BADGE.get(tipo, tipo))
     pino = "📌 " if fixado else ""
     def _acao(acao, label, extra=""):
         return (f'<form method="post" action="/agenda" style="display:inline">'
                 f'<input type="hidden" name="token" value="{_esc(token)}">'
                 f'<input type="hidden" name="acao" value="{acao}">'
-                f'<input type="hidden" name="data" value="{s["data"]}">{extra}'
+                f'<input type="hidden" name="data" value="{de}">{extra}'
                 f'<button class="mini">{label}</button></form>')
     mover = (f'<form method="post" action="/agenda" style="display:inline">'
              f'<input type="hidden" name="token" value="{_esc(token)}">'
              f'<input type="hidden" name="acao" value="mover">'
-             f'<input type="hidden" name="data" value="{s["data"]}">'
+             f'<input type="hidden" name="data" value="{de}">'
              f'<select name="dest" class="mini"><option value="">mover p/…</option>{opcoes_html}</select>'
              f'<button class="mini">↔︎</button></form>')
-    return (f'<div class="slot" draggable="true" data-data="{s["data"]}">'
+    return (f'<div class="slot" draggable="true" data-data="{de}">'
             f'<div class="slot-h">{dia} · {s["data"][8:10]}/{s["data"][5:7]} '
             f'<span class="badge">{badge}</span></div>'
             f'<div class="slot-tema">{pino}{tema}</div>'
@@ -833,7 +834,7 @@ def _slot_card(s, token, opcoes_html):
 
 def pagina_agenda(semanas, estoque, token, msg=""):
     opcoes = "".join(
-        f'<option value="{s["data"]}">{s["data"][8:10]}/{s["data"][5:7]}</option>'
+        f'<option value="{_esc(s["data"])}">{_esc(s["data"][8:10])}/{_esc(s["data"][5:7])}</option>'
         for sem in semanas for s in sem)
     blocos = ""
     for i, sem in enumerate(semanas):
@@ -876,12 +877,13 @@ def pagina_agenda(semanas, estoque, token, msg=""):
       });
     })();
     </script>"""
-    corpo = (_admin_nav(token, "agenda") + css +
+    corpo = ('<div class="wrap">' + _admin_nav(token, "agenda") + css +
              f'<h2 class="disp" style="font-size:34px;color:var(--creme);margin:6px 0 4px">Agenda de envios</h2>'
              f'<p style="color:var(--creme);opacity:.75;font-size:13px">Arraste um dia sobre outro pra trocar. '
-             f'Estoque pronto: <strong>{estoque}</strong>. {rematerializar}</p>'
+             f'Estoque pronto: <strong>{int(estoque)}</strong>. {rematerializar}</p>'
              f'{aviso}{blocos}'
-             + js.replace("TOKEN", '"' + _esc(token) + '"'))
+             + js.replace("TOKEN", '"' + _esc(token) + '"')
+             + '</div>')
     return _pagina("Agenda · Admin", corpo, logado=True,
                    meta_extra='<meta name="robots" content="noindex">')
 

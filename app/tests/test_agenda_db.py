@@ -89,6 +89,22 @@ class TestAgendaDb(unittest.TestCase):
         self.assertEqual(s["fixado"], 1)
         self.assertEqual(self.db.contar_reserva_pronto(), 1)
 
+    def test_fixar_cria_linha_se_nao_existe(self):
+        # fixar um dia ainda sem linha na agenda deve criar a linha e persistir o pino
+        self.assertIsNone(self.db.agenda_slot("2026-07-27"))
+        self.db.agenda_fixar("2026-07-27", True)
+        s = self.db.agenda_slot("2026-07-27")
+        self.assertIsNotNone(s)
+        self.assertEqual(s["fixado"], 1)
+        self.assertEqual(s["tipo"], "vazio")
+
+    def test_ref_ids_reserva_e_payloads_fila(self):
+        self.db.agenda_upsert("2026-07-27", tipo="reserva", ref_id="r1", tema="A")
+        self.db.agenda_upsert("2026-07-28", tipo="fila", payload='{"doi":"10.1/x"}', tema="B")
+        self.db.agenda_upsert("2026-07-29", tipo="vazio")
+        self.assertEqual(self.db.agenda_ref_ids_reserva(), {"r1"})
+        self.assertEqual(self.db.agenda_payloads_fila(), ['{"doi":"10.1/x"}'])
+
 
 if __name__ == "__main__":
     unittest.main()

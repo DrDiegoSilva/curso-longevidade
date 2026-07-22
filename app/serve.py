@@ -330,14 +330,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True, dias_acesso=dias)
             return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
         if path == "/agenda":
-            import config, db, daily
+            import config, db, daily, agenda_plan
+            from datetime import datetime, timedelta
             if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             acao, data, msg = g("acao"), g("data"), ""
             if acao == "mover":
-                ok = db.agenda_mover(data, g("dest"))
-                msg = "Trocado." if ok else "Destino fixado — não trocado."
+                dest = g("dest")
+                validos = set(agenda_plan.dias_uteis_desde(
+                    datetime.now() + timedelta(days=1), 15, daily._dias_envio()))
+                if data not in validos or dest not in validos:
+                    msg = "Data inválida — mover ignorado."
+                else:
+                    ok = db.agenda_mover(data, dest)
+                    msg = "Trocado." if ok else "Destino fixado — não trocado."
             elif acao == "fixar":
                 db.agenda_fixar(data, True); msg = "Fixado."
             elif acao == "desafixar":

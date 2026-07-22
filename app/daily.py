@@ -89,6 +89,21 @@ def materializar_agenda(dias=15):
     if not datas:
         return 0
 
+    # Reconcilia estoque <-> agenda (self-healing p/ consume meio-falho):
+    #  - ref_ids/chaves = itens já presos a algum slot;
+    #  - devolve a 'pronto' qualquer reserva 'agendado' que NENHUM slot referencia (órfão);
+    #  - mais abaixo, exclui dos candidatos o que já está referenciado (evita double-book).
+    ref_ids = db.agenda_ref_ids_reserva()
+    for r in db.listar_reserva(status="agendado"):
+        if r["id"] not in ref_ids:
+            db.marcar_reserva_pronto(r["id"])
+    fila_chaves = set()
+    for p in db.agenda_payloads_fila():
+        try:
+            fila_chaves.add(queue_store._chave(json.loads(p)))
+        except Exception:
+            pass
+
     fila_n = queue_store.tamanho()
     reserva_n = db.contar_reserva_pronto()
     if agenda_plan.precisa_reabastecer(fila_n, reserva_n, dias):
@@ -110,9 +125,13 @@ def materializar_agenda(dias=15):
 
     cands = []
     for r in db.listar_reserva(status="pronto"):
+        if r["id"] in ref_ids:          # já preso a um slot (consume meio-falho) -> não re-agenda
+            continue
         cands.append({"tipo": "reserva", "tema": r.get("tema", ""), "titulo": r.get("titulo_pt", ""),
                       "ref_id": r["id"], "payload": None})
     for a in queue_store.listar():
+        if queue_store._chave(a) in fila_chaves:   # já preso a um slot de fila
+            continue
         cands.append({"tipo": "fila", "tema": a.get("tema", ""), "titulo": a.get("titulo", ""),
                       "ref_id": None, "payload": a})
 

@@ -57,6 +57,47 @@ class TestMaterializar(unittest.TestCase):
         self.daily.materializar_agenda(dias=5)
         self.assertEqual(self.db.agenda_slot(d0)["ref_id"], "fixo")
 
+    def test_dia_fixado_preserva_e_preenche_resto(self):
+        for i in range(6):
+            self._reserva("Obesidade", f"E{i}")
+        self.daily.reabastecer = lambda: 0
+        import agenda_plan as ap
+        datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        self.db.agenda_upsert(datas[0], tipo="reserva", ref_id="fixo", tema="Longevidade", titulo="FIXO", fixado=1)
+        self.daily.materializar_agenda(dias=5)
+        self.assertEqual(self.db.agenda_slot(datas[0])["ref_id"], "fixo")   # preservado
+        for d in datas[1:]:                                                 # demais preenchidos
+            self.assertEqual(self.db.agenda_slot(d)["tipo"], "reserva")
+
+    def test_nao_double_book_reserva_referenciada(self):
+        # item 'pronto' já preso a um slot (consume meio-falho) NÃO é reagendado noutro dia
+        rid = self._reserva("Obesidade", "Ref")
+        import agenda_plan as ap
+        datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        self.db.agenda_upsert(datas[0], tipo="reserva", ref_id=rid, tema="Obesidade", titulo="Ref")
+        self.daily.reabastecer = lambda: 0
+        self.daily.materializar_agenda(dias=5)
+        n_rid = sum(1 for d in datas if (self.db.agenda_slot(d) or {}).get("ref_id") == rid)
+        self.assertEqual(n_rid, 1)
+
+    def test_reclama_agendado_orfao(self):
+        # item 'agendado' que nenhum slot referencia -> reconciliação devolve e reagenda
+        rid = self._reserva("Obesidade", "Orfao")
+        self.db.marcar_reserva_agendado(rid)
+        self.assertEqual(self.db.contar_reserva_pronto(), 0)
+        self.daily.reabastecer = lambda: 0
+        self.daily.materializar_agenda(dias=5)
+        import agenda_plan as ap
+        datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        referenciado = any((self.db.agenda_slot(d) or {}).get("ref_id") == rid for d in datas)
+        self.assertTrue(referenciado)
+
+    def test_remover_sem_chave_nao_apaga_tudo(self):
+        # remover um artigo sem chave (doi/url/titulo=None) não pode varrer a fila
+        self.q._save({"fila": [{"score": 1}, {"score": 2}], "vistos": [], "ultimo_tema": None})
+        self.q.remover({"score": 99})   # _chave = None -> no-op
+        self.assertEqual(len(self.q.listar()), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
