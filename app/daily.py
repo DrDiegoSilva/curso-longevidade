@@ -77,18 +77,22 @@ def _rotacao():
     return rot if rot else list(cfg["temas"].keys())
 
 
-def materializar_agenda(dias=15):
-    """Preenche os próximos `dias` dias úteis vazios na agenda (rotação + variedade,
-    reserva pronta antes de fila fresca). Reabastece se o estoque não cobre o horizonte.
-    Retorna quantos slots foram preenchidos. Fail-safe por slot (um slot ruim não aborta
-    os outros); erros de configuração propagam."""
+def materializar_agenda(n_semanas=4, datas=None):
+    """Preenche os dias úteis FUTUROS (>= amanhã) das próximas `n_semanas` semanas
+    seg–sex na agenda (rotação + variedade, reserva pronta antes de fila fresca).
+    `datas` pode ser passado (lista YYYY-MM-DD) p/ testar com uma janela fixa.
+    Reabastece se o estoque não cobre o horizonte. Retorna quantos slots preencheu.
+    Fail-safe por slot (um slot ruim não aborta os outros); erros de config propagam."""
     import db
     db.init()
     envio = _dias_envio()
-    inicio = datetime.now() + timedelta(days=1)
-    datas = agenda_plan.dias_uteis_desde(inicio, dias, envio)
+    if datas is None:
+        amanha_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        datas = [d for d in agenda_plan.semanas_do_mes(datetime.now(), envio, n_semanas)
+                 if d >= amanha_str]
     if not datas:
         return 0
+    horizonte = len(datas)
 
     # Reconcilia estoque <-> agenda (self-healing p/ consume meio-falho):
     #  - ref_ids/chaves = itens já presos a algum slot;
@@ -107,9 +111,9 @@ def materializar_agenda(dias=15):
 
     fila_n = queue_store.tamanho()
     reserva_n = db.contar_reserva_pronto()
-    if agenda_plan.precisa_reabastecer(fila_n, reserva_n, dias):
+    if agenda_plan.precisa_reabastecer(fila_n, reserva_n, horizonte):
         try:
-            print(f"[agenda] estoque {fila_n+reserva_n}<{dias} — reabastecendo", flush=True)
+            print(f"[agenda] estoque {fila_n+reserva_n}<{horizonte} — reabastecendo", flush=True)
             reabastecer()
         except Exception as e:
             print(f"[agenda] reabastecer falhou (segue): {e}", flush=True)

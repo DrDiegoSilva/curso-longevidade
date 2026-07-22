@@ -31,6 +31,22 @@ class TestDiasUteis(unittest.TestCase):
             ap.dias_uteis_desde(datetime(2026, 7, 20), 5, {"feriado"})
 
 
+class TestSemanasDoMes(unittest.TestCase):
+    def test_quatro_semanas_cheias(self):
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        # 2026-07-22 é quarta -> segunda da semana = 2026-07-20
+        dias = ap.semanas_do_mes(datetime(2026, 7, 22), envio, 4)
+        self.assertEqual(len(dias), 20)             # 4 semanas x 5 dias
+        self.assertEqual(dias[0], "2026-07-20")     # segunda da semana atual (inclui passados)
+        self.assertEqual(dias[-1], "2026-08-14")    # sexta da 4a semana
+        for d in dias:                              # nenhum fim de semana
+            self.assertLess(datetime.strptime(d, "%Y-%m-%d").weekday(), 5)
+
+    def test_dias_envio_vazio_levanta(self):
+        with self.assertRaises(ValueError):
+            ap.semanas_do_mes(datetime(2026, 7, 22), set(), 4)
+
+
 class TestPlanejar(unittest.TestCase):
     def _dias(self, datas):
         return [(d, None, False) for d in datas]

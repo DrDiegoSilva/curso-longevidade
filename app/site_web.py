@@ -808,34 +808,41 @@ def _slot_card(s, token, opcoes_html):
     titulo = _esc(s.get("titulo") or "—")
     tema = _esc(s.get("tema") or "")
     badge = _esc(_BADGE.get(tipo, tipo))
-    pino = "📌 " if fixado else ""
-    def _acao(acao, label, extra=""):
+    badge_cls = tipo
+    if s.get("passado"):        # dia já passado: histórico -> badge neutro (sem "⚠️ vazio")
+        badge = "enviado" if tipo in ("reserva", "fila") else "—"
+        badge_cls = "pulado"
+    cab = (f'<div class="slot-h"><span class="slot-dia">{dia} · {s["data"][8:10]}/{s["data"][5:7]}</span>'
+           f'<span class="badge badge-{badge_cls}">{badge}</span></div>'
+           f'<div class="slot-tema">{tema}</div>'
+           f'<div class="slot-tit">{titulo}</div>')
+    if s.get("passado"):        # dia já passado nesta semana: histórico, só leitura
+        return f'<div class="slot passado" data-data="{de}">{cab}</div>'
+    def _acao(acao, label):
         return (f'<form method="post" action="/agenda" style="display:inline">'
                 f'<input type="hidden" name="token" value="{_esc(token)}">'
                 f'<input type="hidden" name="acao" value="{acao}">'
-                f'<input type="hidden" name="data" value="{de}">{extra}'
-                f'<button class="mini">{label}</button></form>')
-    mover = (f'<form method="post" action="/agenda" style="display:inline">'
+                f'<input type="hidden" name="data" value="{de}">'
+                f'<button class="slot-btn" type="submit">{label}</button></form>')
+    b_fixar = _acao("desafixar", "📌 Fixado") if fixado else _acao("fixar", "📌 Fixar")
+    b_pular = _acao("despular", "☀️ Reativar") if tipo == "pulado" else _acao("pular", "💤 Folga")
+    mover = (f'<form method="post" action="/agenda" style="display:inline" class="slot-mv">'
              f'<input type="hidden" name="token" value="{_esc(token)}">'
              f'<input type="hidden" name="acao" value="mover">'
              f'<input type="hidden" name="data" value="{de}">'
-             f'<select name="dest" class="mini"><option value="">mover p/…</option>{opcoes_html}</select>'
-             f'<button class="mini">↔︎</button></form>')
-    return (f'<div class="slot" draggable="true" data-data="{de}">'
-            f'<div class="slot-h">{dia} · {s["data"][8:10]}/{s["data"][5:7]} '
-            f'<span class="badge">{badge}</span></div>'
-            f'<div class="slot-tema">{pino}{tema}</div>'
-            f'<div class="slot-tit">{titulo}</div>'
-            f'<div class="slot-acts">'
-            f'{_acao("fixar" if not fixado else "desafixar", "📌" if not fixado else "soltar")}'
-            f'{_acao("pular" if tipo != "pulado" else "despular", "💤" if tipo != "pulado" else "reativar")}'
-            f'{mover}</div></div>')
+             f'<select name="dest" class="slot-sel" title="Trocar este estudo com outro dia" '
+             f'onchange="if(this.value)this.form.submit()">'
+             f'<option value="">⇄ Trocar…</option>{opcoes_html}</select>'
+             f'<noscript><button class="slot-btn" type="submit">ok</button></noscript></form>')
+    cls = "slot fixado" if fixado else "slot"
+    return (f'<div class="{cls}" draggable="true" data-data="{de}">{cab}'
+            f'<div class="slot-acts">{b_fixar}{b_pular}{mover}</div></div>')
 
 
 def pagina_agenda(semanas, estoque, token, msg=""):
     opcoes = "".join(
         f'<option value="{_esc(s["data"])}">{_esc(s["data"][8:10])}/{_esc(s["data"][5:7])}</option>'
-        for sem in semanas for s in sem)
+        for sem in semanas for s in sem if not s.get("passado"))
     blocos = ""
     for i, sem in enumerate(semanas):
         cards = "".join(_slot_card(s, token, opcoes) for s in sem)
@@ -846,23 +853,39 @@ def pagina_agenda(semanas, estoque, token, msg=""):
                       f'<input type="hidden" name="acao" value="rematerializar">'
                       f'<button class="actbtn">↻ Rematerializar</button></form>')
     css = """<style>
-    .sem-h{color:var(--ouro2);font-family:system-ui;font-size:13px;margin:18px 0 6px}
-    .sem-row{display:flex;gap:10px;flex-wrap:wrap}
-    .slot{flex:1;min-width:150px;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);
-          border-radius:12px;padding:10px 12px;cursor:grab}
-    .slot.dragover{border-color:var(--ouro)}
-    .slot-h{font-family:system-ui;font-size:12px;color:var(--creme);opacity:.8;display:flex;justify-content:space-between;gap:6px}
-    .badge{font-size:11px;opacity:.9}
-    .slot-tema{font-size:13px;color:var(--ouro2);margin:4px 0 2px}
-    .slot-tit{font-size:13px;color:var(--creme);line-height:1.3;min-height:34px}
-    .slot-acts{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
-    button.mini,select.mini{font-family:system-ui;font-size:11px;padding:4px 7px;border-radius:8px;
-          border:1px solid rgba(233,225,198,.2);background:rgba(0,0,0,.25);color:var(--creme);cursor:pointer}
+    .sem-h{color:var(--ouro2);font-family:var(--ui);font-size:12px;font-weight:700;letter-spacing:.08em;
+          text-transform:uppercase;margin:22px 0 8px}
+    .sem-row{display:flex;gap:12px;flex-wrap:wrap}
+    .slot{flex:1;min-width:200px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));
+          border:1px solid var(--line);border-radius:14px;padding:13px 15px 14px;cursor:grab;transition:.16s}
+    .slot:hover{border-color:rgba(201,162,39,.35)}
+    .slot.dragover{border-color:var(--ouro);box-shadow:0 0 0 2px rgba(201,162,39,.28)}
+    .slot.fixado{border-color:rgba(201,162,39,.5);background:linear-gradient(180deg,rgba(201,162,39,.09),rgba(255,255,255,.02))}
+    .slot-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .slot-dia{font-family:var(--ui);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--creme);opacity:.65}
+    .badge{font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.03em;padding:3px 9px;border-radius:100px;white-space:nowrap}
+    .badge-reserva{color:#9fe6c2;background:rgba(70,190,130,.14);border:1px solid rgba(70,190,130,.32)}
+    .badge-fila{color:#ecd691;background:rgba(201,162,39,.15);border:1px solid rgba(201,162,39,.34)}
+    .badge-pulado{color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line)}
+    .badge-vazio{color:#eaa982;background:rgba(200,120,60,.15);border:1px solid rgba(200,120,60,.34)}
+    .slot-tema{font-family:var(--ui);font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--ouro2);margin:10px 0 3px}
+    .slot-tit{font-size:13.5px;color:var(--creme);line-height:1.35;min-height:37px}
+    .slot-acts{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;align-items:center}
+    .slot-btn,.slot-sel{font-family:var(--ui);font-size:11.5px;font-weight:600;letter-spacing:.01em;
+          padding:6px 11px;border-radius:100px;border:1px solid rgba(233,225,198,.22);
+          background:rgba(0,0,0,.22);color:var(--creme);cursor:pointer;transition:.14s;line-height:1}
+    .slot-btn:hover,.slot-sel:hover{border-color:var(--ouro);color:var(--ouro2);background:rgba(201,162,39,.1)}
+    .slot-btn:active{transform:translateY(1px)}
+    .slot-mv{display:inline}
+    .slot-sel{appearance:none;-webkit-appearance:none}
+    .slot.fixado .slot-btn{border-color:rgba(201,162,39,.4)}
+    .slot.passado{opacity:.42;cursor:default;background:rgba(255,255,255,.015);border-style:dashed}
+    .slot.passado .slot-tit{min-height:0}
     </style>"""
     js = """<script>
     (function(){
       let orig=null;
-      document.querySelectorAll('.slot').forEach(function(el){
+      document.querySelectorAll('.slot:not(.passado)').forEach(function(el){
         el.addEventListener('dragstart',function(){orig=el.dataset.data;});
         el.addEventListener('dragover',function(e){e.preventDefault();el.classList.add('dragover');});
         el.addEventListener('dragleave',function(){el.classList.remove('dragover');});

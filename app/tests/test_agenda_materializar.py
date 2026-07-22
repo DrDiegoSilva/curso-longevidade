@@ -40,13 +40,12 @@ class TestMaterializar(unittest.TestCase):
             self._reserva("Obesidade", f"Estudo {i}")
         # desliga o reabastecimento de rede no teste
         self.daily.reabastecer = lambda: 0
-        n = self.daily.materializar_agenda(dias=5)
+        import agenda_plan as ap
+        datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        n = self.daily.materializar_agenda(datas=datas)
         self.assertEqual(n, 5)
         # 5 viraram 'agendado', sobrou 1 pronto
         self.assertEqual(self.db.contar_reserva_pronto(), 1)
-        amanha = datetime.now() + timedelta(days=1)
-        import agenda_plan as ap
-        datas = ap.dias_uteis_desde(amanha, 5, self.daily._dias_envio())
         for d in datas:
             self.assertEqual(self.db.agenda_slot(d)["tipo"], "reserva")
 
@@ -55,10 +54,10 @@ class TestMaterializar(unittest.TestCase):
             self._reserva("Obesidade", f"E{i}")
         self.daily.reabastecer = lambda: 0
         import agenda_plan as ap
-        amanha = datetime.now() + timedelta(days=1)
-        d0 = ap.dias_uteis_desde(amanha, 1, self.daily._dias_envio())[0]
+        datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        d0 = datas[0]
         self.db.agenda_upsert(d0, tipo="reserva", ref_id="fixo", tema="Longevidade", titulo="FIXO", fixado=1)
-        self.daily.materializar_agenda(dias=5)
+        self.daily.materializar_agenda(datas=datas)
         self.assertEqual(self.db.agenda_slot(d0)["ref_id"], "fixo")
 
     def test_dia_fixado_preserva_e_preenche_resto(self):
@@ -68,7 +67,7 @@ class TestMaterializar(unittest.TestCase):
         import agenda_plan as ap
         datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
         self.db.agenda_upsert(datas[0], tipo="reserva", ref_id="fixo", tema="Longevidade", titulo="FIXO", fixado=1)
-        self.daily.materializar_agenda(dias=5)
+        self.daily.materializar_agenda(datas=datas)
         self.assertEqual(self.db.agenda_slot(datas[0])["ref_id"], "fixo")   # preservado
         for d in datas[1:]:                                                 # demais preenchidos
             self.assertEqual(self.db.agenda_slot(d)["tipo"], "reserva")
@@ -80,7 +79,7 @@ class TestMaterializar(unittest.TestCase):
         datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
         self.db.agenda_upsert(datas[0], tipo="reserva", ref_id=rid, tema="Obesidade", titulo="Ref")
         self.daily.reabastecer = lambda: 0
-        self.daily.materializar_agenda(dias=5)
+        self.daily.materializar_agenda(datas=datas)
         n_rid = sum(1 for d in datas if (self.db.agenda_slot(d) or {}).get("ref_id") == rid)
         self.assertEqual(n_rid, 1)
 
@@ -90,9 +89,9 @@ class TestMaterializar(unittest.TestCase):
         self.db.marcar_reserva_agendado(rid)
         self.assertEqual(self.db.contar_reserva_pronto(), 0)
         self.daily.reabastecer = lambda: 0
-        self.daily.materializar_agenda(dias=5)
         import agenda_plan as ap
         datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        self.daily.materializar_agenda(datas=datas)
         referenciado = any((self.db.agenda_slot(d) or {}).get("ref_id") == rid for d in datas)
         self.assertTrue(referenciado)
 

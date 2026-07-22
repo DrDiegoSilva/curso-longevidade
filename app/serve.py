@@ -160,9 +160,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 daily.materializar_agenda()
             except Exception as e:
                 print(f"[agenda] materializar no GET falhou: {e}", flush=True)
-            datas = agenda_plan.dias_uteis_desde(datetime.now() + timedelta(days=1), 15, daily._dias_envio())
-            mapa = db.agenda_listar(datas[0], datas[-1]) if datas else {}
-            slots = [mapa.get(d, {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}) for d in datas]
+            janela = agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4)
+            mapa = db.agenda_listar(janela[0], janela[-1]) if janela else {}
+            amanha_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            slots = [dict(mapa.get(d, {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}),
+                          passado=(d < amanha_str)) for d in janela]
             semanas = agenda_plan.agrupar_por_semana(slots)
             msg = q.get("msg", [""])[0]
             return self._html(site_web.pagina_agenda(semanas, db.contar_reserva_pronto(), config.ADMIN_TOKEN, msg))
@@ -338,8 +340,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             acao, data, msg = g("acao"), g("data"), ""
             if acao == "mover":
                 dest = g("dest")
-                validos = set(agenda_plan.dias_uteis_desde(
-                    datetime.now() + timedelta(days=1), 15, daily._dias_envio()))
+                amanha_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                validos = set(d for d in agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4)
+                              if d >= amanha_str)   # só dias futuros são editáveis
                 if data not in validos or dest not in validos:
                     msg = "Data inválida — mover ignorado."
                 else:

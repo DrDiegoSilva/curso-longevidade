@@ -22,6 +22,23 @@ def dias_uteis_desde(inicio, n, dias_envio):
     return out
 
 
+def semanas_do_mes(hoje, dias_envio, n_semanas=4):
+    """Dias úteis de `n_semanas` semanas CHEIAS (seg–sex), começando na segunda-feira
+    da semana de `hoje`. Ex.: 4 semanas seg–sex = 20 dias. Inclui os dias já passados
+    da semana atual (o chamador os marca como histórico). Retorna YYYY-MM-DD em ordem."""
+    validos = set(dias_envio) & set(DIAS)
+    if not validos:
+        raise ValueError("dias_envio não contém nenhum dia útil válido")
+    segunda = hoje - timedelta(days=hoje.weekday())   # segunda-feira da semana de hoje
+    fim = segunda + timedelta(days=n_semanas * 7)
+    out, d = [], segunda
+    while d < fim:
+        if DIAS[d.weekday()] in validos:
+            out.append(d.strftime("%Y-%m-%d"))
+        d = d + timedelta(days=1)
+    return out
+
+
 def _rank(cand, preferido, prev):
     return (
         1 if cand["tema"] != prev else 0,           # variedade (regra forte)
