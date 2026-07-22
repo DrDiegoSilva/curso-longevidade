@@ -1,8 +1,10 @@
 """Orquestra os jobs diários (modelo fila + variedade, seg-sex, 1/dia).
 
-- preparar_18h(): se AMANHÃ for dia útil, reabastece a fila se preciso, tira o
-  próximo artigo, gera resumo + gancho + gráfico + PDF de prévia, salva o
-  rascunho e avisa o curador com o link de revisão. Silêncio = envia às 08h.
+- preparar_18h(): se AMANHÃ for dia útil, lê o slot da agenda de amanhã
+  (reserva/fila/pulado) e monta o rascunho a partir dele — com fallback pro
+  fluxo antigo (fila fresca -> reserva) em caso de slot vazio ou qualquer erro.
+  Gera resumo + gancho + gráfico + PDF de prévia, salva o rascunho e avisa o
+  curador com o link de revisão. Silêncio = envia às 08h.
 - enviar_08h(): se HOJE for dia útil e houver rascunho não vetado, gera um PDF
   PERSONALIZADO por assinante (nome na marca d'água) e envia.
 
@@ -260,22 +262,22 @@ def preparar_18h(amanha=None):
         print(f"[preparar] materializar falhou (segue no fallback): {e}", flush=True)
     import db
     alvo = amanha.strftime("%Y-%m-%d")
-    fonte, ref = agenda_plan.classificar_slot(db.agenda_slot(alvo))
-    if fonte == "pulado":
-        print("[preparar] amanhã marcado como PULADO na agenda — não preparo", flush=True)
-        return None
-    if fonte == "reserva":
-        r = _preparar_da_reserva(reserva_id=ref)
-        if r:
-            return r
-        print("[preparar] item da reserva sumiu — fallback", flush=True)
-    elif fonte == "fila":
-        try:
+    try:
+        fonte, ref = agenda_plan.classificar_slot(db.agenda_slot(alvo))
+        if fonte == "pulado":
+            print("[preparar] amanhã marcado como PULADO na agenda — não preparo", flush=True)
+            return None
+        if fonte == "reserva":
+            r = _preparar_da_reserva(reserva_id=ref)
+            if r:
+                return r
+            print("[preparar] item da reserva sumiu — fallback", flush=True)
+        elif fonte == "fila":
             r = _preparar_de_artigo(json.loads(ref))
             if r:
                 return r
-        except Exception as e:
-            print(f"[preparar] slot de fila inválido — fallback: {e}", flush=True)
+    except Exception as e:
+        print(f"[preparar] erro ao preparar do slot ({e}) — fallback", flush=True)
     return _preparar_fallback()
 
 

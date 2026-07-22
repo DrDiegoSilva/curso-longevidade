@@ -162,6 +162,17 @@ class TestPreparoRoteamento(unittest.TestCase):
         self.daily.preparar_18h(amanha=datetime.strptime(d, "%Y-%m-%d"))  # sem slot
         self.assertEqual(self.chamadas, [("fallback", None)])
 
+    def test_reserva_que_explode_cai_no_fallback(self):
+        from datetime import datetime
+        d = self._amanha_util()
+        self.db.agenda_upsert(d, tipo="reserva", ref_id="rid-x", tema="Obesidade", titulo="T")
+        def _boom(reserva_id=None):
+            self.chamadas.append(("reserva", reserva_id))
+            raise RuntimeError("falha de rede")
+        self.daily._preparar_da_reserva = _boom
+        self.daily.preparar_18h(amanha=datetime.strptime(d, "%Y-%m-%d"))
+        self.assertEqual(self.chamadas, [("reserva", "rid-x"), ("fallback", None)])
+
 
 if __name__ == "__main__":
     unittest.main()
