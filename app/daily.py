@@ -22,6 +22,7 @@ import draft_store
 import subscribers
 import deliver
 import pdf as pdfmod
+import buscar_estudos as be
 import agenda_plan
 
 DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
@@ -76,9 +77,9 @@ def _rotacao():
 def materializar_agenda(dias=15):
     """Preenche os próximos `dias` dias úteis vazios na agenda (rotação + variedade,
     reserva pronta antes de fila fresca). Reabastece se o estoque não cobre o horizonte.
-    Retorna quantos slots foram preenchidos. Fail-safe: nunca derruba o envio."""
+    Retorna quantos slots foram preenchidos. Fail-safe por slot (um slot ruim não aborta
+    os outros); erros de configuração propagam."""
     import db
-    import queue_store
     db.init()
     envio = _dias_envio()
     inicio = datetime.now() + timedelta(days=1)
@@ -114,16 +115,22 @@ def materializar_agenda(dias=15):
                       "ref_id": None, "payload": a})
 
     plano = agenda_plan.planejar_agenda(ordenados, cands, _rotacao(), None)
+    feitos = 0
     for data, cand in plano.items():
-        if cand["tipo"] == "reserva":
-            db.marcar_reserva_agendado(cand["ref_id"])
-            payload = None
-        else:
-            queue_store.remover(cand["payload"])
-            payload = json.dumps(cand["payload"], ensure_ascii=False)
-        db.agenda_upsert(data, tipo=cand["tipo"], ref_id=cand["ref_id"], payload=payload,
-                         tema=cand["tema"], titulo=cand["titulo"], fixado=0)
-    return len(plano)
+        try:
+            if cand["tipo"] == "reserva":
+                db.agenda_upsert(data, tipo="reserva", ref_id=cand["ref_id"], payload=None,
+                                 tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+                db.marcar_reserva_agendado(cand["ref_id"])   # consome só APÓS gravar o slot
+            else:
+                payload = json.dumps(cand["payload"], ensure_ascii=False)
+                db.agenda_upsert(data, tipo="fila", ref_id=None, payload=payload,
+                                 tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+                queue_store.remover(cand["payload"])          # consome só APÓS gravar o slot
+            feitos += 1
+        except Exception as e:
+            print(f"[agenda] falha ao materializar {data} (segue): {e}", flush=True)
+    return feitos
 
 
 def avisar_estoque_baixo():
