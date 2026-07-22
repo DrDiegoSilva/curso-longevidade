@@ -180,11 +180,11 @@ def enviar_audio_preview(r):
     return enviou
 
 
-def _preparar_da_reserva():
-    """Fallback do 18h quando NÃO há estudo fresco: monta o rascunho a partir do
-    próximo resumo PRONTO da reserva (já gerado). Mantém o review das 18h."""
+def _preparar_da_reserva(reserva_id=None):
+    """Monta o rascunho de amanhã a partir de um resumo PRONTO da reserva. Se
+    `reserva_id` vier (slot da agenda), usa aquele; senão, o próximo da fila."""
     import db
-    r_res = db.proximo_da_reserva()
+    r_res = db.obter_reserva(reserva_id) if reserva_id else db.proximo_da_reserva()
     if not r_res:
         deliver.enviar_curador("📭 Sem estudo fresco E reserva vazia. Nada preparado p/ amanhã.")
         return None
@@ -217,18 +217,11 @@ def _preparar_da_reserva():
     return r
 
 
-def preparar_18h():
+def _preparar_de_artigo(art):
+    """Gera conteúdo de um artigo cru (fila/fresco) e monta o rascunho de amanhã."""
     amanha = datetime.now() + timedelta(days=1)
-    if not _e_dia_util(amanha):
-        print("[preparar] amanhã não é dia de envio — pulo", flush=True)
-        return None
-    if queue_store.tamanho() < REFILL_MINIMO:
-        print(f"[reabastecer] +{reabastecer()} na fila", flush=True)
-    art = queue_store.proximo()
-    if not art:
-        return _preparar_da_reserva()      # sem estudo fresco -> puxa da fila/reserva (pulmão)
     c = content.gerar_conteudo(art)
-    alvo = amanha.strftime("%Y-%m-%d")        # rascunho é do DIA DO ENVIO (amanhã) — casa com enviar_08h
+    alvo = amanha.strftime("%Y-%m-%d")
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
     pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
@@ -244,6 +237,46 @@ def preparar_18h():
                            f"(se não mexer, envio automático às 08h){extra}")
     enviar_audio_preview(r)
     return r
+
+
+def _preparar_fallback():
+    """Comportamento original: fila fresca (gera conteúdo) e, se vazia, reserva."""
+    if queue_store.tamanho() < REFILL_MINIMO:
+        print(f"[reabastecer] +{reabastecer()} na fila", flush=True)
+    art = queue_store.proximo()
+    if not art:
+        return _preparar_da_reserva()
+    return _preparar_de_artigo(art)
+
+
+def preparar_18h(amanha=None):
+    amanha = amanha or (datetime.now() + timedelta(days=1))
+    if not _e_dia_util(amanha):
+        print("[preparar] amanhã não é dia de envio — pulo", flush=True)
+        return None
+    try:
+        materializar_agenda()
+    except Exception as e:
+        print(f"[preparar] materializar falhou (segue no fallback): {e}", flush=True)
+    import db
+    alvo = amanha.strftime("%Y-%m-%d")
+    fonte, ref = agenda_plan.classificar_slot(db.agenda_slot(alvo))
+    if fonte == "pulado":
+        print("[preparar] amanhã marcado como PULADO na agenda — não preparo", flush=True)
+        return None
+    if fonte == "reserva":
+        r = _preparar_da_reserva(reserva_id=ref)
+        if r:
+            return r
+        print("[preparar] item da reserva sumiu — fallback", flush=True)
+    elif fonte == "fila":
+        try:
+            r = _preparar_de_artigo(json.loads(ref))
+            if r:
+                return r
+        except Exception as e:
+            print(f"[preparar] slot de fila inválido — fallback: {e}", flush=True)
+    return _preparar_fallback()
 
 
 def rotina_08h():

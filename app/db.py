@@ -464,6 +464,12 @@ def proximo_da_reserva():
     return dict(r) if r else None
 
 
+def obter_reserva(rid):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM reserva_resumos WHERE id=?", (rid,)).fetchone()
+    return dict(r) if r else None
+
+
 def marcar_reserva_enviado(rid):
     from datetime import datetime
     with _conn() as c:

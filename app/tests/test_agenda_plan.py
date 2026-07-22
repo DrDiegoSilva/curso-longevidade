@@ -114,5 +114,54 @@ class TestAgruparPorSemana(unittest.TestCase):
         self.assertEqual(ap.agrupar_por_semana([]), [])
 
 
+class TestPreparoRoteamento(unittest.TestCase):
+    """preparar_18h escolhe a fonte certa a partir do slot (com dublês nas partes de I/O)."""
+    def setUp(self):
+        import os, tempfile
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ.pop("DATABASE_URL", None)
+        import importlib
+        import config as _cfg; importlib.reload(_cfg)
+        import db as _db; importlib.reload(_db)
+        import queue_store as _q; importlib.reload(_q)
+        import daily as _d; importlib.reload(_d)
+        self.db, self.daily = _db, _d
+        self.db.init()
+        self.chamadas = []
+        # dublês: registram a fonte usada, sem tocar rede/IA/PDF. Retornam um dict
+        # "truthy" (não None) para imitar o rascunho real que essas funções devolvem
+        # em caso de sucesso — preparar_18h usa `if r:` p/ decidir se cai no fallback,
+        # e `list.append(...)` sempre retorna None, então sem o `or {...}` o dublê de
+        # sucesso pareceria uma falha e disparava um fallback espúrio.
+        self.daily.materializar_agenda = lambda dias=15: 0
+        self.daily._preparar_da_reserva = lambda reserva_id=None: self.chamadas.append(("reserva", reserva_id)) or {"stub": True}
+        self.daily._preparar_de_artigo = lambda art: self.chamadas.append(("artigo", art.get("titulo"))) or {"stub": True}
+        self.daily._preparar_fallback = lambda: self.chamadas.append(("fallback", None)) or {"stub": True}
+
+    def _amanha_util(self):
+        import agenda_plan as ap
+        from datetime import datetime, timedelta
+        return ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 1, self.daily._dias_envio())[0]
+
+    def test_slot_reserva(self):
+        d = self._amanha_util()
+        self.db.agenda_upsert(d, tipo="reserva", ref_id="rid-1", tema="Obesidade", titulo="T")
+        self.daily.preparar_18h(amanha=datetime.strptime(d, "%Y-%m-%d"))
+        self.assertEqual(self.chamadas, [("reserva", "rid-1")])
+
+    def test_slot_pulado_nao_prepara(self):
+        d = self._amanha_util()
+        self.db.agenda_upsert(d, tipo="pulado")
+        self.daily.preparar_18h(amanha=datetime.strptime(d, "%Y-%m-%d"))
+        self.assertEqual(self.chamadas, [])
+
+    def test_slot_vazio_cai_no_fallback(self):
+        d = self._amanha_util()
+        self.daily.preparar_18h(amanha=datetime.strptime(d, "%Y-%m-%d"))  # sem slot
+        self.assertEqual(self.chamadas, [("fallback", None)])
+
+
 if __name__ == "__main__":
     unittest.main()
