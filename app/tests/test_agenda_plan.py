@@ -1,0 +1,94 @@
+"""Testes das funções puras de planejamento da agenda. Sem I/O."""
+import os
+import sys
+import unittest
+from datetime import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+import agenda_plan as ap
+
+
+def _cand(tema, tipo="reserva", titulo="t", ref_id="r", payload=None):
+    return {"tipo": tipo, "tema": tema, "titulo": titulo, "ref_id": ref_id, "payload": payload}
+
+
+class TestDiasUteis(unittest.TestCase):
+    def test_pula_fim_de_semana(self):
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        # 2026-07-24 é sexta; próximos 3 úteis = sex, seg, ter
+        got = ap.dias_uteis_desde(datetime(2026, 7, 24), 3, envio)
+        self.assertEqual(got, ["2026-07-24", "2026-07-27", "2026-07-28"])
+
+    def test_conta_certa(self):
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        self.assertEqual(len(ap.dias_uteis_desde(datetime(2026, 7, 20), 15, envio)), 15)
+
+
+class TestPlanejar(unittest.TestCase):
+    def _dias(self, datas):
+        return [(d, None, False) for d in datas]
+
+    def test_variedade_nao_repete_tema(self):
+        dias = self._dias(["2026-07-27", "2026-07-28", "2026-07-29"])
+        cands = [_cand("A"), _cand("A"), _cand("B"), _cand("B")]
+        plano = ap.planejar_agenda(dias, cands, ["A", "B"], None)
+        temas = [plano[d]["tema"] for d in ["2026-07-27", "2026-07-28", "2026-07-29"]]
+        self.assertNotEqual(temas[0], temas[1])
+        self.assertNotEqual(temas[1], temas[2])
+
+    def test_respeita_dia_bloqueado(self):
+        # dia do meio fixado/pulado (bloqueado) não recebe plano; seu tema alimenta variedade
+        dias = [("2026-07-27", None, False), ("2026-07-28", "A", True), ("2026-07-29", None, False)]
+        cands = [_cand("A"), _cand("A")]
+        plano = ap.planejar_agenda(dias, cands, ["A"], None)
+        self.assertNotIn("2026-07-28", plano)
+        self.assertIn("2026-07-27", plano)
+        # 29 vem depois de bloqueado tema A -> variedade tenta != A, mas só há A -> ainda preenche
+        self.assertIn("2026-07-29", plano)
+
+    def test_reserva_antes_de_fila(self):
+        dias = self._dias(["2026-07-27"])
+        cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}), _cand("A", tipo="reserva")]
+        plano = ap.planejar_agenda(dias, cands, ["A"], None)
+        self.assertEqual(plano["2026-07-27"]["tipo"], "reserva")
+
+    def test_estoque_magro_deixa_vazio(self):
+        dias = self._dias(["2026-07-27", "2026-07-28"])
+        cands = [_cand("A")]
+        plano = ap.planejar_agenda(dias, cands, ["A"], None)
+        self.assertEqual(len(plano), 1)
+
+    def test_nao_reusa_candidato(self):
+        dias = self._dias(["2026-07-27", "2026-07-28"])
+        cands = [_cand("A", ref_id="r1"), _cand("B", ref_id="r2")]
+        plano = ap.planejar_agenda(dias, cands, ["A", "B"], None)
+        self.assertNotEqual(plano["2026-07-27"]["ref_id"], plano["2026-07-28"]["ref_id"])
+
+
+class TestClassificarSlot(unittest.TestCase):
+    def test_none_e_fallback(self):
+        self.assertEqual(ap.classificar_slot(None), ("fallback", None))
+
+    def test_pulado(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "pulado"}), ("pulado", None))
+
+    def test_reserva(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "reserva", "ref_id": "abc"}), ("reserva", "abc"))
+
+    def test_fila(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "fila", "payload": "{}"}), ("fila", "{}"))
+
+    def test_vazio_e_fallback(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "vazio"}), ("fallback", None))
+
+
+class TestReabastecer(unittest.TestCase):
+    def test_abaixo_do_horizonte(self):
+        self.assertTrue(ap.precisa_reabastecer(2, 3, 15))
+
+    def test_estoque_suficiente(self):
+        self.assertFalse(ap.precisa_reabastecer(10, 10, 15))
+
+
+if __name__ == "__main__":
+    unittest.main()
