@@ -317,6 +317,15 @@ def rotina_08h():
     enviar_08h()
 
 
+def montar_texto_resumo(titulo, resumo, tmeta):
+    """Texto do WhatsApp p/ o assinante: badge do tema (emoji + rótulo) no topo,
+    depois o título do estudo e o resumo — assim o leitor já sabe o tema do dia."""
+    rot = (tmeta or {}).get("rotulo", "")
+    emoji = (tmeta or {}).get("emoji", "")
+    hdr = f"{emoji} *{rot}*\n".lstrip() if rot else ""
+    return f"{hdr}🔬 *{titulo}*\n\n{resumo}"
+
+
 def enviar_08h():
     import resumo_diario as rd
     if not _e_dia_util(datetime.now()):
@@ -354,7 +363,7 @@ def enviar_08h():
         import phone
         whatsapp = phone.normalizar(whatsapp)   # garante o 55 (registros antigos)
         link = f"{config.PUBLIC_URL}/entrar"  # portal protegido (login por código)
-        msg = deliver.personalizar_rodape(f"🔬 *{titulo}*\n\n{r['resumo']}", nome, link)
+        msg = deliver.personalizar_rodape(montar_texto_resumo(titulo, r['resumo'], tmeta), nome, link)
         deliver.enviar_texto(whatsapp, msg)
         if master_pdf:                           # PDF (não derruba o resto se falhar)
             try:

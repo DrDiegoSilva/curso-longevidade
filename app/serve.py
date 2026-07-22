@@ -163,8 +163,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             janela = agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4)
             mapa = db.agenda_listar(janela[0], janela[-1]) if janela else {}
             amanha_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            slots = [dict(mapa.get(d, {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}),
-                          passado=(d < amanha_str)) for d in janela]
+            vazio = lambda d: {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}
+            def _slot_view(d):
+                if d < amanha_str:                       # passado -> o que REALMENTE foi enviado (arquivo)
+                    dg = db.digest_do_dia(d)
+                    if dg:
+                        return {"data": d, "tipo": "enviado", "tema": dg.get("tema", ""),
+                                "titulo": dg.get("titulo_pt", ""), "fixado": 0, "passado": True}
+                    s = mapa.get(d)
+                    if s and s.get("titulo"):             # sem registro no arquivo, mas há slot
+                        return dict(s, passado=True)
+                    return dict(vazio(d), passado=True)
+                return dict(mapa.get(d, vazio(d)), passado=False)
+            slots = [_slot_view(d) for d in janela]
             semanas = agenda_plan.agrupar_por_semana(slots)
             msg = q.get("msg", [""])[0]
             return self._html(site_web.pagina_agenda(semanas, db.contar_reserva_pronto(), config.ADMIN_TOKEN, msg))

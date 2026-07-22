@@ -660,6 +660,15 @@ def registrar_digest(art, conteudo, tmeta=None, data=None):
         )
 
 
+def digest_do_dia(data):
+    """O digest ENVIADO numa data (tema/título do que saiu). 1/dia; se houver mais de um,
+    retorna o mais recente. Usado p/ mostrar o histórico nos dias passados da agenda."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM digests WHERE data=? ORDER BY criado_em DESC LIMIT 1",
+                      (data,)).fetchone()
+    return dict(r) if r else None
+
+
 def listar_temas():
     """Temas COM digest, ordenados como no temas_config, com contagem + rotulo/emoji/cor."""
     with _conn() as c:

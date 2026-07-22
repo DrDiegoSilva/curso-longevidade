@@ -102,6 +102,15 @@ class TestAgendaDb(unittest.TestCase):
         self.assertEqual(s["fixado"], 1)
         self.assertEqual(s["tipo"], "vazio")
 
+    def test_digest_do_dia(self):
+        self.assertIsNone(self.db.digest_do_dia("2026-07-20"))
+        self.db.registrar_digest({"tema": "Obesidade", "titulo": "orig"},
+                                 {"titulo_pt": "Retatrutida X", "resumo": "r"}, None, data="2026-07-20")
+        dg = self.db.digest_do_dia("2026-07-20")
+        self.assertIsNotNone(dg)
+        self.assertEqual(dg["tema"], "Obesidade")
+        self.assertEqual(dg["titulo_pt"], "Retatrutida X")
+
     def test_ref_ids_reserva_e_payloads_fila(self):
         self.db.agenda_upsert("2026-07-27", tipo="reserva", ref_id="r1", tema="A")
         self.db.agenda_upsert("2026-07-28", tipo="fila", payload='{"doi":"10.1/x"}', tema="B")

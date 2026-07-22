@@ -809,9 +809,10 @@ def _slot_card(s, token, opcoes_html):
     tema = _esc(s.get("tema") or "")
     badge = _esc(_BADGE.get(tipo, tipo))
     badge_cls = tipo
-    if s.get("passado"):        # dia já passado: histórico -> badge neutro (sem "⚠️ vazio")
-        badge = "enviado" if tipo in ("reserva", "fila") else "—"
-        badge_cls = "pulado"
+    if s.get("passado"):        # dia já passado: histórico (mostra o tema/estudo enviado)
+        tem_estudo = bool(s.get("titulo"))
+        badge = "enviado" if tem_estudo else "—"
+        badge_cls = "reserva" if tem_estudo else "pulado"   # verde p/ 'enviado'
     cab = (f'<div class="slot-h"><span class="slot-dia">{dia} · {s["data"][8:10]}/{s["data"][5:7]}</span>'
            f'<span class="badge badge-{badge_cls}">{badge}</span></div>'
            f'<div class="slot-tema">{tema}</div>'
