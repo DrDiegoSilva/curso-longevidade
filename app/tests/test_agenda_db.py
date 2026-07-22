@@ -79,6 +79,16 @@ class TestAgendaDb(unittest.TestCase):
         self.assertEqual(self.db.agenda_slot("2026-07-27")["tipo"], "pulado")
         self.assertEqual(self.db.contar_reserva_pronto(), 1)
 
+    def test_pular_preserva_fixado(self):
+        rid = self._reserva()
+        self.db.marcar_reserva_agendado(rid)
+        self.db.agenda_upsert("2026-07-27", tipo="reserva", ref_id=rid, tema="Obesidade", fixado=1)
+        self.db.agenda_pular("2026-07-27", True)
+        s = self.db.agenda_slot("2026-07-27")
+        self.assertEqual(s["tipo"], "pulado")
+        self.assertEqual(s["fixado"], 1)
+        self.assertEqual(self.db.contar_reserva_pronto(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

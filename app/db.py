@@ -519,27 +519,29 @@ def agenda_fixar(data, on=True):
 
 
 def agenda_devolver(data):
-    """Tira o item do slot e devolve ao estoque; slot vira 'vazio'. Preserva 'fixado'."""
+    """Tira o item do slot e devolve ao estoque; slot vira 'vazio'. Preserva 'fixado'.
+    Se a devolução à fila falhar, a exceção propaga ANTES de limpar o slot — o item
+    não é perdido (o slot continua apontando pra ele)."""
     s = agenda_slot(data)
     if not s:
         return
     if s.get("tipo") == "reserva" and s.get("ref_id"):
         marcar_reserva_pronto(s["ref_id"])
     elif s.get("tipo") == "fila" and s.get("payload"):
-        try:
-            import json
-            import queue_store
-            queue_store.devolver(json.loads(s["payload"]))
-        except Exception as e:
-            print(f"[agenda] devolver fila falhou: {e}", flush=True)
+        import json
+        import queue_store
+        queue_store.devolver(json.loads(s["payload"]))
     agenda_upsert(data, tipo="vazio", fixado=s.get("fixado", 0))
 
 
 def agenda_pular(data, on=True):
-    """on=True: devolve item ao estoque e marca 'pulado'. on=False: volta a 'vazio'."""
+    """on=True: devolve item ao estoque e marca 'pulado' (preserva 'fixado').
+    on=False: volta a 'vazio'."""
     if on:
+        s = agenda_slot(data)
+        fixado = s.get("fixado", 0) if s else 0
         agenda_devolver(data)
-        agenda_upsert(data, tipo="pulado")
+        agenda_upsert(data, tipo="pulado", fixado=fixado)
     else:
         agenda_upsert(data, tipo="vazio")
 
