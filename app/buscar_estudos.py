@@ -4,9 +4,13 @@ Prioriza journals de renome. Imprime estruturado para síntese posterior.
 Uso: python buscar_estudos.py "obesity OR GLP-1 OR tirzepatide" --dias 14 --max 15
 Futuro (VPS): adicionar OpenAlex/Crossref/medRxiv/ClinicalTrials/openFDA.
 """
-import sys, io, json, argparse, urllib.request, urllib.parse
+import sys, json, argparse, urllib.request, urllib.parse
 from datetime import datetime, timedelta
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 RENOME = [
     "n engl j med", "lancet", "jama", "diabetes care", "obesity",
