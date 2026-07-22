@@ -147,6 +147,10 @@ class TestPreparoRoteamento(unittest.TestCase):
         self.daily._preparar_de_artigo = lambda art: self.chamadas.append(("artigo", art.get("titulo"))) or {"stub": True}
         self.daily._preparar_fallback = lambda: self.chamadas.append(("fallback", None)) or {"stub": True}
 
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
     def _amanha_util(self):
         import agenda_plan as ap
         from datetime import datetime, timedelta

@@ -26,6 +26,10 @@ class TestMaterializar(unittest.TestCase):
         self.db, self.q, self.daily = _db, _q, _d
         self.db.init()
 
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
     def _reserva(self, tema, titulo):
         return self.db.salvar_reserva({"tema": tema, "titulo_pt": titulo, "resumo": "r",
                                        "gancho": "", "grafico": "", "doi": "", "fonte": "NEJM",

@@ -17,6 +17,10 @@ class TestAgendaDb(unittest.TestCase):
         self.db = _db
         self.db.init()
 
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
     def _reserva(self, tema="Obesidade", titulo="Estudo X"):
         return self.db.salvar_reserva({"tema": tema, "titulo_pt": titulo, "resumo": "r",
                                        "gancho": "g", "grafico": "", "doi": "", "fonte": "NEJM",
