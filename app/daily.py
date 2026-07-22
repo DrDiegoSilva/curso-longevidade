@@ -34,7 +34,8 @@ ESTOQUE_MINIMO = 10        # avisa o admin quando a reserva de resumos prontos c
 
 
 def _cfg():
-    return json.load(open(os.path.join(os.path.dirname(__file__), "temas_config.json"), encoding="utf-8"))
+    with open(os.path.join(os.path.dirname(__file__), "temas_config.json"), encoding="utf-8") as f:
+        return json.load(f)
 
 
 def _dias_envio():

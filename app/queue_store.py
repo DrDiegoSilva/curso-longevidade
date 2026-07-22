@@ -22,7 +22,8 @@ def _chave(a):
 
 def _load():
     try:
-        d = json.load(open(_path(), encoding="utf-8"))
+        with open(_path(), encoding="utf-8") as f:
+            d = json.load(f)
     except Exception:
         d = {}
     d.setdefault("fila", [])
