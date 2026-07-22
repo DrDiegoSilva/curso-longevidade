@@ -4,16 +4,19 @@ Regras: preencher só os dias VAZIOS; rotação de tema como guia + variedade
 (não repetir o tema do dia anterior quando houver alternativa) + preferência
 reserva pronta > fila fresca. Não consome candidato duas vezes.
 """
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
 
 
 def dias_uteis_desde(inicio, n, dias_envio):
     """Próximos n dias úteis (YYYY-MM-DD) a partir de `inicio` (datetime), inclusive."""
+    validos = set(dias_envio) & set(DIAS)
+    if not validos:
+        raise ValueError("dias_envio não contém nenhum dia útil válido")
     out, d = [], inicio
     while len(out) < n:
-        if DIAS[d.weekday()] in dias_envio:
+        if DIAS[d.weekday()] in validos:
             out.append(d.strftime("%Y-%m-%d"))
         d = d + timedelta(days=1)
     return out
@@ -21,9 +24,9 @@ def dias_uteis_desde(inicio, n, dias_envio):
 
 def _rank(cand, preferido, prev):
     return (
-        1 if cand["tema"] == preferido else 0,     # bate a rotação do dia
-        1 if cand["tema"] != prev else 0,           # variedade
-        1 if cand["tipo"] == "reserva" else 0,      # pronto antes de fresco
+        1 if cand["tema"] != prev else 0,           # variedade (regra forte)
+        1 if cand["tipo"] == "reserva" else 0,      # reserva pronta > fila fresca
+        1 if cand["tema"] == preferido else 0,      # rotação: só guia/desempate
     )
 
 
@@ -80,7 +83,6 @@ def precisa_reabastecer(fila_n, reserva_n, horizonte):
 def agrupar_por_semana(slots_ordenados):
     """Quebra a lista de slots (ordenada por data) em blocos por semana ISO."""
     semanas, atual, chave = [], [], None
-    from datetime import datetime
     for s in slots_ordenados:
         wk = datetime.strptime(s["data"], "%Y-%m-%d").isocalendar()[:2]
         if chave is not None and wk != chave:

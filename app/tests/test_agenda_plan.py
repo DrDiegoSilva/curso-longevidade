@@ -64,6 +64,20 @@ class TestPlanejar(unittest.TestCase):
         plano = ap.planejar_agenda(dias, cands, ["A", "B"], None)
         self.assertNotEqual(plano["2026-07-27"]["ref_id"], plano["2026-07-28"]["ref_id"])
 
+    def test_variedade_vence_rotacao(self):
+        # rotação pede A, mas o dia anterior foi A e há B disponível -> escolhe B
+        dias = self._dias(["2026-07-27"])
+        cands = [_cand("A"), _cand("B")]
+        plano = ap.planejar_agenda(dias, cands, ["A"], "A")
+        self.assertEqual(plano["2026-07-27"]["tema"], "B")
+
+    def test_reserva_vence_rotacao(self):
+        # rotação pede A (fila), mas há reserva B -> prefere a reserva
+        dias = self._dias(["2026-07-27"])
+        cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}), _cand("B", tipo="reserva")]
+        plano = ap.planejar_agenda(dias, cands, ["A"], "X")
+        self.assertEqual(plano["2026-07-27"]["tipo"], "reserva")
+
 
 class TestClassificarSlot(unittest.TestCase):
     def test_none_e_fallback(self):
@@ -88,6 +102,16 @@ class TestReabastecer(unittest.TestCase):
 
     def test_estoque_suficiente(self):
         self.assertFalse(ap.precisa_reabastecer(10, 10, 15))
+
+
+class TestAgruparPorSemana(unittest.TestCase):
+    def test_normal(self):
+        # 27/07 (seg) e 31/07 (sex) = mesma semana; 03/08 (seg) = semana seguinte
+        slots = [{"data": "2026-07-27"}, {"data": "2026-07-31"}, {"data": "2026-08-03"}]
+        self.assertEqual([len(s) for s in ap.agrupar_por_semana(slots)], [2, 1])
+
+    def test_vazio(self):
+        self.assertEqual(ap.agrupar_por_semana([]), [])
 
 
 if __name__ == "__main__":
