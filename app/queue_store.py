@@ -88,3 +88,26 @@ def confirmar_envio(artigo):
     d = _load()
     d["ultimo_tema"] = artigo.get("tema")
     _save(d)
+
+
+def listar():
+    """Cópia da fila atual (leitura; não altera estado)."""
+    return list(_load()["fila"])
+
+
+def remover(artigo):
+    """Remove o artigo (por chave) da fila — usado ao materializar na agenda."""
+    d = _load()
+    k = _chave(artigo)
+    d["fila"] = [a for a in d["fila"] if _chave(a) != k]
+    _save(d)
+
+
+def devolver(artigo):
+    """Recoloca um artigo na fila (ao desagendar/pular). Reordena por score. Não duplica."""
+    d = _load()
+    if _chave(artigo) in {_chave(a) for a in d["fila"]}:
+        return
+    d["fila"].append(artigo)
+    d["fila"].sort(key=lambda x: x.get("score", 0), reverse=True)
+    _save(d)

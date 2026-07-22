@@ -22,7 +22,7 @@ import draft_store
 import subscribers
 import deliver
 import pdf as pdfmod
-import buscar_estudos as be
+import agenda_plan
 
 DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
 REFILL_MINIMO = 2          # reabastece quando a fila cai abaixo disso
@@ -65,6 +65,65 @@ def reabastecer():
         except Exception as e:
             print(f"[reabastecer] {nome} falhou: {e}", flush=True)
     return total
+
+
+def _rotacao():
+    cfg = _cfg()
+    rot = cfg.get("rotacao_semana")
+    return rot if rot else list(cfg["temas"].keys())
+
+
+def materializar_agenda(dias=15):
+    """Preenche os próximos `dias` dias úteis vazios na agenda (rotação + variedade,
+    reserva pronta antes de fila fresca). Reabastece se o estoque não cobre o horizonte.
+    Retorna quantos slots foram preenchidos. Fail-safe: nunca derruba o envio."""
+    import db
+    import queue_store
+    db.init()
+    envio = _dias_envio()
+    inicio = datetime.now() + timedelta(days=1)
+    datas = agenda_plan.dias_uteis_desde(inicio, dias, envio)
+    if not datas:
+        return 0
+
+    fila_n = queue_store.tamanho()
+    reserva_n = db.contar_reserva_pronto()
+    if agenda_plan.precisa_reabastecer(fila_n, reserva_n, dias):
+        try:
+            print(f"[agenda] estoque {fila_n+reserva_n}<{dias} — reabastecendo", flush=True)
+            reabastecer()
+        except Exception as e:
+            print(f"[agenda] reabastecer falhou (segue): {e}", flush=True)
+
+    slots = db.agenda_listar(datas[0], datas[-1])
+    ordenados = []
+    for d in datas:
+        s = slots.get(d)
+        if s and (s.get("fixado") or s.get("tipo") in ("reserva", "fila", "pulado")):
+            tema = None if s.get("tipo") == "pulado" else s.get("tema")
+            ordenados.append((d, tema, True))
+        else:
+            ordenados.append((d, None, False))
+
+    cands = []
+    for r in db.listar_reserva(status="pronto"):
+        cands.append({"tipo": "reserva", "tema": r.get("tema", ""), "titulo": r.get("titulo_pt", ""),
+                      "ref_id": r["id"], "payload": None})
+    for a in queue_store.listar():
+        cands.append({"tipo": "fila", "tema": a.get("tema", ""), "titulo": a.get("titulo", ""),
+                      "ref_id": None, "payload": a})
+
+    plano = agenda_plan.planejar_agenda(ordenados, cands, _rotacao(), None)
+    for data, cand in plano.items():
+        if cand["tipo"] == "reserva":
+            db.marcar_reserva_agendado(cand["ref_id"])
+            payload = None
+        else:
+            queue_store.remover(cand["payload"])
+            payload = json.dumps(cand["payload"], ensure_ascii=False)
+        db.agenda_upsert(data, tipo=cand["tipo"], ref_id=cand["ref_id"], payload=payload,
+                         tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+    return len(plano)
 
 
 def avisar_estoque_baixo():
