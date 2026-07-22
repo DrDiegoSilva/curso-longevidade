@@ -535,6 +535,7 @@ def _admin_nav(token="", atual=""):
     return ('<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:4px 0 18px">'
             + lk("/admin", "👥 Assinantes", "assinantes")
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
+            + lk("/agenda", "📅 Agenda", "agenda")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
             + '<a class="actbtn ghost" href="/minha" style="text-decoration:none;padding:8px 15px;font-size:13px">← Minha conta</a>'
             + '</div>')
@@ -789,6 +790,100 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
       <section class="sec"><h2 class="disp" style="font-size:30px">Reserva pronta</h2>{res_html}</section>
     </div>"""
     return _pagina("Curadoria · Reserva", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+# ── Agenda de envios (admin, token) — grade de 3 semanas, arrastar-e-soltar ──
+_BADGE = {"reserva": "✓ pronto", "fila": "⏳ gera 18h", "pulado": "💤 folga", "vazio": "⚠️ vazio"}
+_DIA_BR = {0: "seg", 1: "ter", 2: "qua", 3: "qui", 4: "sex", 5: "sáb", 6: "dom"}
+
+
+def _slot_card(s, token, opcoes_html):
+    """Card de um dia da agenda (com ações). `s` tem data/tipo/tema/titulo/fixado."""
+    from datetime import datetime
+    dt = datetime.strptime(s["data"], "%Y-%m-%d")
+    dia = _DIA_BR[dt.weekday()]
+    tipo = s.get("tipo") or "vazio"
+    fixado = s.get("fixado")
+    titulo = _esc(s.get("titulo") or "—")
+    tema = _esc(s.get("tema") or "")
+    badge = _BADGE.get(tipo, tipo)
+    pino = "📌 " if fixado else ""
+    def _acao(acao, label, extra=""):
+        return (f'<form method="post" action="/agenda" style="display:inline">'
+                f'<input type="hidden" name="token" value="{_esc(token)}">'
+                f'<input type="hidden" name="acao" value="{acao}">'
+                f'<input type="hidden" name="data" value="{s["data"]}">{extra}'
+                f'<button class="mini">{label}</button></form>')
+    mover = (f'<form method="post" action="/agenda" style="display:inline">'
+             f'<input type="hidden" name="token" value="{_esc(token)}">'
+             f'<input type="hidden" name="acao" value="mover">'
+             f'<input type="hidden" name="data" value="{s["data"]}">'
+             f'<select name="dest" class="mini"><option value="">mover p/…</option>{opcoes_html}</select>'
+             f'<button class="mini">↔︎</button></form>')
+    return (f'<div class="slot" draggable="true" data-data="{s["data"]}">'
+            f'<div class="slot-h">{dia} · {s["data"][8:10]}/{s["data"][5:7]} '
+            f'<span class="badge">{badge}</span></div>'
+            f'<div class="slot-tema">{pino}{tema}</div>'
+            f'<div class="slot-tit">{titulo}</div>'
+            f'<div class="slot-acts">'
+            f'{_acao("fixar" if not fixado else "desafixar", "📌" if not fixado else "soltar")}'
+            f'{_acao("pular" if tipo != "pulado" else "despular", "💤" if tipo != "pulado" else "reativar")}'
+            f'{mover}</div></div>')
+
+
+def pagina_agenda(semanas, estoque, token, msg=""):
+    opcoes = "".join(
+        f'<option value="{s["data"]}">{s["data"][8:10]}/{s["data"][5:7]}</option>'
+        for sem in semanas for s in sem)
+    blocos = ""
+    for i, sem in enumerate(semanas):
+        cards = "".join(_slot_card(s, token, opcoes) for s in sem)
+        blocos += f'<h3 class="sem-h">Semana {i+1}</h3><div class="sem-row">{cards}</div>'
+    aviso = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+    rematerializar = (f'<form method="post" action="/agenda" style="display:inline">'
+                      f'<input type="hidden" name="token" value="{_esc(token)}">'
+                      f'<input type="hidden" name="acao" value="rematerializar">'
+                      f'<button class="actbtn">↻ Rematerializar</button></form>')
+    css = """<style>
+    .sem-h{color:var(--ouro2);font-family:system-ui;font-size:13px;margin:18px 0 6px}
+    .sem-row{display:flex;gap:10px;flex-wrap:wrap}
+    .slot{flex:1;min-width:150px;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);
+          border-radius:12px;padding:10px 12px;cursor:grab}
+    .slot.dragover{border-color:var(--ouro)}
+    .slot-h{font-family:system-ui;font-size:12px;color:var(--creme);opacity:.8;display:flex;justify-content:space-between;gap:6px}
+    .badge{font-size:11px;opacity:.9}
+    .slot-tema{font-size:13px;color:var(--ouro2);margin:4px 0 2px}
+    .slot-tit{font-size:13px;color:var(--creme);line-height:1.3;min-height:34px}
+    .slot-acts{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+    button.mini,select.mini{font-family:system-ui;font-size:11px;padding:4px 7px;border-radius:8px;
+          border:1px solid rgba(233,225,198,.2);background:rgba(0,0,0,.25);color:var(--creme);cursor:pointer}
+    </style>"""
+    js = """<script>
+    (function(){
+      let orig=null;
+      document.querySelectorAll('.slot').forEach(function(el){
+        el.addEventListener('dragstart',function(){orig=el.dataset.data;});
+        el.addEventListener('dragover',function(e){e.preventDefault();el.classList.add('dragover');});
+        el.addEventListener('dragleave',function(){el.classList.remove('dragover');});
+        el.addEventListener('drop',function(e){
+          e.preventDefault();el.classList.remove('dragover');
+          var dest=el.dataset.data; if(!orig||orig===dest)return;
+          var f=document.createElement('form'); f.method='post'; f.action='/agenda';
+          f.innerHTML='<input name="token" value="'+TOKEN+'"><input name="acao" value="mover">'+
+            '<input name="data" value="'+orig+'"><input name="dest" value="'+dest+'">';
+          document.body.appendChild(f); f.submit();
+        });
+      });
+    })();
+    </script>"""
+    corpo = (_admin_nav(token, "agenda") + css +
+             f'<h2 class="disp" style="font-size:34px;color:var(--creme);margin:6px 0 4px">Agenda de envios</h2>'
+             f'<p style="color:var(--creme);opacity:.75;font-size:13px">Arraste um dia sobre outro pra trocar. '
+             f'Estoque pronto: <strong>{estoque}</strong>. {rematerializar}</p>'
+             f'{aviso}{blocos}'
+             + js.replace("TOKEN", '"' + _esc(token) + '"'))
+    return _pagina("Agenda · Admin", corpo, logado=True,
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 # ── Arquivo (protegido) ──

@@ -149,6 +149,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             return self._html(site_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons()), 200)
+        if path.startswith("/agenda"):
+            import config, db, daily, agenda_plan, site_web
+            from datetime import datetime, timedelta
+            q = up.parse_qs(up.urlparse(self.path).query)
+            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            try:
+                daily.materializar_agenda()
+            except Exception as e:
+                print(f"[agenda] materializar no GET falhou: {e}", flush=True)
+            datas = agenda_plan.dias_uteis_desde(datetime.now() + timedelta(days=1), 15, daily._dias_envio())
+            mapa = db.agenda_listar(datas[0], datas[-1]) if datas else {}
+            slots = [mapa.get(d, {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}) for d in datas]
+            semanas = agenda_plan.agrupar_por_semana(slots)
+            msg = q.get("msg", [""])[0]
+            return self._html(site_web.pagina_agenda(semanas, db.contar_reserva_pronto(), config.ADMIN_TOKEN, msg))
         if path.startswith("/curadoria"):
             import config, db, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -312,6 +329,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     dias = 0
                 db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True, dias_acesso=dias)
             return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
+        if path == "/agenda":
+            import config, db, daily
+            if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            acao, data, msg = g("acao"), g("data"), ""
+            if acao == "mover":
+                ok = db.agenda_mover(data, g("dest"))
+                msg = "Trocado." if ok else "Destino fixado — não trocado."
+            elif acao == "fixar":
+                db.agenda_fixar(data, True); msg = "Fixado."
+            elif acao == "desafixar":
+                db.agenda_fixar(data, False); msg = "Solto."
+            elif acao == "pular":
+                db.agenda_pular(data, True); msg = "Dia marcado como folga."
+            elif acao == "despular":
+                db.agenda_pular(data, False); msg = "Dia reativado."
+            elif acao == "rematerializar":
+                n = daily.materializar_agenda(); msg = f"{n} dia(s) preenchido(s)."
+            return self._redirect(f"/agenda?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/curadoria":
             import config, db, curadoria
             if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
