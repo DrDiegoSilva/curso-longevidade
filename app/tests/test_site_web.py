@@ -26,8 +26,14 @@ class TestRender(unittest.TestCase):
         self.assertIn("noindex", self.s.pagina_entrar("numero"))
 
     def test_hub_vazio_e_cheio(self):
+        # hub_temas hoje é só o estado vazio do arquivo (redesign em 00443c7): quando
+        # há temas, o serve.py abre direto no 1º tema via lista_tema (abas + agrupamento
+        # por mês/semana fazem o papel do antigo "hub" de temas).
         self.assertIn("Ainda não há", self.s.hub_temas([]))
-        h = self.s.hub_temas([{"slug": "obesidade", "rotulo": "Obesidade", "emoji": "⚖️", "cor": "#14332a", "total": 2}])
+        meta = {"slug": "obesidade", "rotulo": "Obesidade", "emoji": "⚖️", "cor": "#14332a"}
+        temas = [{"slug": "obesidade", "rotulo": "Obesidade", "emoji": "⚖️", "cor": "#14332a", "total": 2}]
+        digs = [{"data": "2026-07-01", "titulo_pt": "Estudo A"}, {"data": "2026-07-08", "titulo_pt": "Estudo B"}]
+        h = self.s.lista_tema(meta, digs, temas)
         self.assertIn("2 edições", h)
         self.assertIn("/artigos/obesidade", h)
 
@@ -50,8 +56,11 @@ class TestRender(unittest.TestCase):
 
     def test_assinar_form_mensal(self):
         h = self.s.pagina_assinar("mensal")
-        self.assertIn("Pix à vista", h)
-        self.assertIn("renova todo mês", h)               # cartão mensal recorre
+        # redesign do checkout (fdb4898) separou nome/descrição em tiles: "Pix" +
+        # "R$ 99,00 à vista" (antes era um rótulo único "Pix à vista · ...").
+        self.assertIn('<span class="pt-nome">Pix</span>', h)
+        self.assertIn("à vista", h)
+        self.assertIn("/mês · renova", h)                 # cartão mensal recorre (texto encurtado no redesign)
         self.assertIn('name="metodo"', h)
         self.assertIn('name="cupom"', h)
         self.assertNotIn('<select name="parcelas"', h)    # mensal não parcela
