@@ -72,5 +72,29 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(self.s.por_subscription("sub_9")["status"], "ATIVO")
 
 
+class TestAvisarVenda(unittest.TestCase):
+    def test_avisar_venda_monta_email(self):
+        import webhook_asaas, email_send
+        chamado = {}
+        orig = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: chamado.update(to=to, assunto=assunto, html=html)
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "960", "f@x.com", 37)
+        finally:
+            email_send.enviar = orig
+        self.assertIn("Anual", chamado["assunto"])
+        self.assertIn("Fulano", chamado["html"])
+        self.assertIn("37", chamado["html"])
+
+    def test_avisar_venda_nao_propaga_erro(self):
+        import webhook_asaas, email_send
+        orig = email_send.enviar
+        email_send.enviar = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("smtp down"))
+        try:
+            webhook_asaas._avisar_venda("F", "Mensal", "99", "x", 1)  # não pode levantar
+        finally:
+            email_send.enviar = orig
+
+
 if __name__ == "__main__":
     unittest.main()

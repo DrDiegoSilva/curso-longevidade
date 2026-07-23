@@ -66,6 +66,27 @@ def _alertar_admin(pid, sid, motivo):
         print(f"[webhook] alerta admin falhou: {e}", flush=True)
 
 
+def _avisar_venda(nome, plano, valor, contato, ativos):
+    """E-mail instantâneo ao admin quando uma venda ativa. Nunca pode quebrar a ativação."""
+    try:
+        import email_send
+        esc = __import__("html").escape
+        assunto = f"🎉 Nova venda — {plano} · R$ {valor}"
+        corpo = (
+            f'<div style="font-family:Georgia,serif;background:#0e211a;color:#e8efe9;'
+            f'padding:28px;border-radius:14px;max-width:520px;margin:0 auto">'
+            f'<h1 style="color:#e7c766;font-size:23px;margin:0 0 14px">🎉 Nova venda</h1>'
+            f'<p style="margin:6px 0"><b>{esc(nome or "—")}</b></p>'
+            f'<p style="margin:6px 0;color:#a9bcb2">Plano: <b style="color:#e8efe9">{esc(plano or "—")}</b> · '
+            f'Valor: <b style="color:#e8efe9">R$ {esc(str(valor))}</b></p>'
+            f'<p style="margin:6px 0;color:#a9bcb2">Contato: {esc(contato or "—")}</p>'
+            f'<p style="margin:16px 0 0;color:#e7c766">Agora você tem <b>{ativos}</b> assinantes ativos.</p>'
+            f'</div>')
+        email_send.enviar(config.ADMIN_EMAIL, assunto, corpo)
+    except Exception as e:
+        print(f"[webhook] aviso de venda falhou: {e}", flush=True)
+
+
 def _executar(event, pay, pid, enviar_fn):
     """Aplica a ação do evento. Pode levantar exceção — o chamador (`processar`)
     desfaz a idempotência e alerta o admin nesse caso, p/ o Asaas re-tentar."""
@@ -105,6 +126,11 @@ def _executar(event, pay, pid, enviar_fn):
             {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", "")},
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
         _boas_vindas(whatsapp, nome, email, enviar_fn)
+        try:
+            _avisar_venda(nome, (plano.get("nome") or plano.get("slug") or "—"),
+                          pay.get("value"), email or whatsapp, len(subscribers.ativos()))
+        except Exception as e:
+            print(f"[webhook] _avisar_venda: {e}", flush=True)
         return (200, "ativado")
 
     if acao == "RENOVAR" and sub:
