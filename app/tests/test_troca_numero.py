@@ -23,7 +23,7 @@ class TestTrocaNumero(unittest.TestCase):
         self.assertEqual(self.auth.iniciar_troca_numero(s["id"], "5541988887777", self.fake), "enviado")
         self.assertEqual(self.cap["num"], "5541988887777")          # código foi pro número NOVO
         tok = self.auth._criar_sessao("5543999990000", "Fulano")     # sessão no número antigo
-        st = self.auth.confirmar_troca_numero(s["id"], "5543999990000", "5541988887777", self.cap["code"])
+        st = self.auth.confirmar_troca_numero(s["id"], "5541988887777", self.cap["code"])
         self.assertEqual(st, "ok")
         self.assertEqual(self.subs.por_id(s["id"])["whatsapp"], "5541988887777")
         self.assertEqual(self.auth.sessao(f"sid={tok}")["whatsapp"], "5541988887777")  # sessão migrada
@@ -31,13 +31,24 @@ class TestTrocaNumero(unittest.TestCase):
     def test_codigo_errado(self):
         s = self.subs.adicionar("F", "5543999990000")
         self.auth.iniciar_troca_numero(s["id"], "5541988887777", self.fake)
-        self.assertEqual(self.auth.confirmar_troca_numero(s["id"], "5543999990000", "5541988887777", "000000"), "codigo_errado")
+        self.assertEqual(self.auth.confirmar_troca_numero(s["id"], "5541988887777", "000000"), "codigo_errado")
         self.assertEqual(self.subs.por_id(s["id"])["whatsapp"], "5543999990000")  # não trocou
 
     def test_numero_de_outro_bloqueia(self):
         s = self.subs.adicionar("A", "5543999990000")
         self.subs.adicionar("B", "5541988887777")
         self.assertEqual(self.auth.iniciar_troca_numero(s["id"], "5541988887777", self.fake), "em_uso")
+
+    def test_numero_tomado_entre_iniciar_e_confirmar(self):
+        """TOCTOU: A inicia a troca p/ um número livre; antes de confirmar, B assina
+        esse mesmo número. confirmar_troca_numero deve recusar e não migrar nada."""
+        a = self.subs.adicionar("A", "5543999990000")
+        self.assertEqual(self.auth.iniciar_troca_numero(a["id"], "5541988887777", self.fake), "enviado")
+        codigo = self.cap["code"]
+        self.subs.adicionar("B", "5541988887777")   # número foi tomado durante a janela do OTP
+        st = self.auth.confirmar_troca_numero(a["id"], "5541988887777", codigo)
+        self.assertEqual(st, "em_uso")
+        self.assertEqual(self.subs.por_id(a["id"])["whatsapp"], "5543999990000")  # A não mudou
 
 
 if __name__ == "__main__":

@@ -165,9 +165,13 @@ def iniciar_troca_numero(sub_id, novo_num, enviar_fn=None):
     return "enviado"
 
 
-def confirmar_troca_numero(sub_id, antigo_num, novo_num, codigo):
-    """Confere o código enviado ao número novo; sucesso -> troca o número + migra as sessões."""
+def confirmar_troca_numero(sub_id, novo_num, codigo):
+    """Confere o código enviado ao número novo; sucesso -> troca o número + migra as sessões.
+    O número ANTIGO é derivado do assinante autenticado (nunca de um valor vindo do chamador)."""
     num = _norm(novo_num)
+    sub = subscribers.por_id(sub_id)
+    if not sub:
+        return "expirado"
     with db._conn() as c:
         row = c.execute("SELECT * FROM login_codes WHERE whatsapp=?", (num,)).fetchone()
         if not row:
@@ -180,9 +184,14 @@ def confirmar_troca_numero(sub_id, antigo_num, novo_num, codigo):
         if _hash(codigo) != row["codigo_hash"]:
             c.execute("UPDATE login_codes SET tentativas=tentativas+1 WHERE whatsapp=?", (num,))
             return "codigo_errado"
+        # Revalida o dono do número: outra pessoa pode tê-lo assinado durante a janela do OTP.
+        dono = subscribers.por_whatsapp(num)
+        if dono and dono.get("id") != sub_id:
+            return "em_uso"
         c.execute("DELETE FROM login_codes WHERE whatsapp=?", (num,))
+    antigo = _norm(sub["whatsapp"])
     subscribers.atualizar_whatsapp(sub_id, num)
-    _migrar_sessoes_whatsapp(antigo_num, num)
+    _migrar_sessoes_whatsapp(antigo, num)
     return "ok"
 
 
