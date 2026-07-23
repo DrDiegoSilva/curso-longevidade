@@ -133,6 +133,59 @@ def logout(token):
         c.execute("DELETE FROM sessions WHERE token=?", (token,))
 
 
+# ── Troca de número de WhatsApp (confirmada por OTP no número NOVO) ──
+def _migrar_sessoes_whatsapp(antigo, novo):
+    with db._conn() as c:
+        c.execute("UPDATE sessions SET whatsapp=? WHERE whatsapp=?", (_norm(novo), _norm(antigo)))
+
+
+def iniciar_troca_numero(sub_id, novo_num, enviar_fn=None):
+    """Envia um código pro número NOVO p/ confirmar a troca. Reusa login_codes/TTL do OTP."""
+    num = _norm(novo_num)
+    if not num or len(num) < 10:
+        return "invalido"
+    dono = subscribers.por_whatsapp(num)
+    if dono and dono.get("id") != sub_id:
+        return "em_uso"
+    codigo = f"{secrets.randbelow(1000000):06d}"
+    expira = (datetime.now() + timedelta(minutes=CODIGO_TTL_MIN)).isoformat()
+    with db._conn() as c:
+        c.execute(
+            """INSERT INTO login_codes (whatsapp,codigo_hash,expira,tentativas) VALUES (?,?,?,0)
+               ON CONFLICT(whatsapp) DO UPDATE SET codigo_hash=excluded.codigo_hash,
+                 expira=excluded.expira, tentativas=0""",
+            (num, _hash(codigo), expira))
+    msg = (f"🔐 Código para confirmar a troca do seu número na *{config.PRODUTO}*: *{codigo}*.\n"
+           f"Válido por {CODIGO_TTL_MIN} minutos. Se não foi você, ignore.")
+    fn = enviar_fn or _enviar_padrao
+    try:
+        fn(num, msg)
+    except Exception as e:
+        print(f"[troca] envio do código falhou: {e}", flush=True)
+    return "enviado"
+
+
+def confirmar_troca_numero(sub_id, antigo_num, novo_num, codigo):
+    """Confere o código enviado ao número novo; sucesso -> troca o número + migra as sessões."""
+    num = _norm(novo_num)
+    with db._conn() as c:
+        row = c.execute("SELECT * FROM login_codes WHERE whatsapp=?", (num,)).fetchone()
+        if not row:
+            return "expirado"
+        if row["tentativas"] >= MAX_TENTATIVAS:
+            return "bloqueado"
+        if datetime.fromisoformat(row["expira"]) < datetime.now():
+            c.execute("DELETE FROM login_codes WHERE whatsapp=?", (num,))
+            return "expirado"
+        if _hash(codigo) != row["codigo_hash"]:
+            c.execute("UPDATE login_codes SET tentativas=tentativas+1 WHERE whatsapp=?", (num,))
+            return "codigo_errado"
+        c.execute("DELETE FROM login_codes WHERE whatsapp=?", (num,))
+    subscribers.atualizar_whatsapp(sub_id, num)
+    _migrar_sessoes_whatsapp(antigo_num, num)
+    return "ok"
+
+
 # ── Login por SENHA (não depende do WhatsApp) ──
 def login_senha(whatsapp, senha):
     """Login por WhatsApp + senha. Retorna (status, token_sessao).
