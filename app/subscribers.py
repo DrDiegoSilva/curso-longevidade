@@ -160,6 +160,28 @@ def definir_senha(id, senha_hash):
         c.execute("UPDATE subscribers SET senha_hash=? WHERE id=?", (senha_hash, id))
 
 
+def por_id(id):
+    _ensure()
+    with db._conn() as c:
+        r = c.execute("SELECT * FROM subscribers WHERE id=?", (id,)).fetchone()
+    return dict(r) if r else None
+
+
+def atualizar_contato(id, nome, email):
+    """Atualiza nome e e-mail do assinante (edição na página de dados)."""
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET nome=?, email=? WHERE id=?",
+                  ((nome or "").strip(), (email or "").strip(), id))
+
+
+def atualizar_whatsapp(id, novo):
+    """Troca o número (normalizado). Só chamar após confirmação por OTP no número novo."""
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET whatsapp=? WHERE id=?", (_norm(novo), id))
+
+
 def definir_curador(id, on):
     """Liga/desliga o flag 'curador' (recebe a revisão das 18h). Fora de _COLS de
     propósito: o upsert de pagamento não pode zerar essa escolha."""

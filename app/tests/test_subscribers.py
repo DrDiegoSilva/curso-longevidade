@@ -64,6 +64,17 @@ class TestSubs(unittest.TestCase):
         self.assertEqual(len(self.s.listar()), 1)
         self.assertEqual(self.s.listar()[0]["nome"], "Velho")
 
+    def test_atualizar_contato_e_whatsapp(self):
+        s = self.s.adicionar("Fulano", "5543999990000")
+        self.s.atualizar_contato(s["id"], "Fulano Silva", "f@x.com")
+        r = self.s.por_id(s["id"])
+        self.assertEqual(r["nome"], "Fulano Silva")
+        self.assertEqual(r["email"], "f@x.com")
+        self.s.atualizar_whatsapp(s["id"], "5541988887777")
+        r = self.s.por_id(s["id"])
+        self.assertEqual(r["whatsapp"], "5541988887777")   # normalizado
+        self.assertIsNone(self.s.por_id("naoexiste"))
+
 
 if __name__ == "__main__":
     unittest.main()
