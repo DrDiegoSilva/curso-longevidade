@@ -16,6 +16,8 @@ class TestRender(unittest.TestCase):
     def test_landing(self):
         h = self.s.landing()
         self.assertIn("<!doctype html>", h)
+        self.assertIn("melhor preço", h)   # badge do anual (D1)
+        self.assertNotIn("20% OFF", h)     # badge antiga removida
         self.assertIn("Quero assinar", h)
         self.assertIn("CRM-PR 54310", h)
         self.assertIn("Obesidade", h)

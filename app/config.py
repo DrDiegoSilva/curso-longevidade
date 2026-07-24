@@ -65,7 +65,7 @@ PLANOS = [
     # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
     {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},
     {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês", "oculto": True},
-    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 960.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 960", "nota": "≈ R$ 80/mês · em até 12x no cartão"},
+    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 997.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 997", "nota": "≈ R$ 83/mês · em até 12x sem juros"},
     # Plano de TESTE (R$5) — OCULTO da landing; só via link direto /assinar?plano=teste. Pagar por Pix (à vista).
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
 ]
@@ -100,8 +100,8 @@ ASAAS_BASE_URL = (os.environ.get("ASAAS_BASE_URL") or "https://api-sandbox.asaas
 ASAAS_API_KEY = os.environ.get("ASAAS_API_KEY")
 ASAAS_WEBHOOK_TOKEN = os.environ.get("ASAAS_WEBHOOK_TOKEN")
 
-# Taxas de cartão por faixa de parcelas. gross-up embute a taxa no preço (o Diego
-# recebe ~= o valor do Pix). Definidas pelo Diego (2026-07): 3x=7%, 6x=10%, 12x=12%.
+# [NÃO APLICADAS desde D1 2026-07-23 — cartão é SEM JUROS: pricing.valor_cartao cobra o valor base.]
+# Mantidas p/ referência/reverter o gross-up. Taxas antigas do Diego: 3x=7%, 6x=10%, 12x=12%.
 TAXA_CARTAO = {"avista": 0.0299, "ate3": 0.07, "ate6": 0.10, "ate12": 0.12}
 TAXA_FIXA = float(os.environ.get("DSCURSO_TAXA_FIXA") or "0.49")
 

@@ -375,7 +375,7 @@ def landing():
         for k, n, d, cls in valores)
     planos = "".join(
         f'<a class="plan{" best" if p["slug"] == "anual" else ""}" href="/assinar?plano={_esc(p["slug"])}">'
-        + ('<div class="badge">20% OFF</div>' if p["slug"] == "anual" else "")
+        + ('<div class="badge">melhor preço</div>' if p["slug"] == "anual" else "")
         + f'<div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'

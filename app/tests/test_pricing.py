@@ -1,4 +1,4 @@
-"""Testes do pricing.py (gross-up da taxa de cartão). Standalone."""
+"""Testes do pricing.py — cartão SEM JUROS (sem gross-up; D1 2026-07-23). Standalone."""
 import os
 import sys
 import unittest
@@ -13,39 +13,23 @@ class TestPricing(unittest.TestCase):
         import config
         self.cfg = config
 
-    def test_faixa(self):
-        self.assertEqual(self.p.faixa(1), "avista")
-        self.assertEqual(self.p.faixa(2), "ate3")
-        self.assertEqual(self.p.faixa(3), "ate3")
-        self.assertEqual(self.p.faixa(4), "ate6")
-        self.assertEqual(self.p.faixa(6), "ate6")
-        self.assertEqual(self.p.faixa(7), "ate12")
-        self.assertEqual(self.p.faixa(12), "ate12")
+    def test_valor_cartao_sem_juros(self):
+        # sem juros: cobra o valor base, independente das parcelas (até o teto de 12x)
+        for n in range(1, 13):
+            self.assertEqual(self.p.valor_cartao(997.0, n), 997.0)
 
-    def test_taxas_definidas_pelo_diego(self):
-        self.assertEqual(self.cfg.TAXA_CARTAO["ate3"], 0.07)    # 3x
-        self.assertEqual(self.cfg.TAXA_CARTAO["ate6"], 0.10)    # 6x
-        self.assertEqual(self.cfg.TAXA_CARTAO["ate12"], 0.12)   # 12x
-
-    def test_valor_cartao_gross_up(self):
-        base = 960.0
-        v1 = self.p.valor_cartao(base, 1)
-        pct = self.cfg.TAXA_CARTAO["avista"]
-        esperado = round((base + self.cfg.TAXA_FIXA) / (1 - pct), 2)
-        self.assertEqual(v1, esperado)
-        self.assertGreater(v1, base)  # taxa embutida
-
-    def test_valor_cartao_monotonico_por_faixa(self):
-        base = 960.0
-        self.assertLess(self.p.valor_cartao(base, 1), self.p.valor_cartao(base, 6))
-        self.assertLess(self.p.valor_cartao(base, 6), self.p.valor_cartao(base, 12))
-
-    def test_opcoes_parcelas(self):
-        ops = self.p.opcoes_parcelas(269.0, max_parcelas=12)
+    def test_opcoes_parcelas_sem_juros(self):
+        ops = self.p.opcoes_parcelas(997.0, max_parcelas=12)
         self.assertEqual(len(ops), 12)
         self.assertEqual(ops[0]["parcelas"], 1)
         for o in ops:
-            self.assertEqual(o["por_parcela"], round(o["total"] / o["parcelas"], 2))
+            self.assertEqual(o["total"], 997.0)                       # total = base (sem juros)
+            self.assertEqual(o["por_parcela"], round(997.0 / o["parcelas"], 2))
+
+    def test_anual_997(self):
+        pl = self.cfg.plano_por_slug("anual")
+        self.assertEqual(pl["base"], 997.0)
+        self.assertEqual(pl["preco"], "R$ 997")
 
     def test_fmt_brl(self):
         self.assertEqual(self.p.fmt_brl(99.0), "R$ 99,00")

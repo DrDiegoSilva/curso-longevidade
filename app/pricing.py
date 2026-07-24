@@ -1,24 +1,12 @@
-"""Preço de cartão com gross-up da taxa (o Asaas credita o valor cheio).
-Puro/testável. Taxas em config.TAXA_CARTAO + config.TAXA_FIXA.
+"""Preço de cartão SEM JUROS (D1 2026-07-23): o cliente paga o valor do plano
+parcelado em até 12x e o Diego absorve a taxa de transação (~4%) recebendo mês a mês
+(antecipação desligada no Asaas). Puro/testável. Sem gross-up.
 """
-import config
-
-
-def faixa(parcelas):
-    p = int(parcelas)
-    if p <= 1:
-        return "avista"     # 1x
-    if p <= 3:
-        return "ate3"       # 2-3x
-    if p <= 6:
-        return "ate6"       # 4-6x
-    return "ate12"          # 7-12x
 
 
 def valor_cartao(base, parcelas=1):
-    """Valor a cobrar no cartão para o Asaas creditar ~= base (gross-up)."""
-    pct = config.TAXA_CARTAO[faixa(parcelas)]
-    return round((float(base) + config.TAXA_FIXA) / (1 - pct), 2)
+    """Sem juros: cobra o valor base (sem gross-up), independente das parcelas."""
+    return round(float(base), 2)
 
 
 def opcoes_parcelas(base, max_parcelas=12):

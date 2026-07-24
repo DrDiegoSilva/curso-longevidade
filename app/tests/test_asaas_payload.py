@@ -40,13 +40,15 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(p["chargeTypes"], ["RECURRENT"])
         self.assertEqual(p["subscription"]["cycle"], "YEARLY")
         self.assertEqual(p["installmentCount"], 12)
-        self.assertEqual(p["items"][0]["value"], self.p.valor_cartao(960.0, 12))
+        base = self._plano("anual")["base"]
+        self.assertEqual(p["items"][0]["value"], self.p.valor_cartao(base, 12))
+        self.assertEqual(p["items"][0]["value"], base)             # sem juros: cobra o base
 
     def test_anual_pix_avista(self):
         p = self.a.montar_checkout(self._plano("anual"), "PIX", 1, self.dados, "t", "https://x")
         self.assertEqual(p["billingTypes"], ["PIX"])
         self.assertEqual(p["chargeTypes"], ["DETACHED"])
-        self.assertEqual(p["items"][0]["value"], 960.0)
+        self.assertEqual(p["items"][0]["value"], self._plano("anual")["base"])   # 997 (PIX = base)
         self.assertNotIn("subscription", p)
 
     def test_item_nome_curto(self):
