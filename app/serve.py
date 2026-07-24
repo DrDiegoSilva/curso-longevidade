@@ -156,6 +156,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 return self._html(f"<h3>⚠️ Erro no reenvio do PDF: {e}</h3>"
                                   f"<p><a href='/admin?token={config.ADMIN_TOKEN or ''}'>← voltar</a></p>", 500)
+        if path == "/admin/afiliados":
+            import config, site_web, auth_web, db
+            q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            return self._html(site_web.pagina_admin_afiliados(
+                db.listar_afiliados(), db.listar_comissoes(pago=False), config.ADMIN_TOKEN or ""), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -345,6 +355,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif acao == "desconectar":
                 evolution_admin.desconectar()
             return self._redirect(f"/admin/whatsapp?token={config.ADMIN_TOKEN}" if token_ok else "/admin/whatsapp")
+        if path == "/admin/afiliados":
+            import config, auth_web, db
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            acao = g("acao")
+            if acao == "criar_afiliado":
+                try:
+                    pdesc = float(g("pct_desconto") or "10")
+                    pcom = float(g("pct_comissao") or "3")
+                except ValueError:
+                    pdesc, pcom = 10.0, 3.0
+                db.criar_afiliado(g("nome"), g("contato"), g("codigo"), pdesc, pcom)
+            elif acao == "toggle_afiliado":
+                db.toggle_afiliado(g("id"), g("on") == "1")
+            elif acao == "marcar_comissao_paga":
+                db.marcar_comissao_paga(g("id"))
+            return self._redirect(f"/admin/afiliados?token={config.ADMIN_TOKEN}" if token_ok else "/admin/afiliados")
         if path == "/admin":
             import config, subscribers, auth_web, db
             sess = self._sessao()
