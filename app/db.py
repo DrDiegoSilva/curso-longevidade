@@ -123,7 +123,7 @@ def init():
                 asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
                 proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
                 criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT,
-                senha_hash TEXT, curador INTEGER DEFAULT 0
+                senha_hash TEXT, curador INTEGER DEFAULT 0, slot_envio TEXT
             );
             CREATE TABLE IF NOT EXISTS pending_signups (
                 token TEXT PRIMARY KEY,
@@ -223,6 +223,7 @@ def _migrar_colunas():
     with _conn() as c:
         _add_coluna(c, "subscribers", "senha_hash", "TEXT")
         _add_coluna(c, "subscribers", "curador", "INTEGER DEFAULT 0")
+        _add_coluna(c, "subscribers", "slot_envio", "TEXT")
         _add_coluna(c, "cupons", "usos", "INTEGER DEFAULT 0")
         _add_coluna(c, "cupons", "uso_unico", "INTEGER DEFAULT 1")
         _add_coluna(c, "cupons", "dias_acesso", "INTEGER DEFAULT 0")

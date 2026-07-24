@@ -61,6 +61,12 @@ def cta_url():
 # de lançamento (base/preco); a partir do limite, os pós-founder (base_pos/preco_pos). Env-ajustável.
 FOUNDER_LIMITE = int(os.environ.get("DSCURSO_FOUNDER_LIMITE") or 20)
 
+# Horário de envio por assinante (slots). Assinante escolhe 1 no /meus-dados; NULL/vazio => SLOT_DEFAULT.
+SLOTS = ["07h", "08h", "12h", "18h", "20h"]
+SLOT_HORA = {"07h": 7, "08h": 8, "12h": 12, "18h": 18, "20h": 20}
+SLOT_DEFAULT = "08h"
+SLOT_TETO_DEFAULT = 100
+
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [

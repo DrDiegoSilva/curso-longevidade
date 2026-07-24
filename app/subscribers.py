@@ -13,7 +13,7 @@ _migrado = False
 _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
          "asaas_customer_id", "asaas_subscription_id", "asaas_payment_id",
          "proximo_vencimento", "acesso_ate", "carencia_ate", "aviso_renov_em",
-         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em", "senha_hash"]
+         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em", "senha_hash", "slot_envio"]
 
 
 def _norm(w):
@@ -189,6 +189,22 @@ def definir_curador(id, on):
     _ensure()
     with db._conn() as c:
         c.execute("UPDATE subscribers SET curador=? WHERE id=?", (1 if on else 0, id))
+
+
+def slot_de(sub):
+    """Slot do assinante (config.SLOTS). NULL/vazio/inválido -> config.SLOT_DEFAULT."""
+    s = (sub or {}).get("slot_envio")
+    return s if s in config.SLOTS else config.SLOT_DEFAULT
+
+
+def definir_slot(id, slot):
+    """Grava o slot de envio (só se ∈ config.SLOTS). Fora de _COLS de propósito não é —
+    slot_envio ESTÁ em _COLS, mas o upsert de pagamento não manda slot, então preserva."""
+    if slot not in config.SLOTS:
+        return
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET slot_envio=? WHERE id=?", (slot, id))
 
 
 def curadores():
