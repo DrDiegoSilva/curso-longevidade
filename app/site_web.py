@@ -1302,7 +1302,7 @@ def pagina_minha(sub, admin=False):
                    meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_meus_dados(sub, msg="", etapa_troca=None, novo_num=""):
+def pagina_meus_dados(sub, msg="", etapa_troca=None, novo_num="", slots=None, slot_atual=None):
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     if etapa_troca == "codigo":
         troca = f"""
@@ -1324,6 +1324,19 @@ def pagina_meus_dados(sub, msg="", etapa_troca=None, novo_num=""):
           <button class="actbtn ghost" type="submit">Trocar número</button>
           <p class="hint" style="margin-top:8px;font-size:13px">Enviaremos um código ao número novo para confirmar.</p>
         </form>"""
+    slots = slots if slots is not None else []
+    slot_atual = slot_atual or ""
+    opts_slot = "".join(
+        f'<option value="{_esc(s)}"{" selected" if s == slot_atual else ""}>{_esc(s)}</option>'
+        for s in slots) or '<option>—</option>'
+    horario_html = (
+        '<h3 class="disp" style="font-size:22px;color:var(--ouro2);margin:26px 0 6px">Horário de recebimento</h3>'
+        '<p class="hint" style="margin-top:0">Escolha quando receber o estudo do dia no WhatsApp.</p>'
+        '<form method="post" action="/meus-dados" style="margin-bottom:8px">'
+        '<input type="hidden" name="acao" value="salvar_horario">'
+        f'<select name="slot">{opts_slot}</select>'
+        '<button class="actbtn" type="submit" style="margin-left:8px">Salvar horário</button>'
+        '</form>')
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Meus dados</h2>
@@ -1338,6 +1351,7 @@ def pagina_meus_dados(sub, msg="", etapa_troca=None, novo_num=""):
       </form>
       <h3 class="disp" style="font-size:22px;color:var(--ouro2);margin:0 0 6px">Celular (WhatsApp)</h3>
       {troca}
+      {horario_html}
       <hr style="border:none;border-top:1px solid rgba(233,225,198,.12);margin:30px 0 16px">
       <p class="hint" style="font-size:13px;color:var(--suave)">Não quer mais receber?
         <a href="/cancelar" style="color:#d69a8a">Cancelar assinatura</a></p>

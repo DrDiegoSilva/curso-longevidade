@@ -321,7 +321,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sub = self._sub_logado()
             if not sub:
                 return self._redirect("/entrar")
-            return self._html(site_web.pagina_meus_dados(sub))
+            import subscribers as _subs, db as _db, config as _cfg
+            atual = _subs.slot_de(sub)
+            teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
+            return self._html(site_web.pagina_meus_dados(
+                sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             sub = self._sessao()
@@ -585,6 +589,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if acao == "salvar_contato":
                 subscribers.atualizar_contato(sub["id"], g("nome"), g("email"))
                 return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Dados salvos."), 200)
+            if acao == "salvar_horario":
+                import db as _db, config as _cfg
+                novo = g("slot")
+                atual = subscribers.slot_de(sub)
+                teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
+                if novo != atual and novo in subscribers.slots_com_vaga(teto):
+                    subscribers.definir_slot(sub["id"], novo)
+                sub2 = subscribers.por_id(sub["id"])
+                atual2 = subscribers.slot_de(sub2)
+                return self._html(site_web.pagina_meus_dados(
+                    sub2, msg="Horário salvo.",
+                    slots=subscribers.slots_com_vaga(teto, atual2), slot_atual=atual2), 200)
             if acao == "iniciar_troca":
                 if not self._rate_ok("otp", 5, 600):
                     return

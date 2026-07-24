@@ -139,5 +139,20 @@ class TestEnviarSlot(unittest.TestCase):
         self.assertEqual(chamadas["digest"], 1)       # finalização rodou 1x só (guardada)
 
 
+class TestMeusDadosHorario(unittest.TestCase):
+    def setUp(self):
+        os.environ.setdefault("DSCURSO_DATA", tempfile.mkdtemp())
+        import site_web
+        importlib.reload(site_web)
+        self.sw = site_web
+
+    def test_seletor_horario_render(self):
+        sub = {"nome": "A", "email": "a@x.com", "whatsapp": "5543", "slot_envio": "12h"}
+        h = self.sw.pagina_meus_dados(sub, slots=["07h", "08h", "12h"], slot_atual="12h")
+        self.assertIn("salvar_horario", h)
+        self.assertIn('value="12h"', h)
+        self.assertIn("07h", h)
+
+
 if __name__ == "__main__":
     unittest.main()
