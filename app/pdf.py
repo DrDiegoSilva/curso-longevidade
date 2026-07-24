@@ -166,19 +166,36 @@ def _chromium_bin():
     raise RuntimeError("Chromium não encontrado na imagem")
 
 
-def gerar_pdf(html, out_path):
+def gerar_pdf(html, out_path, tentativas=3):
+    """Renderiza HTML->PDF via Chromium. Em container o Chromium crasha de forma
+    TRANSITÓRIA (pressão de RAM do host) e sai sem gerar o arquivo; então tenta
+    algumas vezes antes de desistir — automatiza o 'regerar na mão' que funciona."""
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
         f.write(html)
         src = f.name
+    cmd = [_chromium_bin(), "--headless", "--no-sandbox", "--disable-gpu",
+           "--disable-dev-shm-usage", "--disable-software-rasterizer",
+           "--disable-extensions", "--disable-crash-reporter",
+           f"--print-to-pdf={out_path}", "--no-pdf-header-footer", f"file://{src}"]
+    ultimo = None
     try:
-        subprocess.run(
-            [_chromium_bin(), "--headless", "--no-sandbox", "--disable-gpu",
-             "--disable-dev-shm-usage", "--disable-software-rasterizer",
-             f"--print-to-pdf={out_path}", "--no-pdf-header-footer", f"file://{src}"],
-            check=True, timeout=90, capture_output=True)
+        for i in range(1, int(tentativas) + 1):
+            try:
+                if os.path.exists(out_path):
+                    os.unlink(out_path)                  # começa limpo cada tentativa
+            except OSError:
+                pass
+            try:
+                subprocess.run(cmd, check=True, timeout=120, capture_output=True)
+            except Exception as e:                       # crash/timeout -> tenta de novo
+                ultimo = e
+            # Chromium às vezes retorna 0 sem gerar o arquivo; confere de verdade:
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
+                return out_path
+            print(f"[pdf] tentativa {i}/{tentativas} falhou (Chromium sem saída), retry…", flush=True)
     finally:
-        os.unlink(src)
-    # Chromium às vezes crasha e ainda retorna 0 (sem gerar o arquivo). Confere de verdade:
-    if not (os.path.exists(out_path) and os.path.getsize(out_path) > 1000):
-        raise RuntimeError("Chromium não gerou o PDF (crash silencioso ou saída vazia)")
-    return out_path
+        try:
+            os.unlink(src)
+        except OSError:
+            pass
+    raise RuntimeError(f"Chromium não gerou o PDF após {tentativas} tentativas: {ultimo}")
