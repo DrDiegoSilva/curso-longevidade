@@ -361,6 +361,54 @@ def toggle_afiliado(id, ativo):
         c.execute("UPDATE afiliados SET ativo=? WHERE id=?", (1 if ativo else 0, id))
 
 
+def registrar_comissao(afiliado_id, subscriber_id, plano, valor_venda, valor_comissao):
+    """1 linha no ledger de comissões (pago=0). Retorna o id."""
+    import secrets
+    from datetime import datetime
+    cid = secrets.token_hex(8)
+    with _conn() as c:
+        c.execute("INSERT INTO comissoes (id,afiliado_id,subscriber_id,plano,valor_venda,valor_comissao,pago,criado_em) "
+                  "VALUES (?,?,?,?,?,?,0,?)",
+                  (cid, afiliado_id, subscriber_id, plano or "",
+                   float(valor_venda or 0), float(valor_comissao or 0), datetime.now().isoformat()))
+    return cid
+
+
+def listar_comissoes(afiliado_id=None, pago=None):
+    q = "SELECT * FROM comissoes"
+    conds, params = [], []
+    if afiliado_id is not None:
+        conds.append("afiliado_id=?"); params.append(afiliado_id)
+    if pago is not None:
+        conds.append("pago=?"); params.append(1 if pago else 0)
+    if conds:
+        q += " WHERE " + " AND ".join(conds)
+    q += " ORDER BY criado_em DESC"
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+def marcar_comissao_paga(id):
+    from datetime import datetime
+    with _conn() as c:
+        c.execute("UPDATE comissoes SET pago=1, pago_em=? WHERE id=?", (datetime.now().isoformat(), id))
+
+
+def listar_afiliados():
+    """Afiliados + agregados de comissão (n_vendas, comissao_total, comissao_pendente)."""
+    with _conn() as c:
+        afs = [dict(r) for r in c.execute("SELECT * FROM afiliados ORDER BY criado_em DESC").fetchall()]
+        for a in afs:
+            ag = c.execute(
+                "SELECT COUNT(*) n, COALESCE(SUM(valor_comissao),0) tot, "
+                "COALESCE(SUM(CASE WHEN pago=0 THEN valor_comissao ELSE 0 END),0) pend "
+                "FROM comissoes WHERE afiliado_id=?", (a["id"],)).fetchone()
+            a["n_vendas"] = ag["n"]
+            a["comissao_total"] = round(float(ag["tot"] or 0), 2)
+            a["comissao_pendente"] = round(float(ag["pend"] or 0), 2)
+    return afs
+
+
 # ── Tokens de definição/redefinição de senha ──
 def criar_token_senha(whatsapp, validade_horas=1):
     """Cria um token de uso único p/ criar/redefinir senha. Retorna o token."""

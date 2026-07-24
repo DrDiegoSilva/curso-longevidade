@@ -35,6 +35,26 @@ class TestAfiliadosDb(unittest.TestCase):
         self.db.toggle_afiliado(af["id"], True)
         self.assertIsNotNone(self.db.afiliado_por_codigo("codx"))
 
+    def test_comissoes_ledger_e_agregados(self):
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria", 10, 3)
+        af = self.db.afiliado_por_codigo("dramaria")
+        c1 = self.db.registrar_comissao(af["id"], "sub1", "anual", 897.30, 26.92)
+        self.db.registrar_comissao(af["id"], "sub2", "mensal", 89.10, 2.67)
+        # lista completa e filtro por pago
+        self.assertEqual(len(self.db.listar_comissoes(af["id"])), 2)
+        self.assertEqual(len(self.db.listar_comissoes(af["id"], pago=False)), 2)
+        self.assertEqual(len(self.db.listar_comissoes(af["id"], pago=True)), 0)
+        # marcar 1 como paga
+        self.db.marcar_comissao_paga(c1)
+        self.assertEqual(len(self.db.listar_comissoes(af["id"], pago=True)), 1)
+        pagas = self.db.listar_comissoes(af["id"], pago=True)
+        self.assertIsNotNone(pagas[0]["pago_em"])
+        # agregados
+        linha = next(a for a in self.db.listar_afiliados() if a["codigo"] == "DRAMARIA")
+        self.assertEqual(linha["n_vendas"], 2)
+        self.assertAlmostEqual(linha["comissao_total"], 29.59, places=2)
+        self.assertAlmostEqual(linha["comissao_pendente"], 2.67, places=2)   # c1 já paga
+
 
 if __name__ == "__main__":
     unittest.main()
