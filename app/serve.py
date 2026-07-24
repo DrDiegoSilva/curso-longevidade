@@ -665,11 +665,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Pagamento via checkout Asaas
         n_ativos = len(subscribers.ativos())
         base_vig = pricing.preco_vigente(plano, n_ativos)
-        valor = pricing.valor_cartao(base_vig, parcelas) if metodo == "CARTAO" else base_vig
+        # Cupom de afiliado: 10% off na 1ª venda + atribuição (segue pro checkout PAGO)
+        af = db.afiliado_por_codigo(cupom) if cupom else None
+        af_codigo = af["codigo"] if af else ""
+        base_final = pricing.valor_com_desconto(base_vig, af["pct_desconto"]) if af else base_vig
+        valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
-                                  "parcelas": parcelas, "valor": valor})
+                                  "parcelas": parcelas, "valor": valor, "afiliado_codigo": af_codigo})
         try:
-            payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_vig)
+            payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_final)
             res = asaas.criar_checkout(payload)
             if not res.get("url"):
                 raise RuntimeError("checkout sem url")
