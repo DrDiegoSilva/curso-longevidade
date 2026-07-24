@@ -134,9 +134,10 @@ def _executar(event, pay, pid, enviar_fn):
             {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", "")},
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
         _boas_vindas(whatsapp, nome, email, enviar_fn)
-        # Afiliado (D3): comissão sobre o valor pago; no cartão, reseta a renovação ao preço cheio.
-        # A busca do afiliado é protegida: uma falha transitória aqui NÃO pode derrubar a
-        # ativação (o chamador desfaria a idempotência -> Asaas re-tenta -> duplicaria o assinante).
+        # Afiliado (D3): comissão sobre o valor pago (só na 1ª venda). No cartão o desconto
+        # é RECORRENTE (o Asaas não deixa alterar o `value` da assinatura por API) — decisão do
+        # Diego: renovação com desconto "da nada". A busca do afiliado é protegida: uma falha
+        # transitória aqui NÃO pode derrubar a ativação (senão o Asaas re-tenta e duplica o assinante).
         try:
             af = db.afiliado_por_codigo((pending or {}).get("afiliado_codigo") or "")
         except Exception as e:
@@ -154,14 +155,6 @@ def _executar(event, pay, pid, enviar_fn):
                 print(f"[webhook] registrar_comissao falhou: {e}", flush=True)
                 _alertar_admin(pid, sid, f"venda de afiliado ({af.get('nome') or af.get('codigo')}) paga "
                                          f"R$ {valor_venda} mas NÃO consegui registrar a comissão — registre manualmente")
-            if sid and config.ASAAS_API_KEY and plano.get("base"):
-                try:
-                    import asaas
-                    cheio = pricing.preco_vigente(plano, len(subscribers.ativos()))
-                    asaas.atualizar_valor_assinatura(sid, cheio)
-                except Exception as e:
-                    print(f"[webhook] reset valor assinatura falhou: {e}", flush=True)
-                    _alertar_admin(pid, sid, "não consegui resetar o valor da assinatura pós-desconto de afiliado — ajuste manual")
         try:
             _avisar_venda(nome, (plano.get("nome") or plano.get("slug") or "—"),
                           pay.get("value"), email or whatsapp, len(subscribers.ativos()),
