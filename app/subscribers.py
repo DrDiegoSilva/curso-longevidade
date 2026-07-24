@@ -210,3 +210,18 @@ def definir_slot(id, slot):
 def curadores():
     """Assinantes ATIVOS marcados como curador (recebem o resumo do dia p/ revisar)."""
     return [s for s in ativos() if s.get("curador")]
+
+
+def contar_por_slot():
+    """Quantos assinantes ATIVOS em cada slot (config.SLOTS). NULL/vazio conta como default."""
+    cont = {s: 0 for s in config.SLOTS}
+    for s in ativos():
+        cont[slot_de(s)] = cont.get(slot_de(s), 0) + 1
+    return cont
+
+
+def slots_com_vaga(teto, slot_atual=None):
+    """Slots (na ordem de config.SLOTS) com count < teto. O slot_atual é sempre incluído
+    (pra o assinante poder manter o horário mesmo se lotou depois)."""
+    cont = contar_por_slot()
+    return [s for s in config.SLOTS if cont.get(s, 0) < int(teto) or s == slot_atual]
