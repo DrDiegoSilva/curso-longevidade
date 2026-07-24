@@ -102,14 +102,16 @@ class TestRender(unittest.TestCase):
     def test_estoque_cards_e_chip(self):
         cont = {"novo": 12, "selecionado": 4, "resumido": 31}
         reserva = [{"status": "pronto", "tema": "Obesidade", "titulo_pt": "X"}]
-        # 3 candidatos cobrindo as 3 faixas de _chip_score (hi >=7, md >=4, lo <4)
+        # 3 candidatos cobrindo as 3 faixas de _chip_score (hi >=7, md >=4, lo <4).
+        # Scores escolhidos para NÃO colidir com os exemplos fixos da legenda
+        # estática (8, 5, 2) — senão a asserção passa mesmo com _chip_score quebrado.
         cand = [
             {"id": "1", "tema": "Obesidade", "titulo": "Alto", "pergunta": "P",
              "fonte": "NEJM", "data": "2026-01-01", "score": 8.5, "doi": ""},
             {"id": "2", "tema": "Obesidade", "titulo": "Medio", "pergunta": "P",
-             "fonte": "NEJM", "data": "2026-01-01", "score": 5.0, "doi": ""},
+             "fonte": "NEJM", "data": "2026-01-01", "score": 5.3, "doi": ""},
             {"id": "3", "tema": "Obesidade", "titulo": "Baixo", "pergunta": "P",
-             "fonte": "NEJM", "data": "2026-01-01", "score": 2.0, "doi": ""},
+             "fonte": "NEJM", "data": "2026-01-01", "score": 2.7, "doi": ""},
         ]
         html = self.s.pagina_curadoria(cand, reserva, cont, "tok")
         self.assertIn("statcard", html)        # números viraram cartões
@@ -117,8 +119,8 @@ class TestRender(unittest.TestCase):
         # markup EXATO produzido por _chip_score (não a legenda estática) — falha
         # se os limiares (>=7 hi, >=4 md, <4 lo) ou o formato "{v:g}" mudarem.
         self.assertIn('<span class="scorechip hi">★ 8.5</span>', html)   # 8.5 -> hi, com estrela
-        self.assertIn('<span class="scorechip md">5</span>', html)       # 5.0 -> md, sem estrela
-        self.assertIn('<span class="scorechip lo">2</span>', html)       # 2.0 -> lo, sem estrela
+        self.assertIn('<span class="scorechip md">5.3</span>', html)     # 5.3 -> md, sem estrela
+        self.assertIn('<span class="scorechip lo">2.7</span>', html)     # 2.7 -> lo, sem estrela
         self.assertNotIn("· score ", html)     # regressão: formato textual antigo não deve voltar
 
 
