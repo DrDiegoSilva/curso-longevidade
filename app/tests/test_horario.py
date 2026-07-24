@@ -76,5 +76,52 @@ class TestVaga(unittest.TestCase):
         self.assertEqual(vaga2, [s for s in self.cfg.SLOTS if s in vaga2])  # ordem preservada
 
 
+class TestEnviarSlot(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "subscribers", "draft_store", "daily"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, subscribers, draft_store, daily
+        for mod in (config, db, subscribers, draft_store, daily):
+            importlib.reload(mod)
+        self.cfg, self.db, self.s, self.ds, self.daily = config, db, subscribers, draft_store, daily
+        self.s._migrado = False
+        db.init()
+        # rascunho aprovado de hoje
+        hoje = self.daily._hoje_iso()
+        r = self.ds.novo_rascunho(hoje, {"tema": "Obesidade", "titulo": "T", "doi": "10.1/x"}, "resumo", None)
+        r["status"] = "APPROVED"; self.ds.salvar(r)
+        # captura destinatários (mocka o envio pesado)
+        self.enviados = []
+        self.daily.deliver.distribuir = lambda r, subs, delay, fn: (
+            self.enviados.extend(subs) or {"ok": len(subs), "falhas": []})
+        self.daily.deliver.enviar_curador = lambda msg: None
+        self.daily._audio_master = lambda *a, **k: None
+        self.daily._pdf_master = lambda *a, **k: None
+        self.daily._e_dia_util = lambda dt: True
+        # 2 assinantes: um no 12h, um no default (08h)
+        self.s.definir_slot(self.s.adicionar("A", "5543000000001")["id"], "12h")
+        self.s.adicionar("B", "5543000000002")   # 08h default
+
+    def test_envia_so_do_slot(self):
+        self.daily.enviar_slot("12h")
+        self.assertEqual(len(self.enviados), 1)
+        self.assertEqual(self.s.slot_de(self.enviados[0]), "12h")
+
+    def test_idempotente_por_slot(self):
+        self.daily.enviar_slot("12h")
+        self.enviados.clear()
+        self.daily.enviar_slot("12h")             # 2ª vez no mesmo dia/slot
+        self.assertEqual(self.enviados, [])       # não reenvia
+
+    def test_default_recebe_no_08h(self):
+        self.daily.enviar_slot("08h")
+        self.assertEqual(len(self.enviados), 1)
+        self.assertEqual(self.enviados[0]["nome"], "B")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,8 +5,9 @@
   fluxo antigo (fila fresca -> reserva) em caso de slot vazio ou qualquer erro.
   Gera resumo + gancho + gráfico + PDF de prévia, salva o rascunho e avisa o
   curador com o link de revisão. Silêncio = envia às 08h.
-- enviar_08h(): se HOJE for dia útil e houver rascunho não vetado, gera um PDF
-  PERSONALIZADO por assinante (nome na marca d'água) e envia.
+- enviar_slot(slot): se HOJE for dia útil e houver rascunho não vetado, envia o
+  estudo do dia só pros assinantes daquele slot (idempotente por dia/slot;
+  áudio/PDF/finalização do dia rodam 1x, no 1º slot que enviar).
 
 Sem teste unitário próprio (orquestra rede + IA + WhatsApp); as partes puras
 (fila, triagem, conteúdo, pdf) são testadas nos seus módulos. Imports de
@@ -232,7 +233,7 @@ def _preparar_da_reserva(reserva_id=None):
         grafico = None
     c = {"titulo_pt": r_res.get("titulo_pt", ""), "resumo": r_res.get("resumo", ""),
          "gancho": r_res.get("gancho", ""), "grafico": grafico}
-    alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_08h
+    alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_slot
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
     try:                                     # fail-safe: PDF nunca pode derrubar a preparação/revisão
@@ -359,7 +360,7 @@ def preparar_18h(amanha=None):
 
 
 def rotina_08h():
-    """Tarefa das 08h: avisa pré-renovação (todo dia) + envia o digest (dias úteis)."""
+    """Tarefa das 08h: avisa pré-renovação (todo dia) + envia o slot das 08h."""
     try:
         import billing_notices
         n = billing_notices.avisar_pre_renovacao()
@@ -367,7 +368,7 @@ def rotina_08h():
             print(f"[pre-renovacao] {n} aviso(s) enviado(s)", flush=True)
     except Exception as e:
         print(f"[pre-renovacao] erro: {e}", flush=True)
-    enviar_08h()
+    enviar_slot("08h")
 
 
 def montar_texto_resumo(titulo, resumo, tmeta):
@@ -379,73 +380,108 @@ def montar_texto_resumo(titulo, resumo, tmeta):
     return f"{hdr}🔬 *{titulo}*\n\n{resumo}"
 
 
-def enviar_08h():
-    import resumo_diario as rd
-    if not _e_dia_util(datetime.now()):
-        print("[enviar] hoje não é dia de envio — pulo", flush=True)
+def _audio_master(hoje, art, conteudo):
+    """Áudio do dia (o MESMO p/ todos). Gera 1x e cacheia em arquivo; regenera se sumir."""
+    if not config.audio_ligado():
+        return None
+    caminho = os.path.join(config.drafts_dir(), f"{hoje}-master.mp3")
+    if os.path.exists(caminho):
+        try:
+            return open(caminho, "rb").read()
+        except Exception:
+            pass
+    try:
+        import audio as audiomod
+        b = audiomod.gerar_audio_do_estudo(art, conteudo)
+        try:
+            os.makedirs(config.drafts_dir(), exist_ok=True)
+            open(caminho, "wb").write(b)
+        except Exception:
+            pass
+        return b
+    except Exception as e:
+        print(f"[enviar] áudio falhou (segue sem): {e}", flush=True)
+        return None
+
+
+def _pdf_master(hoje, art, conteudo, tmeta):
+    """PDF único do dia (marca do curso, sem nome). Gera 1x em arquivo; reusa se existir."""
+    caminho = os.path.join(config.drafts_dir(), f"{hoje}-master.pdf")
+    if os.path.exists(caminho):
+        return caminho
+    try:
+        os.makedirs(config.drafts_dir(), exist_ok=True)
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, tmeta), caminho)
+        return caminho
+    except Exception as e:
+        print(f"[enviar] PDF mestre falhou (segue sem PDF): {e}", flush=True)
+        return None
+
+
+def _finalizar_dia(hoje, r, art, conteudo, tmeta):
+    """Fecha o dia UMA vez (1º slot que enviar): status SENT, confirma fila, registra no
+    arquivo, tira da reserva, marca DOI. Guardado por marcador em envios_slot."""
+    import db
+    if not db.registrar_envio_slot(hoje, "_finalizado"):
         return
+    import resumo_diario as rd
+    r["status"] = "SENT"
+    draft_store.salvar(r)
+    queue_store.confirmar_envio(art)
+    try:
+        db.registrar_digest(art, conteudo, tmeta, data=hoje)
+    except Exception as e:
+        print(f"[enviar] falha ao registrar no arquivo: {e}", flush=True)
+    if r.get("reserva_id"):
+        try:
+            db.marcar_reserva_enviado(r["reserva_id"])
+        except Exception as e:
+            print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
+    rd.registrar([art["doi"]] if art.get("doi") else [])
+
+
+def enviar_slot(slot):
+    """Envia o estudo do dia SÓ pros assinantes de `slot` (config.SLOTS). Idempotente por
+    (dia, slot). Áudio/PDF/finalização são 1x/dia. O SENT não bloqueia os outros slots —
+    o guard de reenvio é o envios_slot."""
+    import db
     hoje = _hoje_iso()
+    if not db.registrar_envio_slot(hoje, slot):     # slot já processado hoje -> não repete
+        return
+    if not _e_dia_util(datetime.now()):
+        return                                       # silencioso (sem spam por slot)
     r = draft_store.carregar(hoje)
-    if not r or not draft_store.pode_enviar(r["status"]):
-        deliver.enviar_curador(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else r['status']}).")
+    if not r or r.get("status") == "SKIPPED":        # sem rascunho ou vetado
+        if db.registrar_envio_slot(hoje, "_skip_aviso"):   # avisa o curador 1x/dia
+            deliver.enviar_curador(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else 'vetado'}).")
         return
     art = r["artigo"]
     titulo = r.get("titulo_pt") or art.get("titulo", "")
     conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
     tmeta = _tema_meta(art.get("tema", ""))
-
-    audio_bytes = None                          # áudio é o MESMO p/ todos: gera 1x
-    if config.audio_ligado():
-        try:
-            import audio as audiomod
-            audio_bytes = audiomod.gerar_audio_do_estudo(art, conteudo)
-            print(f"[enviar] áudio gerado ({len(audio_bytes)} bytes)", flush=True)
-        except Exception as e:
-            print(f"[enviar] áudio falhou (segue sem): {e}", flush=True)
-
-    # PDF ÚNICO: gera 1x (marca do curso, sem nome) e manda o MESMO arquivo a todos —
-    # menos carga no servidor e menos ponto de falha. Fail-safe: se falhar, envia sem PDF.
-    master_pdf = os.path.join(config.drafts_dir(), f"{hoje}-master.pdf")
-    try:
-        pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, tmeta), master_pdf)
-    except Exception as e:
-        print(f"[enviar] PDF mestre falhou (segue sem PDF): {e}", flush=True)
-        master_pdf = None
+    audio_bytes = _audio_master(hoje, art, conteudo)
+    master_pdf = _pdf_master(hoje, art, conteudo, tmeta)
 
     def _envia(whatsapp, nome):
         import phone
-        whatsapp = phone.normalizar(whatsapp)   # garante o 55 (registros antigos)
-        link = f"{config.PUBLIC_URL}/entrar"  # portal protegido (login por código)
+        whatsapp = phone.normalizar(whatsapp)
+        link = f"{config.PUBLIC_URL}/entrar"
         msg = deliver.personalizar_rodape(montar_texto_resumo(titulo, r['resumo'], tmeta), nome, link)
         deliver.enviar_texto(whatsapp, msg)
-        if master_pdf:                           # PDF (não derruba o resto se falhar)
+        if master_pdf:
             try:
-                deliver.enviar_pdf(whatsapp, master_pdf, caption=titulo)  # PDF local -> base64 (Evolution)
+                deliver.enviar_pdf(whatsapp, master_pdf, caption=titulo)
             except Exception as e:
                 print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
-        if audio_bytes:                          # + áudio narrado (não derruba o envio se falhar)
+        if audio_bytes:
             try:
                 deliver.enviar_audio(whatsapp, audio_bytes)
             except Exception as e:
                 print(f"[enviar] áudio p/ {whatsapp} falhou: {e}", flush=True)
 
-    res = deliver.distribuir(r, subscribers.ativos(), config.SEND_DELAY_SEC, _envia)
-    r["status"] = "SENT"
-    draft_store.salvar(r)
-    queue_store.confirmar_envio(art)
-    try:  # grava no arquivo do site (não derruba o envio se falhar)
-        import db
-        db.registrar_digest(art, conteudo, tmeta, data=hoje)
-    except Exception as e:
-        print(f"[enviar] falha ao registrar no arquivo: {e}", flush=True)
-    if r.get("reserva_id"):        # veio da reserva/fila -> tira da fila (não reenvia)
-        try:
-            import db
-            db.marcar_reserva_enviado(r["reserva_id"])
-        except Exception as e:
-            print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
-    rd.registrar([art["doi"]] if art.get("doi") else [])
-    deliver.enviar_curador(f"✅ Enviado ({art.get('tema','')}): {res['ok']} assinantes"
+    destinatarios = [s for s in subscribers.ativos() if subscribers.slot_de(s) == slot]
+    res = deliver.distribuir(r, destinatarios, config.SEND_DELAY_SEC, _envia)
+    _finalizar_dia(hoje, r, art, conteudo, tmeta)
+    deliver.enviar_curador(f"✅ Enviado (slot {slot}, {art.get('tema','')}): {res['ok']} assinantes"
                            + (f" · {len(res['falhas'])} falhas" if res["falhas"] else "")
                            + (" · ⚠️ SEM PDF (erro na geração)" if master_pdf is None else ""))
-    avisar_estoque_baixo()      # depois de consumir, avisa se a reserva ficou abaixo do mínimo
