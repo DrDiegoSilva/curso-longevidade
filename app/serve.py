@@ -167,6 +167,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_admin_afiliados(
                 db.listar_afiliados(), db.listar_comissoes(pago=False), config.ADMIN_TOKEN or "",
                 editar_id=q.get("editar", [""])[0] or None), 200)
+        if path == "/admin/mensagens":
+            import config, site_web, auth_web, db, mensagens
+            q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            return self._html(site_web.pagina_admin_mensagens(
+                db.get_config(mensagens.K_WA, mensagens.WA_DEFAULT),
+                db.get_config(mensagens.K_EMAIL_ASSUNTO, mensagens.EMAIL_ASSUNTO_DEFAULT),
+                db.get_config(mensagens.K_EMAIL_CORPO, mensagens.EMAIL_CORPO_DEFAULT),
+                config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -179,10 +192,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons(),
                 confirmar_id=q.get("confirmar", [""])[0] or None), 200)
         if path.startswith("/agenda"):
-            import config, db, daily, agenda_plan, site_web
+            import config, db, daily, agenda_plan, site_web, auth_web
             from datetime import datetime, timedelta
             q = up.parse_qs(up.urlparse(self.path).query)
-            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             try:
@@ -378,6 +393,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif acao == "marcar_comissao_paga":
                 db.marcar_comissao_paga(g("id"))
             return self._redirect(f"/admin/afiliados?token={config.ADMIN_TOKEN}" if token_ok else "/admin/afiliados")
+        if path == "/admin/mensagens":
+            import config, auth_web, db, mensagens
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            if g("acao") == "salvar_mensagens":
+                db.set_config(mensagens.K_WA, g("wa"))
+                db.set_config(mensagens.K_EMAIL_ASSUNTO, g("email_assunto"))
+                db.set_config(mensagens.K_EMAIL_CORPO, g("email_corpo"))
+            return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
+                                  if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
         if path == "/admin":
             import config, subscribers, auth_web, db
             sess = self._sessao()
@@ -401,9 +429,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True, dias_acesso=dias)
             return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
         if path == "/agenda":
-            import config, db, daily, agenda_plan
+            import config, db, daily, agenda_plan, auth_web
             from datetime import datetime, timedelta
-            if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             acao, data, msg = g("acao"), g("data"), ""
@@ -427,7 +457,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.agenda_pular(data, False); msg = "Dia reativado."
             elif acao == "rematerializar":
                 n = daily.materializar_agenda(); msg = f"{n} dia(s) preenchido(s)."
-            return self._redirect(f"/agenda?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
+            return self._redirect((f"/agenda?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
+                                  if token_ok else f"/agenda?msg={up.quote(msg)}")
         if path == "/curadoria":
             import config, db, curadoria
             if not config.ADMIN_TOKEN or g("token") != config.ADMIN_TOKEN:

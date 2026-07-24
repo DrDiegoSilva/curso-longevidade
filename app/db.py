@@ -149,6 +149,9 @@ def init():
                 valor_venda REAL, valor_comissao REAL,
                 pago INTEGER DEFAULT 0, criado_em TEXT, pago_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS settings (
+                chave TEXT PRIMARY KEY, valor TEXT
+            );
             CREATE TABLE IF NOT EXISTS senha_tokens (
                 token TEXT PRIMARY KEY,
                 whatsapp TEXT NOT NULL,
@@ -199,7 +202,7 @@ def init():
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
-            "afiliados", "comissoes"]
+            "afiliados", "comissoes", "settings"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -381,6 +384,23 @@ def atualizar_afiliado(id, nome, contato, codigo, pct_desconto, pct_comissao):
         c.execute("UPDATE afiliados SET nome=?, contato=?, codigo=?, pct_desconto=?, pct_comissao=? WHERE id=?",
                   ((nome or "").strip(), (contato or "").strip(), (codigo or "").strip().upper(),
                    float(pct_desconto or 0), float(pct_comissao or 0), id))
+
+
+# ── Settings (chave/valor) — ex.: templates editáveis das mensagens ──
+def get_config(chave, default=""):
+    """Valor salvo em settings, ou o default. Defensivo: não quebra o fluxo se faltar a tabela."""
+    try:
+        with _conn() as c:
+            r = c.execute("SELECT valor FROM settings WHERE chave=?", (chave,)).fetchone()
+        return r["valor"] if (r and r["valor"] is not None) else default
+    except Exception:
+        return default
+
+
+def set_config(chave, valor):
+    with _conn() as c:
+        c.execute("INSERT INTO settings (chave,valor) VALUES (?,?) "
+                  "ON CONFLICT (chave) DO UPDATE SET valor=excluded.valor", (chave, valor or ""))
 
 
 def registrar_comissao(afiliado_id, subscriber_id, plano, valor_venda, valor_comissao):

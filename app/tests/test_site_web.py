@@ -193,6 +193,16 @@ class TestRender(unittest.TestCase):
         self.assertIn('value="95"', he)
         self.assertIn("Salvar alterações", he)
 
+    def test_pagina_admin_mensagens(self):
+        h = self.s.pagina_admin_mensagens("WA TEXTO {link}", "Assunto X", "CORPO {nome}", token="tk")
+        self.assertIn("WA TEXTO", h)
+        self.assertIn("Assunto X", h)
+        self.assertIn("CORPO", h)
+        self.assertIn('name="wa"', h)
+        self.assertIn('name="email_corpo"', h)
+        self.assertIn("salvar_mensagens", h)
+        self.assertIn("/admin/mensagens", self.s._admin_nav("tk", "mensagens"))
+
     def test_assinar_cadastro_padronizado(self):
         h = self.s.pagina_assinar("mensal")
         self.assertIn('name="nome" style="text-transform:uppercase"', h)   # nome visual maiúsculo

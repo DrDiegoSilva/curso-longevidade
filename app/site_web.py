@@ -574,6 +574,7 @@ def _admin_nav(token="", atual=""):
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
             + lk("/agenda", "📅 Agenda", "agenda")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
+            + lk("/admin/mensagens", "📝 Mensagens", "mensagens")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
             + '</div>')
 
@@ -686,6 +687,40 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
       </div>
     </div>"""
     return _pagina("Afiliados · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_admin_mensagens(wa, email_assunto, email_corpo, token="", msg=""):
+    """Editor das mensagens de boas-vindas (WhatsApp + e-mail)."""
+    tk = _esc(token)
+    aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
+             if msg else "")
+    ta = ("width:100%;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.5;"
+          "padding:12px;border-radius:10px;box-sizing:border-box")
+    corpo = f"""
+    <div class="wrap">
+      {_admin_nav(token, "mensagens")}
+      <div class="sectag" style="margin-top:8px">Painel do curador</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Mensagens de boas-vindas</h2>
+      <p class="hint">O que o novo assinante recebe quando o pagamento confirma. Marcadores:
+        <code>{{link}}</code> = link de criar senha (<strong>obrigatório</strong> — se remover, é re-adicionado sozinho) ·
+        <code>{{nome}}</code> = nome do assinante.</p>
+      {aviso}
+      <form method="post" action="/admin/mensagens">
+        <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="salvar_mensagens">
+        <div class="panel" style="max-width:none;margin:14px 0">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">📲 WhatsApp</h3>
+          <textarea name="wa" rows="13" style="{ta}">{_esc(wa)}</textarea>
+        </div>
+        <div class="panel" style="max-width:none;margin:14px 0">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail</h3>
+          <label>Assunto</label><input type="text" name="email_assunto" value="{_esc(email_assunto)}">
+          <label style="margin-top:12px">Corpo (o <code>{{link}}</code> vira um botão)</label>
+          <textarea name="email_corpo" rows="9" style="{ta}">{_esc(email_corpo)}</textarea>
+        </div>
+        <button class="actbtn" type="submit" style="margin-top:6px">Salvar mensagens</button>
+      </form>
+    </div>"""
+    return _pagina("Mensagens · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_whatsapp(info_dict, conn, token=""):

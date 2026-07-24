@@ -34,23 +34,21 @@ def _proximo_venc(cycle, ref=None):
 
 def _boas_vindas(whatsapp, nome, email, enviar_fn):
     """Confirma a assinatura e manda o link de CRIAR SENHA nos dois canais (WhatsApp + e-mail)."""
-    import auth_web
+    import auth_web, mensagens
     try:
         link = auth_web.preparar_primeiro_acesso(whatsapp)
     except Exception as e:
         print(f"[webhook] preparar 1º acesso falhou: {e}", flush=True)
         link = f"{config.ARTIGOS_URL}/primeiro-acesso"
-    msg = (auth_web.wa_msg_senha(link, primeiro=True)
-           + "\n\nA partir do próximo dia útil você começa a receber os resumos por aqui.")
     try:
-        enviar_fn(whatsapp, msg)
+        enviar_fn(whatsapp, mensagens.wa_boas_vindas(link, nome))   # texto editável no admin
     except Exception as e:
         print(f"[webhook] boas-vindas WhatsApp falhou: {e}", flush=True)
     if email:
         try:
             import email_send
-            email_send.enviar(email, f"Crie sua senha de acesso — {config.PRODUTO}",
-                              auth_web.email_html_senha(nome, link, True))
+            assunto, html = mensagens.email_boas_vindas(nome, link)   # editável no admin
+            email_send.enviar(email, assunto, html)
         except Exception as e:
             print(f"[webhook] boas-vindas e-mail falhou: {e}", flush=True)
 
