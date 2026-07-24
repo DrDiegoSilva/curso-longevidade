@@ -76,6 +76,18 @@ class TestAfiliadosDb(unittest.TestCase):
         self.assertIsNone(self.db.obter_pending_por_cpf(""))
         self.assertIsNone(self.db.obter_pending_por_cpf("00000000000"))
 
+    def test_atualizar_afiliado(self):
+        self.db.criar_afiliado("Ana", "ana@x.com", "ana95", 95, 3)
+        af = self.db.afiliado_por_codigo("ana95")
+        self.db.atualizar_afiliado(af["id"], "Ana Paula", "ap@x.com", "anapaula", 90, 5)
+        self.assertIsNone(self.db.afiliado_por_codigo("ana95"))    # código antigo trocado
+        novo = self.db.afiliado_por_codigo("anapaula")
+        self.assertIsNotNone(novo)
+        self.assertEqual(novo["nome"], "Ana Paula")
+        self.assertEqual(novo["contato"], "ap@x.com")
+        self.assertEqual(novo["pct_desconto"], 90)
+        self.assertEqual(novo["pct_comissao"], 5)
+
 
 if __name__ == "__main__":
     unittest.main()

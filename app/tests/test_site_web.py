@@ -179,6 +179,20 @@ class TestRender(unittest.TestCase):
     def test_admin_nav_tem_afiliados(self):
         self.assertIn("/admin/afiliados", self.s._admin_nav("tk", "afiliados"))
 
+    def test_pagina_admin_afiliados_editar(self):
+        afs = [{"id": "a1", "nome": "Ana", "contato": "ana@x.com", "codigo": "ANA95",
+                "pct_desconto": 95, "pct_comissao": 3, "ativo": 1,
+                "n_vendas": 0, "comissao_total": 0, "comissao_pendente": 0}]
+        # sem editar_id: cada linha tem o link "editar"
+        h = self.s.pagina_admin_afiliados(afs, [], token="tk")
+        self.assertIn("editar=a1", h)
+        # com editar_id: painel de edição pré-preenchido
+        he = self.s.pagina_admin_afiliados(afs, [], token="tk", editar_id="a1")
+        self.assertIn("editar_afiliado", he)
+        self.assertIn('value="ANA95"', he)
+        self.assertIn('value="95"', he)
+        self.assertIn("Salvar alterações", he)
+
 
 if __name__ == "__main__":
     unittest.main()

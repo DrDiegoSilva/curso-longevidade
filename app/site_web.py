@@ -578,7 +578,7 @@ def _admin_nav(token="", atual=""):
             + '</div>')
 
 
-def pagina_admin_afiliados(afiliados, comissoes, token=""):
+def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
     """Tela de Afiliados: cadastro, tabela com agregados e comissões pendentes."""
     import pricing
     tk = _esc(token)
@@ -597,10 +597,14 @@ def pagina_admin_afiliados(afiliados, comissoes, token=""):
             f'<td style="padding:11px 10px;color:var(--creme)">{a.get("n_vendas", 0)}</td>'
             f'<td style="padding:11px 10px;color:var(--suave)">{_esc(pricing.fmt_brl(a.get("comissao_total", 0)))}</td>'
             f'<td style="padding:11px 10px;color:var(--ouro2)">{_esc(pricing.fmt_brl(a.get("comissao_pendente", 0)))}</td>'
-            f'<td style="padding:11px 10px"><form method="post" action="/admin/afiliados" style="margin:0">'
+            f'<td style="padding:11px 10px"><div style="display:flex;gap:6px;align-items:center">'
+            f'<a class="actbtn ghost" href="/admin/afiliados?token={tk}&editar={_esc(a.get("id"))}" '
+            f'style="text-decoration:none;padding:6px 12px;font-size:12px">editar</a>'
+            f'<form method="post" action="/admin/afiliados" style="margin:0">'
             f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="toggle_afiliado">'
             f'<input type="hidden" name="id" value="{_esc(a.get("id"))}"><input type="hidden" name="on" value="{prox}">'
-            f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px;color:{cor}">{rot}</button></form></td></tr>')
+            f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px;color:{cor}">{rot}</button></form>'
+            f'</div></td></tr>')
 
     linhas = "".join(row_af(a) for a in (afiliados or [])) or \
         '<tr><td colspan="8" style="padding:20px;color:var(--suave)">Nenhum afiliado ainda.</td></tr>'
@@ -621,12 +625,35 @@ def pagina_admin_afiliados(afiliados, comissoes, token=""):
     comis_lista = "".join(row_com(c) for c in (comissoes or [])) or \
         '<p class="hint" style="margin-top:8px">Nenhuma comissão pendente.</p>'
 
+    alvo = next((a for a in (afiliados or []) if str(a.get("id")) == str(editar_id)), None) if editar_id else None
+    editar_html = ""
+    if alvo:
+        editar_html = (
+            '<div class="panel" style="max-width:none;margin:14px 0;border-color:#c9a22766">'
+            '<h3 style="font-family:\'Cormorant Garamond\',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">'
+            f'Editar afiliado — <span style="font-family:ui-monospace,Menlo,monospace">{_esc(alvo.get("codigo"))}</span></h3>'
+            '<form method="post" action="/admin/afiliados">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="editar_afiliado">'
+            f'<input type="hidden" name="id" value="{_esc(alvo.get("id"))}">'
+            f'<label>Nome</label><input type="text" name="nome" value="{_esc(alvo.get("nome") or "")}">'
+            f'<label style="margin-top:10px">Contato</label><input type="text" name="contato" value="{_esc(alvo.get("contato") or "")}">'
+            f'<label style="margin-top:10px">Código do cupom</label><input type="text" name="codigo" value="{_esc(alvo.get("codigo") or "")}">'
+            '<div style="display:flex;gap:10px">'
+            f'<div style="flex:1"><label style="margin-top:10px">% desconto</label><input type="number" step="0.1" name="pct_desconto" value="{_esc(str(alvo.get("pct_desconto")))}"></div>'
+            f'<div style="flex:1"><label style="margin-top:10px">% comissão</label><input type="number" step="0.1" name="pct_comissao" value="{_esc(str(alvo.get("pct_comissao")))}"></div>'
+            '</div>'
+            '<div style="display:flex;gap:10px;margin-top:14px">'
+            '<button class="actbtn" type="submit">Salvar alterações</button>'
+            f'<a class="actbtn ghost" href="/admin/afiliados?token={tk}" style="text-decoration:none;padding:8px 16px">Cancelar</a>'
+            '</div></form></div>')
+
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "afiliados")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Afiliados</h2>
       <p class="hint">Código dá <strong>desconto na 1ª venda</strong> ao assinante e gera <strong>comissão</strong> pro afiliado. Pagamento da comissão é manual.</p>
+      {editar_html}
       <div style="overflow-x:auto;margin:18px 0">
         <table style="width:100%;border-collapse:collapse;min-width:760px">
           <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">

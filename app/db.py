@@ -375,6 +375,14 @@ def toggle_afiliado(id, ativo):
         c.execute("UPDATE afiliados SET ativo=? WHERE id=?", (1 if ativo else 0, id))
 
 
+def atualizar_afiliado(id, nome, contato, codigo, pct_desconto, pct_comissao):
+    """Edita os campos de um afiliado. Código guardado em UPPER (mantém unicidade)."""
+    with _conn() as c:
+        c.execute("UPDATE afiliados SET nome=?, contato=?, codigo=?, pct_desconto=?, pct_comissao=? WHERE id=?",
+                  ((nome or "").strip(), (contato or "").strip(), (codigo or "").strip().upper(),
+                   float(pct_desconto or 0), float(pct_comissao or 0), id))
+
+
 def registrar_comissao(afiliado_id, subscriber_id, plano, valor_venda, valor_comissao):
     """1 linha no ledger de comissões (pago=0). Retorna o id."""
     import secrets

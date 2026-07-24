@@ -165,7 +165,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             return self._html(site_web.pagina_admin_afiliados(
-                db.listar_afiliados(), db.listar_comissoes(pago=False), config.ADMIN_TOKEN or ""), 200)
+                db.listar_afiliados(), db.listar_comissoes(pago=False), config.ADMIN_TOKEN or "",
+                editar_id=q.get("editar", [""])[0] or None), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -363,13 +364,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             acao = g("acao")
+            try:
+                pdesc = float(g("pct_desconto") or "10")
+                pcom = float(g("pct_comissao") or "3")
+            except ValueError:
+                pdesc, pcom = 10.0, 3.0
             if acao == "criar_afiliado":
-                try:
-                    pdesc = float(g("pct_desconto") or "10")
-                    pcom = float(g("pct_comissao") or "3")
-                except ValueError:
-                    pdesc, pcom = 10.0, 3.0
                 db.criar_afiliado(g("nome"), g("contato"), g("codigo"), pdesc, pcom)
+            elif acao == "editar_afiliado":
+                db.atualizar_afiliado(g("id"), g("nome"), g("contato"), g("codigo"), pdesc, pcom)
             elif acao == "toggle_afiliado":
                 db.toggle_afiliado(g("id"), g("on") == "1")
             elif acao == "marcar_comissao_paga":
