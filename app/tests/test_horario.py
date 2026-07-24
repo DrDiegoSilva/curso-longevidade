@@ -35,6 +35,12 @@ class TestSlotBasico(unittest.TestCase):
         self.s.definir_slot(reg["id"], "zz")   # inválido -> não muda
         self.assertEqual(self.s.por_id(reg["id"])["slot_envio"], "18h")
 
+    def test_registrar_envio_slot_idempotente(self):
+        self.assertTrue(self.db.registrar_envio_slot("2026-07-24", "08h"))    # 1ª vez
+        self.assertFalse(self.db.registrar_envio_slot("2026-07-24", "08h"))   # repetido
+        self.assertTrue(self.db.registrar_envio_slot("2026-07-24", "12h"))    # outro slot
+        self.assertTrue(self.db.registrar_envio_slot("2026-07-25", "08h"))    # outro dia
+
 
 class TestVaga(unittest.TestCase):
     def setUp(self):

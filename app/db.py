@@ -152,6 +152,10 @@ def init():
             CREATE TABLE IF NOT EXISTS settings (
                 chave TEXT PRIMARY KEY, valor TEXT
             );
+            CREATE TABLE IF NOT EXISTS envios_slot (
+                data TEXT, slot TEXT, enviado_em TEXT,
+                PRIMARY KEY (data, slot)
+            );
             CREATE TABLE IF NOT EXISTS senha_tokens (
                 token TEXT PRIMARY KEY,
                 whatsapp TEXT NOT NULL,
@@ -202,7 +206,7 @@ def init():
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
-            "afiliados", "comissoes", "settings"]
+            "afiliados", "comissoes", "settings", "envios_slot"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -304,6 +308,17 @@ def remover_webhook(payment_id, event):
     with _conn() as c:
         c.execute("DELETE FROM webhook_events WHERE payment_id=? AND event=?",
                   (payment_id or "", event or ""))
+
+
+def registrar_envio_slot(data, slot):
+    """True se é a 1ª vez que (data,slot) é registrado hoje; False se já registrado.
+    Guarda idempotência do envio por slot (restart não reenvia)."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("INSERT INTO envios_slot (data,slot,enviado_em) VALUES (?,?,?) "
+                        "ON CONFLICT (data,slot) DO NOTHING",
+                        (data or "", slot or "", datetime.now().isoformat()))
+        return cur.rowcount > 0
 
 
 def cupom_valido(codigo):
