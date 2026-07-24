@@ -1387,9 +1387,9 @@ def pagina_assinar(plano_slug=None, erro=""):
           {erro_html}
           <form method="post" action="/assinar">
             <input type="hidden" name="plano" value="{_esc(plano["slug"])}">
-            <div class="field"><label>Nome completo</label><input type="text" name="nome" required></div>
+            <div class="field"><label>Nome completo</label><input type="text" name="nome" style="text-transform:uppercase" required></div>
             <div class="field"><label>E-mail</label><input type="text" name="email" inputmode="email" required></div>
-            <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" required></div>
+            <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" required></div>
             <div class="field"><label>WhatsApp (com DDD) — onde você recebe os estudos e faz login</label>
               <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
             <label class="section-label">Forma de pagamento</label>
@@ -1400,7 +1400,7 @@ def pagina_assinar(plano_slug=None, erro=""):
                 <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
             </div>
             {parcelas_html}
-            <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" placeholder="tem um cupom de cortesia?"></div>
+            <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" style="text-transform:uppercase" placeholder="cortesia ou afiliado"></div>
             <button class="btn-pay" type="submit">Continuar para o pagamento →</button>
             <div class="securow">🔒 Ambiente de pagamento seguro</div>
           </form>

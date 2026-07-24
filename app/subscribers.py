@@ -45,7 +45,8 @@ def _migrar_json():
 
 
 def _insert(d):
-    vals = [d.get(k) for k in _COLS]
+    # nome padronizado em MAIÚSCULO (cadastro consistente em todas as vias de criação)
+    vals = [((d.get(k) or "").strip().upper() if k == "nome" else d.get(k)) for k in _COLS]
     ph = ",".join("?" * len(_COLS))
     updates = ",".join(f"{k}=excluded.{k}" for k in _COLS if k != "id")
     with db._conn() as c:
@@ -172,7 +173,7 @@ def atualizar_contato(id, nome, email):
     _ensure()
     with db._conn() as c:
         c.execute("UPDATE subscribers SET nome=?, email=? WHERE id=?",
-                  ((nome or "").strip(), (email or "").strip(), id))
+                  ((nome or "").strip().upper(), (email or "").strip(), id))
 
 
 def atualizar_whatsapp(id, novo):

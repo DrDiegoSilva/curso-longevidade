@@ -40,6 +40,14 @@ class TestSubs(unittest.TestCase):
         self.assertFalse(t({"status": "CANCELADO"}))
         self.assertFalse(t({"status": "OUTRO"}))
 
+    def test_nome_padronizado_maiusculo(self):
+        reg = self.s.adicionar("diego silva", "5543996578534")
+        self.assertEqual(self.s.por_id(reg["id"])["nome"], "DIEGO SILVA")
+        reg2 = self.s.criar_de_pagamento({"nome": "ana paula", "whatsapp": "5511", "plano": "mensal"})
+        self.assertEqual(self.s.por_id(reg2["id"])["nome"], "ANA PAULA")
+        self.s.atualizar_contato(reg["id"], "diego s.", "d@x.com")
+        self.assertEqual(self.s.por_id(reg["id"])["nome"], "DIEGO S.")
+
     def test_adicionar_e_ativos(self):
         self.s.adicionar("Dr. A", "55 43 99999-0000")
         atv = self.s.ativos()
@@ -62,13 +70,13 @@ class TestSubs(unittest.TestCase):
             json.dump([{"id": "x", "nome": "Velho", "whatsapp": "5543111", "status": "ATIVO"}], f)
         self.s._migrado = False
         self.assertEqual(len(self.s.listar()), 1)
-        self.assertEqual(self.s.listar()[0]["nome"], "Velho")
+        self.assertEqual(self.s.listar()[0]["nome"], "VELHO")   # nome padronizado em maiúsculo
 
     def test_atualizar_contato_e_whatsapp(self):
         s = self.s.adicionar("Fulano", "5543999990000")
         self.s.atualizar_contato(s["id"], "Fulano Silva", "f@x.com")
         r = self.s.por_id(s["id"])
-        self.assertEqual(r["nome"], "Fulano Silva")
+        self.assertEqual(r["nome"], "FULANO SILVA")   # nome padronizado em maiúsculo
         self.assertEqual(r["email"], "f@x.com")
         self.s.atualizar_whatsapp(s["id"], "5541988887777")
         r = self.s.por_id(s["id"])

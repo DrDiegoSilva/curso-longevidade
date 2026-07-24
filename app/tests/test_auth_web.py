@@ -57,7 +57,7 @@ class TestAuth(unittest.TestCase):
         self.assertTrue(tok)
         sess = self.auth.sessao(f"sid={tok}")
         self.assertEqual(sess["whatsapp"], "5543999990000")
-        self.assertEqual(sess["nome"], "Dr. Ativo")
+        self.assertEqual(sess["nome"], "DR. ATIVO")   # nome padronizado em maiúsculo
 
     def test_verificar_codigo_errado(self):
         self.auth.iniciar_login("5543999990000", enviar_fn=self.enviar_fn)

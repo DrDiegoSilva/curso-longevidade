@@ -193,6 +193,12 @@ class TestRender(unittest.TestCase):
         self.assertIn('value="95"', he)
         self.assertIn("Salvar alterações", he)
 
+    def test_assinar_cadastro_padronizado(self):
+        h = self.s.pagina_assinar("mensal")
+        self.assertIn('name="nome" style="text-transform:uppercase"', h)   # nome visual maiúsculo
+        self.assertIn('name="cupom" style="text-transform:uppercase"', h)  # cupom maiúsculo
+        self.assertIn('placeholder="000.000.000-00"', h)                   # CPF padronizado
+
 
 if __name__ == "__main__":
     unittest.main()
