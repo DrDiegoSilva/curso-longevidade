@@ -66,6 +66,17 @@ class TestPayload(unittest.TestCase):
         card = self.a.montar_checkout(self._plano("anual"), "CARTAO", 12, self.dados, "t", "https://x", base=1497.0)
         self.assertEqual(card["items"][0]["value"], 1497.0)   # sem juros: cobra a base vigente
 
+    def test_checkout_com_base_descontada(self):
+        import asaas, config
+        plano = config.plano_por_slug("anual")
+        base_desc = 897.30
+        # PIX (à vista): item sai com a base descontada
+        p_pix = asaas.montar_checkout(plano, "PIX", 1, {}, "tok", "http://x", base=base_desc)
+        self.assertEqual(p_pix["items"][0]["value"], 897.30)
+        # CARTÃO (recorrente): 1ª cobrança com a base descontada
+        p_card = asaas.montar_checkout(plano, "CARTAO", 1, {}, "tok", "http://x", base=base_desc)
+        self.assertEqual(p_card["items"][0]["value"], 897.30)
+
 
 if __name__ == "__main__":
     unittest.main()

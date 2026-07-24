@@ -96,3 +96,12 @@ def adiar_vencimento(sid, dias=30):
     base = atual.get("nextDueDate") or _hoje()
     novo = (datetime.fromisoformat(base) + timedelta(days=dias)).date().isoformat()
     return _req(f"subscriptions/{sid}", "PUT", {"nextDueDate": novo})
+
+
+def atualizar_valor_assinatura(sid, valor):
+    """Atualiza o valor RECORRENTE da assinatura sem tocar cobranças já geradas
+    (updatePendingPayments=false). Usado p/ voltar a renovação ao preço cheio depois
+    da 1ª cobrança com desconto de afiliado.
+    ⚠️ Validar no sandbox: PUT de `value` numa assinatura recém-criada por checkout."""
+    return _req(f"subscriptions/{sid}", "PUT",
+                {"value": round(float(valor), 2), "updatePendingPayments": False})
