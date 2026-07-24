@@ -1103,6 +1103,50 @@ def pagina_minha(sub, admin=False):
                    meta_extra='<meta name="robots" content="noindex">')
 
 
+def pagina_meus_dados(sub, msg="", etapa_troca=None, novo_num=""):
+    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+    if etapa_troca == "codigo":
+        troca = f"""
+        <p class="hint">Enviei um código por WhatsApp para <strong>{_esc(novo_num)}</strong>. Digite abaixo para confirmar.</p>
+        <form method="post" action="/meus-dados">
+          <input type="hidden" name="acao" value="confirmar_troca">
+          <input type="hidden" name="novo_numero" value="{_esc(novo_num)}">
+          <label>Código recebido</label>
+          <input type="text" name="codigo" inputmode="numeric" maxlength="6" required>
+          <button class="actbtn" type="submit">Confirmar novo número</button>
+        </form>"""
+    else:
+        troca = f"""
+        <p class="hint" style="margin-top:4px">Número atual: <strong>{_esc(sub.get("whatsapp",""))}</strong> — é onde você recebe os estudos e faz login.</p>
+        <form method="post" action="/meus-dados">
+          <input type="hidden" name="acao" value="iniciar_troca">
+          <label>Novo número (com DDD)</label>
+          <input type="tel" name="novo_numero" placeholder="5543999990000" required>
+          <button class="actbtn ghost" type="submit">Trocar número</button>
+          <p class="hint" style="margin-top:8px;font-size:13px">Enviaremos um código ao número novo para confirmar.</p>
+        </form>"""
+    corpo = f"""
+    <div class="wrap"><div class="panel">
+      <h2 class="disp">Meus dados</h2>
+      {msg_html}
+      <form method="post" action="/meus-dados" style="margin-bottom:26px">
+        <input type="hidden" name="acao" value="salvar_contato">
+        <label>Nome</label>
+        <input type="text" name="nome" value="{_esc(sub.get("nome",""))}" required>
+        <label>E-mail</label>
+        <input type="text" name="email" value="{_esc(sub.get("email",""))}">
+        <button class="actbtn" type="submit">Salvar</button>
+      </form>
+      <h3 class="disp" style="font-size:22px;color:var(--ouro2);margin:0 0 6px">Celular (WhatsApp)</h3>
+      {troca}
+      <hr style="border:none;border-top:1px solid rgba(233,225,198,.12);margin:30px 0 16px">
+      <p class="hint" style="font-size:13px;color:var(--suave)">Não quer mais receber?
+        <a href="/cancelar" style="color:#d69a8a">Cancelar assinatura</a></p>
+    </div></div>"""
+    return _pagina(f"Meus dados · {PRODUTO}", corpo, logado=True, atual="/meus-dados",
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
 def pagina_cancelar(erro=""):
     erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
     corpo = f"""

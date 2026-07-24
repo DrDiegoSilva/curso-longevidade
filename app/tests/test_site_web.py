@@ -123,6 +123,15 @@ class TestRender(unittest.TestCase):
         self.assertIn('<span class="scorechip lo">2.7</span>', html)     # 2.7 -> lo, sem estrela
         self.assertNotIn("· score ", html)     # regressão: formato textual antigo não deve voltar
 
+    def test_meus_dados_blocos(self):
+        html = self.s.pagina_meus_dados({"nome": "D", "email": "d@x.com", "whatsapp": "5543999990000"})
+        self.assertIn("salvar_contato", html)     # form de nome/e-mail
+        self.assertIn("iniciar_troca", html)      # trocar número
+        self.assertIn("Cancelar assinatura", html)  # cancelar vive aqui agora
+        # etapa de código aparece quando pedido
+        self.assertIn("confirmar_troca", self.s.pagina_meus_dados(
+            {"nome": "D", "whatsapp": "x"}, etapa_troca="codigo", novo_num="5541988887777"))
+
 
 if __name__ == "__main__":
     unittest.main()
