@@ -573,8 +573,92 @@ def _admin_nav(token="", atual=""):
             + lk("/admin", "👥 Assinantes", "assinantes")
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
             + lk("/agenda", "📅 Agenda", "agenda")
+            + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
             + '</div>')
+
+
+def pagina_admin_afiliados(afiliados, comissoes, token=""):
+    """Tela de Afiliados: cadastro, tabela com agregados e comissões pendentes."""
+    import pricing
+    tk = _esc(token)
+
+    def row_af(a):
+        on = bool(a.get("ativo"))
+        cor = "#2f9e6b" if on else "#7a8a84"
+        prox = "0" if on else "1"
+        rot = "desativar" if on else "ativar"
+        return (
+            '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
+            f'<td style="padding:11px 10px;font-family:ui-monospace,Menlo,monospace;font-size:14px;color:var(--ouro2)">{_esc(a.get("codigo"))}</td>'
+            f'<td style="padding:11px 10px;color:var(--creme)">{_esc(a.get("nome") or "—")}</td>'
+            f'<td style="padding:11px 10px;font-size:13px;color:var(--suave)">{_esc(a.get("contato") or "—")}</td>'
+            f'<td style="padding:11px 10px;font-size:13px;color:var(--suave)">{_esc(str(a.get("pct_desconto")))}% / {_esc(str(a.get("pct_comissao")))}%</td>'
+            f'<td style="padding:11px 10px;color:var(--creme)">{a.get("n_vendas", 0)}</td>'
+            f'<td style="padding:11px 10px;color:var(--suave)">{_esc(pricing.fmt_brl(a.get("comissao_total", 0)))}</td>'
+            f'<td style="padding:11px 10px;color:var(--ouro2)">{_esc(pricing.fmt_brl(a.get("comissao_pendente", 0)))}</td>'
+            f'<td style="padding:11px 10px"><form method="post" action="/admin/afiliados" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="toggle_afiliado">'
+            f'<input type="hidden" name="id" value="{_esc(a.get("id"))}"><input type="hidden" name="on" value="{prox}">'
+            f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px;color:{cor}">{rot}</button></form></td></tr>')
+
+    linhas = "".join(row_af(a) for a in (afiliados or [])) or \
+        '<tr><td colspan="8" style="padding:20px;color:var(--suave)">Nenhum afiliado ainda.</td></tr>'
+
+    nome_af = {a.get("id"): a.get("nome") for a in (afiliados or [])}
+
+    def row_com(c):
+        return (
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid rgba(233,225,198,.1)">'
+            f'<div><span style="color:var(--creme)">{_esc(nome_af.get(c.get("afiliado_id"), "—"))}</span>'
+            f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("plano") or "—")} · venda {_esc(pricing.fmt_brl(c.get("valor_venda", 0)))} · '
+            f'comissão <b style="color:var(--ouro2)">{_esc(pricing.fmt_brl(c.get("valor_comissao", 0)))}</b></div></div>'
+            f'<form method="post" action="/admin/afiliados" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="marcar_comissao_paga">'
+            f'<input type="hidden" name="id" value="{_esc(c.get("id"))}">'
+            f'<button class="actbtn" style="padding:6px 13px;font-size:12px">marcar como paga</button></form></div>')
+
+    comis_lista = "".join(row_com(c) for c in (comissoes or [])) or \
+        '<p class="hint" style="margin-top:8px">Nenhuma comissão pendente.</p>'
+
+    corpo = f"""
+    <div class="wrap">
+      {_admin_nav(token, "afiliados")}
+      <div class="sectag" style="margin-top:8px">Painel do curador</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Afiliados</h2>
+      <p class="hint">Código dá <strong>desconto na 1ª venda</strong> ao assinante e gera <strong>comissão</strong> pro afiliado. Pagamento da comissão é manual.</p>
+      <div style="overflow-x:auto;margin:18px 0">
+        <table style="width:100%;border-collapse:collapse;min-width:760px">
+          <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
+            <th style="padding:8px 10px">Código</th><th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">Contato</th>
+            <th style="padding:8px 10px">Desc./Com.</th><th style="padding:8px 10px">Vendas</th>
+            <th style="padding:8px 10px">Comissão total</th><th style="padding:8px 10px">Pendente</th><th></th></tr></thead>
+          <tbody>{linhas}</tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
+        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:300px">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Cadastrar afiliado</h3>
+          <form method="post" action="/admin/afiliados">
+            <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="criar_afiliado">
+            <label>Nome</label><input type="text" name="nome" placeholder="Dra. Maria">
+            <label style="margin-top:10px">Contato (e-mail/WhatsApp p/ pagar)</label><input type="text" name="contato">
+            <label style="margin-top:10px">Código do cupom</label><input type="text" name="codigo" placeholder="DRAMARIA">
+            <div style="display:flex;gap:10px">
+              <div style="flex:1"><label style="margin-top:10px">% desconto</label><input type="number" step="0.1" name="pct_desconto" value="10"></div>
+              <div style="flex:1"><label style="margin-top:10px">% comissão</label><input type="number" step="0.1" name="pct_comissao" value="3"></div>
+            </div>
+            <button class="actbtn" type="submit" style="margin-top:14px">➕ Cadastrar afiliado</button>
+          </form>
+        </div>
+        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:300px">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Comissões pendentes</h3>
+          <p class="hint" style="margin-bottom:6px">Pague por fora e clique em "marcar como paga" pra dar baixa.</p>
+          <div style="margin-top:10px">{comis_lista}</div>
+        </div>
+      </div>
+    </div>"""
+    return _pagina("Afiliados · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_whatsapp(info_dict, conn, token=""):

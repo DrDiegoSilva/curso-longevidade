@@ -162,6 +162,23 @@ class TestRender(unittest.TestCase):
         self.assertIn("Fulano", conf)                          # nomeia quem será removido
         self.assertIn("Cancelar", conf)
 
+    def test_pagina_admin_afiliados(self):
+        afs = [{"id": "a1", "nome": "Dra. Maria", "contato": "maria@x.com", "codigo": "DRAMARIA",
+                "pct_desconto": 10, "pct_comissao": 3, "ativo": 1,
+                "n_vendas": 2, "comissao_total": 29.59, "comissao_pendente": 2.67}]
+        comis = [{"id": "c1", "afiliado_id": "a1", "subscriber_id": "s1", "plano": "anual",
+                  "valor_venda": 897.30, "valor_comissao": 26.92, "pago": 0}]
+        h = self.s.pagina_admin_afiliados(afs, comis, token="tk")
+        self.assertIn("<!doctype html>", h)
+        self.assertIn("DRAMARIA", h)
+        self.assertIn("Afiliados", h)
+        self.assertIn("criar_afiliado", h)          # form de cadastro
+        self.assertIn("marcar_comissao_paga", h)     # botão de baixa
+        self.assertIn("26,92", h)                    # comissão formatada BRL
+
+    def test_admin_nav_tem_afiliados(self):
+        self.assertIn("/admin/afiliados", self.s._admin_nav("tk", "afiliados"))
+
 
 if __name__ == "__main__":
     unittest.main()
