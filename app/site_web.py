@@ -573,6 +573,7 @@ def _admin_nav(token="", atual=""):
             + lk("/admin", "👥 Assinantes", "assinantes")
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
             + lk("/agenda", "📅 Agenda", "agenda")
+            + lk("/admin/envio", "🗓️ Dias", "envio")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
             + lk("/admin/mensagens", "📝 Mensagens", "mensagens")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
@@ -687,6 +688,37 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
       </div>
     </div>"""
     return _pagina("Afiliados · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_admin_envio(dias_ativos, token="", msg=""):
+    """Escolhe em quais dias da semana os estudos são enviados (e a agenda materializa slots)."""
+    tk = _esc(token)
+    ativos = set(dias_ativos or [])
+    aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
+             if msg else "")
+    rotulos = [("segunda", "Segunda"), ("terca", "Terça"), ("quarta", "Quarta"), ("quinta", "Quinta"),
+               ("sexta", "Sexta"), ("sabado", "Sábado"), ("domingo", "Domingo")]
+    checks = "".join(
+        f'<label style="display:flex;align-items:center;gap:10px;padding:11px 14px;'
+        f'border:1px solid rgba(233,225,198,.14);border-radius:12px;margin-bottom:8px;cursor:pointer">'
+        f'<input type="checkbox" name="dia" value="{slug}"{" checked" if slug in ativos else ""}>'
+        f'<span style="color:var(--creme);font-size:16px">{rot}</span></label>'
+        for slug, rot in rotulos)
+    corpo = f"""
+    <div class="wrap">
+      {_admin_nav(token, "envio")}
+      <div class="sectag" style="margin-top:8px">Painel do curador</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Dias de envio</h2>
+      <p class="hint">Em quais dias os estudos são enviados no WhatsApp (e a agenda reserva slots). Desmarcar um dia = nada é enviado nele.</p>
+      {aviso}
+      <form method="post" action="/admin/envio">
+        <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="salvar_dias">
+        <div class="panel" style="max-width:420px;margin:14px 0">{checks}
+          <button class="actbtn" type="submit" style="margin-top:12px">Salvar dias</button>
+        </div>
+      </form>
+    </div>"""
+    return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_admin_mensagens(wa, email_assunto, email_corpo, token="", msg=""):

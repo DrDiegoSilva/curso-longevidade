@@ -39,6 +39,15 @@ def _cfg():
 
 
 def _dias_envio():
+    # admin escolhe os dias em /admin/envio (db.settings 'dias_envio', CSV). None = nunca setado
+    # -> usa o temas_config.json; string vazia = salvou sem nenhum dia -> não envia.
+    try:
+        import db
+        salvo = db.get_config("dias_envio", None)
+    except Exception:
+        salvo = None
+    if salvo is not None:
+        return set(d.strip() for d in salvo.split(",") if d.strip())
     return set(_cfg().get("dias_envio", ["segunda", "terca", "quarta", "quinta", "sexta"]))
 
 

@@ -180,6 +180,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.get_config(mensagens.K_EMAIL_ASSUNTO, mensagens.EMAIL_ASSUNTO_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_CORPO, mensagens.EMAIL_CORPO_DEFAULT),
                 config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
+        if path == "/admin/envio":
+            import config, site_web, auth_web, db, daily
+            q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            return self._html(site_web.pagina_admin_envio(
+                daily._dias_envio(), config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -406,6 +416,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.set_config(mensagens.K_EMAIL_CORPO, g("email_corpo"))
             return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
                                   if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
+        if path == "/admin/envio":
+            import config, auth_web, db
+            sess = self._sessao()
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            if g("acao") == "salvar_dias":
+                db.set_config("dias_envio", ",".join(form.get("dia", [])))
+            return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg=Dias+salvos"
+                                  if token_ok else "/admin/envio?msg=Dias+salvos")
         if path == "/admin":
             import config, subscribers, auth_web, db
             sess = self._sessao()

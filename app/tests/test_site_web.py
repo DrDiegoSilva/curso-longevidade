@@ -193,6 +193,15 @@ class TestRender(unittest.TestCase):
         self.assertIn('value="95"', he)
         self.assertIn("Salvar alterações", he)
 
+    def test_pagina_admin_envio(self):
+        h = self.s.pagina_admin_envio({"segunda", "domingo"}, token="tk")
+        self.assertIn('value="segunda" checked', h)      # dia ativo marcado
+        self.assertIn('value="domingo" checked', h)
+        self.assertIn('value="terca"', h)                # dia existe
+        self.assertNotIn('value="terca" checked', h)     # mas não marcado
+        self.assertIn("salvar_dias", h)
+        self.assertIn("/admin/envio", self.s._admin_nav("tk", "envio"))
+
     def test_pagina_admin_mensagens(self):
         h = self.s.pagina_admin_mensagens("WA TEXTO {link}", "Assunto X", "CORPO {nome}", token="tk")
         self.assertIn("WA TEXTO", h)
