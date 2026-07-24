@@ -122,6 +122,22 @@ class TestEnviarSlot(unittest.TestCase):
         self.assertEqual(len(self.enviados), 1)
         self.assertEqual(self.enviados[0]["nome"], "B")
 
+    def test_sent_nao_bloqueia_outro_slot_e_finaliza_1x(self):
+        import db
+        chamadas = {"digest": 0}
+        orig = db.registrar_digest
+        db.registrar_digest = lambda *a, **k: chamadas.__setitem__("digest", chamadas["digest"] + 1)
+        try:
+            self.daily.enviar_slot("12h")            # 1º slot: envia + finaliza (status->SENT)
+            self.assertEqual(len(self.enviados), 1)   # A (12h)
+            self.enviados.clear()
+            self.daily.enviar_slot("08h")            # 2º slot: SENT não bloqueia -> ainda envia
+            self.assertEqual(len(self.enviados), 1)   # B (08h)
+            self.assertEqual(self.enviados[0]["nome"], "B")
+        finally:
+            db.registrar_digest = orig
+        self.assertEqual(chamadas["digest"], 1)       # finalização rodou 1x só (guardada)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -438,6 +438,10 @@ def _finalizar_dia(hoje, r, art, conteudo, tmeta):
         except Exception as e:
             print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
     rd.registrar([art["doi"]] if art.get("doi") else [])
+    try:
+        avisar_estoque_baixo()   # avisa o curador se a reserva ficou abaixo do mínimo
+    except Exception as e:
+        print(f"[enviar] avisar_estoque_baixo falhou: {e}", flush=True)
 
 
 def enviar_slot(slot):
