@@ -126,7 +126,7 @@ EMAIL_FROM = os.environ.get("DSCURSO_EMAIL_FROM") or "Atualização Científica 
 EMAIL_BACKEND = (os.environ.get("DSCURSO_EMAIL_BACKEND") or ("resend" if RESEND_API_KEY else "none")).lower()
 
 # E-mail do admin (Dr. Diego) para avisos de venda. Env sobrescreve.
-ADMIN_EMAIL = os.environ.get("DSCURSO_ADMIN_EMAIL") or "edson-diego@live.com"
+ADMIN_EMAIL = os.environ.get("DSCURSO_ADMIN_EMAIL") or "contato@drdiegosilva.com.br"
 
 # ── Z-API (WhatsApp) ──
 _ZAPI_FILE = os.environ.get("DSCURSO_ZAPI_FILE", r"C:\Users\edson\.zapi-config.json")
