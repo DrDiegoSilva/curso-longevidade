@@ -94,6 +94,24 @@ class TestProcessar(unittest.TestCase):
                          "segredo", enviar_fn=self.envfn)
         self.assertEqual(self.db.listar_comissoes(), [])
 
+    def test_ativar_afiliado_comissao_falha_alerta_admin(self):
+        # se registrar_comissao falhar: ativação segue, comissão não entra, admin é avisado.
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria", 10, 3)
+        tok = self.db.criar_pending({"nome": "Dr. N", "whatsapp": "5543999992222",
+                                     "email": "n@x.com", "plano": "anual", "metodo": "PIX",
+                                     "afiliado_codigo": "DRAMARIA", "valor": 897.30})
+        alertas = []
+        orig_reg, orig_alert = self.db.registrar_comissao, self.w._alertar_admin
+        self.db.registrar_comissao = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("db down"))
+        self.w._alertar_admin = lambda pid, sid, motivo: alertas.append(motivo)
+        try:
+            st, msg = self.w.processar(self._body_valor(ext=tok), "segredo", enviar_fn=self.envfn)
+        finally:
+            self.db.registrar_comissao, self.w._alertar_admin = orig_reg, orig_alert
+        self.assertEqual((st, msg), (200, "ativado"))       # ativação não quebra
+        self.assertEqual(self.db.listar_comissoes(), [])    # comissão não entrou
+        self.assertTrue(any("comissão" in m for m in alertas))  # admin avisado
+
 
 class TestAvisarVenda(unittest.TestCase):
     def test_avisar_venda_monta_email(self):
@@ -121,6 +139,19 @@ class TestAvisarVenda(unittest.TestCase):
             email_send.enviar = orig
         self.assertIn("Dra. Maria", chamado["html"])
         self.assertIn("26.92", chamado["html"])
+
+    def test_avisar_venda_afiliado_sem_comissao_nao_mostra_valor(self):
+        import webhook_asaas, email_send
+        chamado = {}
+        orig = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: chamado.update(html=html)
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "897.30", "x", 1,
+                                        afiliado="Dra. Maria", comissao=None)
+        finally:
+            email_send.enviar = orig
+        self.assertIn("Dra. Maria", chamado["html"])       # afiliado ainda aparece
+        self.assertNotIn("R$ None", chamado["html"])       # mas sem valor de comissão fantasma
 
     def test_avisar_venda_nao_propaga_erro(self):
         import webhook_asaas, email_send

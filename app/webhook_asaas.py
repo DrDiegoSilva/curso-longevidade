@@ -72,9 +72,10 @@ def _avisar_venda(nome, plano, valor, contato, ativos, afiliado=None, comissao=N
         import email_send
         esc = __import__("html").escape
         assunto = f"🎉 Nova venda — {plano} · R$ {valor}"
+        val_com = (f' · comissão <b style="color:#e8efe9">R$ {esc(str(comissao))}</b>'
+                   if comissao is not None else '')   # só mostra o valor se a comissão foi registrada
         linha_af = (f'<p style="margin:6px 0;color:#a9bcb2">Afiliado: '
-                    f'<b style="color:#e8efe9">{esc(afiliado)}</b> · comissão '
-                    f'<b style="color:#e8efe9">R$ {esc(str(comissao))}</b></p>') if afiliado else ""
+                    f'<b style="color:#e8efe9">{esc(afiliado)}</b>{val_com}</p>') if afiliado else ""
         corpo = (
             f'<div style="font-family:Georgia,serif;background:#0e211a;color:#e8efe9;'
             f'padding:28px;border-radius:14px;max-width:520px;margin:0 auto">'
@@ -142,11 +143,14 @@ def _executar(event, pay, pid, enviar_fn):
         if af:
             import pricing
             valor_venda = float(pay.get("value") or 0)
-            valor_comissao = pricing.comissao(valor_venda, af["pct_comissao"])
             try:
-                db.registrar_comissao(af["id"], reg["id"], plano.get("slug", ""), valor_venda, valor_comissao)
+                comissao_calc = pricing.comissao(valor_venda, af["pct_comissao"])
+                db.registrar_comissao(af["id"], reg["id"], plano.get("slug", ""), valor_venda, comissao_calc)
+                valor_comissao = comissao_calc      # só exibe/e-maila a comissão se ela foi de fato registrada
             except Exception as e:
                 print(f"[webhook] registrar_comissao falhou: {e}", flush=True)
+                _alertar_admin(pid, sid, f"venda de afiliado ({af.get('nome') or af.get('codigo')}) paga "
+                                         f"R$ {valor_venda} mas NÃO consegui registrar a comissão — registre manualmente")
             if sid and config.ASAAS_API_KEY and plano.get("base"):
                 try:
                     import asaas
