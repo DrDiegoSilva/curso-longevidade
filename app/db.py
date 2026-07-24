@@ -129,6 +129,7 @@ def init():
                 token TEXT PRIMARY KEY,
                 nome TEXT, email TEXT, cpf TEXT, whatsapp TEXT,
                 plano TEXT, metodo TEXT, parcelas INTEGER, valor REAL,
+                afiliado_codigo TEXT,
                 criado_em TEXT
             );
             CREATE TABLE IF NOT EXISTS webhook_events (
@@ -137,6 +138,16 @@ def init():
             );
             CREATE TABLE IF NOT EXISTS cupons (
                 codigo TEXT PRIMARY KEY, ativo INTEGER DEFAULT 1, descricao TEXT, criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS afiliados (
+                id TEXT PRIMARY KEY, nome TEXT, contato TEXT, codigo TEXT UNIQUE,
+                pct_desconto REAL DEFAULT 10, pct_comissao REAL DEFAULT 3,
+                ativo INTEGER DEFAULT 1, criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS comissoes (
+                id TEXT PRIMARY KEY, afiliado_id TEXT, subscriber_id TEXT, plano TEXT,
+                valor_venda REAL, valor_comissao REAL,
+                pago INTEGER DEFAULT 0, criado_em TEXT, pago_em TEXT
             );
             CREATE TABLE IF NOT EXISTS senha_tokens (
                 token TEXT PRIMARY KEY,
@@ -187,7 +198,8 @@ def init():
 
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
-            "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda"]
+            "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
+            "afiliados", "comissoes"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -214,6 +226,7 @@ def _migrar_colunas():
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
+        _add_coluna(c, "pending_signups", "afiliado_codigo", "TEXT")
 
 
 def _habilitar_rls():
@@ -317,6 +330,35 @@ def consumir_cupom(codigo):
         novos = (r["usos"] or 0) + 1
         ativo = 0 if r["uso_unico"] else 1
         c.execute("UPDATE cupons SET usos=?, ativo=? WHERE codigo=?", (novos, ativo, cod))
+
+
+# ── Afiliados / comissões (D3) ──
+def afiliado_por_codigo(codigo):
+    """Afiliado ATIVO pelo código (case-insensitive). None se não existe ou inativo."""
+    if not codigo:
+        return None
+    with _conn() as c:
+        r = c.execute("SELECT * FROM afiliados WHERE codigo=? AND ativo=1",
+                      ((codigo or "").strip().upper(),)).fetchone()
+    return dict(r) if r else None
+
+
+def criar_afiliado(nome, contato, codigo, pct_desconto=10, pct_comissao=3):
+    """Cadastra um afiliado. Retorna o código (UPPER). ON CONFLICT(codigo) DO NOTHING."""
+    import secrets
+    from datetime import datetime
+    cod = (codigo or "").strip().upper()
+    with _conn() as c:
+        c.execute("INSERT INTO afiliados (id,nome,contato,codigo,pct_desconto,pct_comissao,ativo,criado_em) "
+                  "VALUES (?,?,?,?,?,?,1,?) ON CONFLICT (codigo) DO NOTHING",
+                  (secrets.token_hex(6), (nome or "").strip(), (contato or "").strip(), cod,
+                   float(pct_desconto or 0), float(pct_comissao or 0), datetime.now().isoformat()))
+    return cod
+
+
+def toggle_afiliado(id, ativo):
+    with _conn() as c:
+        c.execute("UPDATE afiliados SET ativo=? WHERE id=?", (1 if ativo else 0, id))
 
 
 # ── Tokens de definição/redefinição de senha ──
