@@ -18,6 +18,24 @@ class TestRender(unittest.TestCase):
         self.assertIn("<!doctype html>", h)
         self.assertIn("melhor preço", h)   # badge do anual (D1)
         self.assertNotIn("20% OFF", h)     # badge antiga removida
+
+    def test_landing_founder_vagas(self):
+        import subscribers
+        orig = subscribers.ativos
+        subscribers.ativos = lambda: []                 # 0 ativos -> founder
+        try:
+            h = self.s.landing()
+            self.assertIn("de 20 vagas", h)             # selo de lançamento
+            self.assertIn("R$ 997", h)
+        finally:
+            subscribers.ativos = orig
+        subscribers.ativos = lambda: [{}] * 20          # 20 ativos -> pós-founder
+        try:
+            h = self.s.landing()
+            self.assertIn("R$ 1.497", h)
+            self.assertNotIn("de 20 vagas", h)
+        finally:
+            subscribers.ativos = orig
         self.assertIn("Quero assinar", h)
         self.assertIn("CRM-PR 54310", h)
         self.assertIn("Obesidade", h)

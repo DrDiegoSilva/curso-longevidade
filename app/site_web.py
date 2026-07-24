@@ -373,14 +373,19 @@ def landing():
     bento = "".join(
         f'<div class="{cls}"><span class="k">{_esc(k)}</span><h3>{_esc(n)}</h3><p>{_esc(d)}</p></div>'
         for k, n, d, cls in valores)
+    import subscribers
+    n_ativos = len(subscribers.ativos())
     planos = "".join(
         f'<a class="plan{" best" if p["slug"] == "anual" else ""}" href="/assinar?plano={_esc(p["slug"])}">'
         + ('<div class="badge">melhor preço</div>' if p["slug"] == "anual" else "")
         + f'<div class="nm">{_esc(p["nome"])}</div>'
-        f'<div class="pr">{_esc(p["preco"]) if p.get("preco") else "sob consulta"}</div>'
+        f'<div class="pr">{_esc(pricing.preco_str_vigente(p, n_ativos)) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
-        + (f'<div class="pn">{_esc(p["nota"])}</div>' if p.get("nota") else "")
+        + (f'<div class="pn">{_esc(pricing.nota_str_vigente(p, n_ativos))}</div>' if pricing.nota_str_vigente(p, n_ativos) else "")
         + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS if not p.get("oculto"))
+    vagas = pricing.vagas_founder(n_ativos)
+    vagas_html = (f'<p class="sub" style="color:var(--gold2);font-weight:700">Preço de lançamento — '
+                  f'restam {vagas} de {config.FOUNDER_LIMITE} vagas</p>' if vagas > 0 else "")
     corpo = f"""
     <div class="wrap">
       <section class="hero">
@@ -423,6 +428,7 @@ def landing():
       <section class="sec" id="planos">
         <h2 class="disp">Planos</h2>
         <p class="sub">Escolha a recorrência que faz sentido. Renova automaticamente até você cancelar.</p>
+        {vagas_html}
         <div class="plans">{planos}</div>
         <div style="margin-top:28px"><a class="btn solid" href="{_cta()}">Quero assinar</a>
         <a class="btn ghost" href="/entrar" style="margin-left:10px">Já sou assinante</a></div>

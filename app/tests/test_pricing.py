@@ -36,6 +36,27 @@ class TestPricing(unittest.TestCase):
         self.assertEqual(self.p.fmt_brl(1008.0), "R$ 1.008,00")
         self.assertEqual(self.p.fmt_brl(1008.5), "R$ 1.008,50")
 
+    def test_preco_vigente_founder_e_pos(self):
+        anual = self.cfg.plano_por_slug("anual")
+        self.assertEqual(self.p.preco_vigente(anual, 0), 997.0)
+        self.assertEqual(self.p.preco_vigente(anual, self.cfg.FOUNDER_LIMITE), 1497.0)
+        mensal = self.cfg.plano_por_slug("mensal")
+        self.assertEqual(self.p.preco_vigente(mensal, 0), 99.0)
+        self.assertEqual(self.p.preco_vigente(mensal, 999), 147.0)
+        tri = self.cfg.plano_por_slug("trimestral")      # sem base_pos -> sempre base
+        self.assertEqual(self.p.preco_vigente(tri, 999), float(tri["base"]))
+
+    def test_vagas_founder(self):
+        lim = self.cfg.FOUNDER_LIMITE
+        self.assertEqual(self.p.vagas_founder(0), lim)
+        self.assertEqual(self.p.vagas_founder(7), lim - 7)
+        self.assertEqual(self.p.vagas_founder(lim + 5), 0)
+
+    def test_preco_str_vigente(self):
+        anual = self.cfg.plano_por_slug("anual")
+        self.assertEqual(self.p.preco_str_vigente(anual, 0), "R$ 997")
+        self.assertEqual(self.p.preco_str_vigente(anual, self.cfg.FOUNDER_LIMITE), "R$ 1.497")
+
 
 if __name__ == "__main__":
     unittest.main()

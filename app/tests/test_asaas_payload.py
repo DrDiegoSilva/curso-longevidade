@@ -60,6 +60,12 @@ class TestPayload(unittest.TestCase):
         p = self.a.montar_checkout(self._plano("mensal"), "PIX", 1, self.dados, "t", "https://artigos.x")
         self.assertEqual(p["callback"]["successUrl"], "https://artigos.x/obrigado")
 
+    def test_montar_checkout_base_override(self):
+        pix = self.a.montar_checkout(self._plano("anual"), "PIX", 1, self.dados, "t", "https://x", base=1497.0)
+        self.assertEqual(pix["items"][0]["value"], 1497.0)
+        card = self.a.montar_checkout(self._plano("anual"), "CARTAO", 12, self.dados, "t", "https://x", base=1497.0)
+        self.assertEqual(card["items"][0]["value"], 1497.0)   # sem juros: cobra a base vigente
+
 
 if __name__ == "__main__":
     unittest.main()

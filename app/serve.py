@@ -647,11 +647,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 print(f"[assinar] boas-vindas cupom falhou: {e}", flush=True)
             return self._redirect("/obrigado")
         # Pagamento via checkout Asaas
-        valor = pricing.valor_cartao(plano["base"], parcelas) if metodo == "CARTAO" else float(plano["base"])
+        n_ativos = len(subscribers.ativos())
+        base_vig = pricing.preco_vigente(plano, n_ativos)
+        valor = pricing.valor_cartao(base_vig, parcelas) if metodo == "CARTAO" else base_vig
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
                                   "parcelas": parcelas, "valor": valor})
         try:
-            payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL)
+            payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_vig)
             res = asaas.criar_checkout(payload)
             if not res.get("url"):
                 raise RuntimeError("checkout sem url")

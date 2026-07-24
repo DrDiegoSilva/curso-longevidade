@@ -24,7 +24,7 @@ def _hoje():
 _DESC_ITEM = "Resumos científicos diários selecionados para médicos."
 
 
-def montar_checkout(plano, metodo, parcelas, dados, token, base_url):
+def montar_checkout(plano, metodo, parcelas, dados, token, base_url, base=None):
     """Corpo do POST /checkouts (puro). Regras REAIS do Asaas:
     - CARTÃO → RECURRENT (renova no ciclo; parcelável) — único método que recorre.
     - PIX → DETACHED (à vista, não renova; exige chave Pix na conta).
@@ -33,7 +33,7 @@ def montar_checkout(plano, metodo, parcelas, dados, token, base_url):
     """
     metodo = "CARTAO" if (metodo or "").upper() == "CARTAO" else "PIX"
     parcelas = max(1, int(parcelas or 1))
-    base = float(plano["base"])
+    base = float(plano["base"]) if base is None else float(base)
     item_nome = f"Assinatura {plano['nome']}"[:30]        # Asaas: name <= 30 chars
     p = {"externalReference": token,
          "callback": {"successUrl": f"{base_url}/obrigado", "cancelUrl": f"{base_url}/assinar"}}

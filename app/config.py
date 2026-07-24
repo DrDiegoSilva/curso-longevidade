@@ -57,15 +57,19 @@ SEND_DELAY_SEC = float(os.environ.get("DSCURSO_SEND_DELAY_SEC") or "4.0")
 def cta_url():
     return os.environ.get("DSCURSO_CTA_URL") or "/assinar"
 
+# Founder pricing (D2): enquanto houver < FOUNDER_LIMITE assinantes ATIVOS, valem os preços
+# de lançamento (base/preco); a partir do limite, os pós-founder (base_pos/preco_pos). Env-ajustável.
+FOUNDER_LIMITE = int(os.environ.get("DSCURSO_FOUNDER_LIMITE") or 20)
+
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [
-    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": ""},
+    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147"},
     # Trimestral/Semestral OCULTOS da venda (decisão do Diego 2026-07-20: só Mensal e Anual).
     # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
     {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},
     {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês", "oculto": True},
-    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 997.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 997", "nota": "≈ R$ 83/mês · em até 12x sem juros"},
+    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 997.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 997", "nota": "≈ R$ 83/mês · em até 12x sem juros", "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
     # Plano de TESTE (R$5) — OCULTO da landing; só via link direto /assinar?plano=teste. Pagar por Pix (à vista).
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
 ]
