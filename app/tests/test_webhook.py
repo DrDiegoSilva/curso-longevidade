@@ -71,6 +71,29 @@ class TestProcessar(unittest.TestCase):
         self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p3", sub="sub_9"), "segredo", enviar_fn=self.envfn)
         self.assertEqual(self.s.por_subscription("sub_9")["status"], "ATIVO")
 
+    def _body_valor(self, event="PAYMENT_CONFIRMED", ext="tok", pid="pay_af", value=897.30, sub=None):
+        return {"event": event, "payment": {"id": pid, "externalReference": ext, "value": value,
+                "customer": "cus_af", "subscription": sub, "dueDate": "2026-07-19"}}
+
+    def test_ativar_com_afiliado_registra_comissao(self):
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria", 10, 3)
+        tok = self.db.criar_pending({"nome": "Dr. Novo", "whatsapp": "5543999991111",
+                                     "email": "n@x.com", "plano": "anual", "metodo": "PIX",
+                                     "afiliado_codigo": "DRAMARIA", "valor": 897.30})
+        st, msg = self.w.processar(self._body_valor(ext=tok), "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        comis = self.db.listar_comissoes()
+        self.assertEqual(len(comis), 1)
+        self.assertAlmostEqual(comis[0]["valor_venda"], 897.30, places=2)
+        self.assertAlmostEqual(comis[0]["valor_comissao"], 26.92, places=2)  # 3% de 897.30
+
+    def test_renovar_nao_registra_comissao(self):
+        reg = self.s.criar_de_pagamento({"nome": "B", "whatsapp": "5543", "plano": "mensal"},
+                                         {"subscription": "sub_af"})
+        self.w.processar(self._body_valor(event="PAYMENT_RECEIVED", pid="pr1", sub="sub_af"),
+                         "segredo", enviar_fn=self.envfn)
+        self.assertEqual(self.db.listar_comissoes(), [])
+
 
 class TestAvisarVenda(unittest.TestCase):
     def test_avisar_venda_monta_email(self):

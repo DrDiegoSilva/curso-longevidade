@@ -66,12 +66,15 @@ def _alertar_admin(pid, sid, motivo):
         print(f"[webhook] alerta admin falhou: {e}", flush=True)
 
 
-def _avisar_venda(nome, plano, valor, contato, ativos):
+def _avisar_venda(nome, plano, valor, contato, ativos, afiliado=None, comissao=None):
     """E-mail instantâneo ao admin quando uma venda ativa. Nunca pode quebrar a ativação."""
     try:
         import email_send
         esc = __import__("html").escape
         assunto = f"🎉 Nova venda — {plano} · R$ {valor}"
+        linha_af = (f'<p style="margin:6px 0;color:#a9bcb2">Afiliado: '
+                    f'<b style="color:#e8efe9">{esc(afiliado)}</b> · comissão '
+                    f'<b style="color:#e8efe9">R$ {esc(str(comissao))}</b></p>') if afiliado else ""
         corpo = (
             f'<div style="font-family:Georgia,serif;background:#0e211a;color:#e8efe9;'
             f'padding:28px;border-radius:14px;max-width:520px;margin:0 auto">'
@@ -80,6 +83,7 @@ def _avisar_venda(nome, plano, valor, contato, ativos):
             f'<p style="margin:6px 0;color:#a9bcb2">Plano: <b style="color:#e8efe9">{esc(plano or "—")}</b> · '
             f'Valor: <b style="color:#e8efe9">R$ {esc(str(valor))}</b></p>'
             f'<p style="margin:6px 0;color:#a9bcb2">Contato: {esc(contato or "—")}</p>'
+            f'{linha_af}'
             f'<p style="margin:16px 0 0;color:#e7c766">Agora você tem <b>{ativos}</b> assinantes ativos.</p>'
             f'</div>')
         email_send.enviar(config.ADMIN_EMAIL, assunto, corpo)
@@ -122,13 +126,33 @@ def _executar(event, pay, pid, enviar_fn):
         prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
         nome = cust.get("name") or (pending or {}).get("nome", "")
         email = cust.get("email") or (pending or {}).get("email", "")
-        subscribers.criar_de_pagamento(
+        reg = subscribers.criar_de_pagamento(
             {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", "")},
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
         _boas_vindas(whatsapp, nome, email, enviar_fn)
+        # Afiliado (D3): comissão sobre o valor pago; no cartão, reseta a renovação ao preço cheio.
+        af = db.afiliado_por_codigo((pending or {}).get("afiliado_codigo") or "")
+        if af:
+            import pricing
+            valor_venda = float(pay.get("value") or 0)
+            try:
+                db.registrar_comissao(af["id"], reg["id"], plano.get("slug", ""),
+                                      valor_venda, pricing.comissao(valor_venda, af["pct_comissao"]))
+            except Exception as e:
+                print(f"[webhook] registrar_comissao falhou: {e}", flush=True)
+            if sid and config.ASAAS_API_KEY and plano.get("base"):
+                try:
+                    import asaas
+                    cheio = pricing.preco_vigente(plano, len(subscribers.ativos()))
+                    asaas.atualizar_valor_assinatura(sid, cheio)
+                except Exception as e:
+                    print(f"[webhook] reset valor assinatura falhou: {e}", flush=True)
+                    _alertar_admin(pid, sid, "não consegui resetar o valor da assinatura pós-desconto de afiliado — ajuste manual")
         try:
             _avisar_venda(nome, (plano.get("nome") or plano.get("slug") or "—"),
-                          pay.get("value"), email or whatsapp, len(subscribers.ativos()))
+                          pay.get("value"), email or whatsapp, len(subscribers.ativos()),
+                          afiliado=(af["nome"] if af else None),
+                          comissao=(pricing.comissao(float(pay.get("value") or 0), af["pct_comissao"]) if af else None))
         except Exception as e:
             print(f"[webhook] _avisar_venda: {e}", flush=True)
         return (200, "ativado")
