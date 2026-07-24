@@ -87,6 +87,16 @@ Aplicar no `site_web.py`, com CSS novo no bloco de estilo (`site_web.py:33+`):
 - **C3:** `_avisar_venda` monta assunto/corpo certos (mock `email_send.enviar`); chamado no path "ativado" (mock); exceção no e-mail não quebra `_executar`.
 - **C-UI:** `pagina_curadoria` gera cartões e chips (classe `hi/md/lo` conforme o score); `pagina_minha` gera os botões-card incluindo Agenda.
 
+## C5 — Horário de envio escolhido pelo assinante (+ limite por slot) [design a confirmar]
+
+Adicionado a pedido do Diego (2026-07-23). Objetivo: cada assinante escolhe **em que horário** recebe o resumo; envios espalhados reduzem o *burst* (menos risco de ban no WhatsApp) e melhoram a UX. Ver [[curso-longevidade-backlog]] item 2.
+
+- Preferência "horário de envio" no `/meus-dados` (e no cadastro): o assinante escolhe um **slot** (faixa de horário).
+- **Limite por slot:** cada slot tem capacidade máx N; slot cheio **não aparece** como opção → auto-balanceio (empurra o novo assinante pra outro horário, tipo agenda de consulta).
+- O **sender diário** passa a **escalonar por slot** (hoje é um disparo único ~8h), processando cada slot no seu horário e mantendo o `SEND_DELAY_SEC` entre mensagens.
+
+**Decisões abertas (confirmar antes de virar tarefa):** (a) granularidade e janela dos slots (ex.: 30 ou 60 min, das 7h às 21h?); (b) N por slot; (c) como o sender roda por faixa (cron por slot vs. loop que dorme entre slots — hoje há um agendador único às 8h em `serve.py`); (d) horário default de quem não escolher. Vira **Task 9** após essas decisões — não implemento sem elas.
+
 ## Fora de escopo / futuro
 
 - Trocar a senha (login por senha) — separado, se um dia existir.

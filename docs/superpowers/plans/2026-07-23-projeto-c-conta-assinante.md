@@ -604,7 +604,7 @@ Helpers reais confirmados no `serve.py`: `self._sessao()` (resolve a sessão →
             if acao == "confirmar_troca":
                 if not self._rate_ok("otp", 5, 600):
                     return
-                st = auth_web.confirmar_troca_numero(sub["id"], sess["whatsapp"], g("novo_numero"), g("codigo"))
+                st = auth_web.confirmar_troca_numero(sub["id"], g("novo_numero"), g("codigo"))
                 if st == "ok":
                     return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Número atualizado."), 200)
                 erros = {"codigo_errado": "Código errado.", "expirado": "Código expirado, tente de novo.",
@@ -624,6 +624,82 @@ Helpers reais confirmados no `serve.py`: `self._sessao()` (resolve a sessão →
 
 ---
 
+### Task 8: Dupla confirmação ao remover assinante
+
+**Files:**
+- Modify: `app/site_web.py` — `pagina_admin` (`:618`)
+- Modify: `app/serve.py` — POST `/admin` (`:330-349`), GET `/admin` (`:143-151`)
+- Test: `app/tests/test_site_web.py`
+
+**Interfaces:**
+- Produces: `pagina_admin(assinantes, token="", cupons=None, confirmar_id=None)`. Fluxo em **dois passos no servidor**: o botão "remover" da linha (POST `acao=remover`) **não apaga mais** — leva a um estado de confirmação que **nomeia o assinante**; só o botão "Confirmar remoção" do banner (POST `acao=remover_confirmar`) chama `subscribers.remover`.
+
+- [ ] **Passo 1: teste que falha** — em `test_site_web.py`:
+
+```python
+def test_admin_dupla_confirmacao_remover(self):
+    assin = [{"id": "abc", "nome": "Fulano", "whatsapp": "5543999990000", "status": "ATIVO"}]
+    normal = self.s.pagina_admin(assin, token="tk")
+    self.assertNotIn("remover_confirmar", normal)         # sem confirmar_id: nada apaga direto
+    self.assertIn('name="acao" value="remover"', normal)  # botão da linha = pedir confirmação
+    conf = self.s.pagina_admin(assin, token="tk", confirmar_id="abc")
+    self.assertIn("remover_confirmar", conf)              # banner de confirmação
+    self.assertIn("Fulano", conf)                          # nomeia quem será removido
+    self.assertIn("Cancelar", conf)
+```
+
+(Use o mesmo acesso ao módulo `site_web` que os testes vizinhos do arquivo já usam — `self.s` ou `import site_web`.)
+
+- [ ] **Passo 2: rodar e ver falhar** — `cd app && python3 -m unittest tests.test_site_web -v` → FAIL
+
+- [ ] **Passo 3a: `pagina_admin`** — adicionar `confirmar_id=None` à assinatura e montar o banner (o botão "remover" da linha permanece com `acao=remover`):
+
+```python
+def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
+    ...
+    tk = _esc(token)
+    alvo = next((s for s in assinantes if str(s.get("id")) == str(confirmar_id)), None) if confirmar_id else None
+    confirm_html = ""
+    if alvo:
+        confirm_html = (
+            '<div class="infobox" style="border-color:#c0562f66;background:#c0562f18;margin:14px 0">'
+            f'<strong>Remover {_esc(alvo.get("nome") or alvo.get("whatsapp") or "este assinante")}?</strong> '
+            f'Esta ação é permanente e apaga o cadastro ({_esc(alvo.get("whatsapp") or "—")}).'
+            '<div style="display:flex;gap:10px;margin-top:12px">'
+            '<form method="post" action="/admin" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover_confirmar">'
+            f'<input type="hidden" name="id" value="{_esc(alvo.get("id"))}">'
+            '<button class="actbtn" style="background:#c0562f;color:#fff;padding:8px 16px">Confirmar remoção</button></form>'
+            f'<a class="actbtn ghost" href="/admin?token={tk}" style="padding:8px 16px;text-decoration:none">Cancelar</a>'
+            '</div></div>')
+```
+
+Inserir `{confirm_html}` no `corpo`, logo após a `<p class="hint">…</p>` do cabeçalho (antes da tabela).
+
+- [ ] **Passo 3b: GET `/admin`** (`serve.py:151`) — passar o id pendente:
+
+```python
+            return self._html(site_web.pagina_admin(
+                subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons(),
+                confirmar_id=q.get("confirmar", [""])[0] or None), 200)
+```
+
+- [ ] **Passo 3c: POST `/admin`** (`serve.py:339-340`) — `remover` vira "pedir confirmação"; delete real em `remover_confirmar`:
+
+```python
+            elif acao == "remover":
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&confirmar={g('id')}" if token_ok else "/admin")
+            elif acao == "remover_confirmar":
+                subscribers.remover(g("id"))
+```
+
+(O `remover` agora faz `return` cedo com o redirect de confirmação; o `remover_confirmar` apaga e cai no redirect final normal `serve.py:349`.)
+
+- [ ] **Passo 4: rodar e ver passar** — `cd app && python3 -m unittest tests.test_site_web -v` → PASS. Conferir `python3 -c "import serve"` OK e revisar o diff do `serve.py` contra os handlers vizinhos.
+- [ ] **Passo 5: commit** — `git add app/site_web.py app/serve.py app/tests/test_site_web.py && git commit -m "feat(admin): dupla confirmação (2 passos) ao remover assinante"`
+
+---
+
 ## Ordem e verificação final
 
-Ordem: 1 → 2 → 3 → 4 → 5 → 6 → 7 (dados/auth/webhook antes da UI e do wiring). Ao fim: `cd app && python -m pytest -q` (tudo verde) e revisão de branch inteira. Deploy só depois da revisão final (nada vai pro ar antes).
+Ordem: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 (dados/auth/webhook antes da UI e do wiring; a dupla-confirmação por último). Ao fim: `cd app && python3 -m unittest discover -s tests` (tudo verde) e revisão de branch inteira. Deploy só depois da revisão final (nada vai pro ar antes).
