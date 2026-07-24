@@ -140,6 +140,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             inf = evolution_admin.info()
             conn = evolution_admin.conectar() if inf.get("estado") != "open" else None
             return self._html(site_web.pagina_whatsapp(inf, conn, config.ADMIN_TOKEN or ""), 200)
+        if path == "/admin/reenviar-pdf":
+            import config, auth_web, daily, db
+            q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            try:
+                r = daily.reenviar_pdf_do_dia(q.get("data", [None])[0])
+                icone = "✅" if r.get("ok") else "⚠️"
+                return self._html(f"<h3>{icone} {r.get('msg','')}</h3>"
+                                  f"<p><a href='/admin?token={config.ADMIN_TOKEN or ''}'>← voltar ao painel</a></p>", 200)
+            except Exception as e:
+                return self._html(f"<h3>⚠️ Erro no reenvio do PDF: {e}</h3>"
+                                  f"<p><a href='/admin?token={config.ADMIN_TOKEN or ''}'>← voltar</a></p>", 500)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)

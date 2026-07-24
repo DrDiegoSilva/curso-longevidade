@@ -43,6 +43,12 @@ class TestPreparaPdfFalha(unittest.TestCase):
         m_cur.assert_called_once()                       # curador AINDA foi avisado
         self.assertEqual(r["review_token"], "tok")
 
+    def test_reenviar_pdf_sem_digest(self):
+        daily = self.daily
+        with mock.patch("db.digest_do_dia", return_value=None):
+            r = daily.reenviar_pdf_do_dia("2000-01-01")
+        self.assertFalse(r["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

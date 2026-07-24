@@ -247,6 +247,42 @@ def _preparar_da_reserva(reserva_id=None):
     return r
 
 
+def reenviar_pdf_do_dia(data=None):
+    """Regenera o PDF do digest ENVIADO em `data` (hoje por padrão) e manda a TODOS
+    os assinantes ativos. Uso pontual: recuperar um dia que saiu sem PDF."""
+    import db, phone, time
+    hoje = data or datetime.now().strftime("%Y-%m-%d")
+    dg = db.digest_do_dia(hoje)
+    if not dg:
+        return {"ok": False, "msg": f"Sem digest registrado em {hoje}."}
+    try:
+        grafico = json.loads(dg.get("grafico") or "null")
+    except Exception:
+        grafico = None
+    art = {"tema": dg.get("tema", ""), "titulo": dg.get("titulo_pt", ""),
+           "fonte": dg.get("fonte", ""), "doi": dg.get("doi", ""),
+           "url": dg.get("url", ""), "data": hoje}
+    conteudo = {"titulo_pt": dg.get("titulo_pt", ""), "resumo": dg.get("resumo", ""),
+                "gancho": dg.get("gancho", ""), "grafico": grafico}
+    tmeta = _tema_meta(dg.get("tema", ""))
+    os.makedirs(config.drafts_dir(), exist_ok=True)
+    master_pdf = os.path.join(config.drafts_dir(), f"{hoje}-master-reenvio.pdf")
+    pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo, tmeta), master_pdf)   # retry cuida do crash
+    ativos = subscribers.ativos()
+    ok = 0
+    for s in ativos:
+        w = phone.normalizar(s.get("whatsapp", ""))
+        if not w:
+            continue
+        try:
+            deliver.enviar_pdf(w, master_pdf, caption=dg.get("titulo_pt", ""))
+            ok += 1
+            time.sleep(config.SEND_DELAY_SEC)
+        except Exception as e:
+            print(f"[reenvio] PDF p/ {w} falhou: {e}", flush=True)
+    return {"ok": True, "msg": f"PDF de {hoje} ({dg.get('tema','')}) reenviado a {ok}/{len(ativos)} assinantes."}
+
+
 def _preparar_de_artigo(art):
     """Gera conteúdo de um artigo cru (fila/fresco) e monta o rascunho de amanhã."""
     amanha = datetime.now() + timedelta(days=1)
