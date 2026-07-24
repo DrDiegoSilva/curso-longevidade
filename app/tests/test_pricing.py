@@ -57,6 +57,17 @@ class TestPricing(unittest.TestCase):
         self.assertEqual(self.p.preco_str_vigente(anual, 0), "R$ 997")
         self.assertEqual(self.p.preco_str_vigente(anual, self.cfg.FOUNDER_LIMITE), "R$ 1.497")
 
+    def test_valor_com_desconto(self):
+        self.assertEqual(self.p.valor_com_desconto(997.0, 10), 897.30)
+        self.assertEqual(self.p.valor_com_desconto(99.0, 10), 89.10)
+        self.assertEqual(self.p.valor_com_desconto(1497.0, 10), 1347.30)
+        self.assertEqual(self.p.valor_com_desconto(100.0, 0), 100.0)   # 0% = base
+
+    def test_comissao(self):
+        self.assertEqual(self.p.comissao(897.30, 3), 26.92)
+        self.assertEqual(self.p.comissao(89.10, 3), 2.67)
+        self.assertEqual(self.p.comissao(1000.0, 0), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

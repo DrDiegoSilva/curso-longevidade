@@ -53,3 +53,13 @@ def fmt_brl(v):
     s = f"{float(v):,.2f}"                      # 1,008.00 (estilo US)
     s = s.replace(",", "§").replace(".", ",").replace("§", ".")  # -> 1.008,00
     return f"R$ {s}"
+
+
+def valor_com_desconto(base, pct):
+    """Aplica pct% de desconto sobre a base. valor_com_desconto(997, 10) -> 897.30"""
+    return round(float(base) * (1 - float(pct) / 100.0), 2)
+
+
+def comissao(valor_venda, pct):
+    """pct% de comissão sobre o valor pago. comissao(897.30, 3) -> 26.92"""
+    return round(float(valor_venda) * float(pct) / 100.0, 2)
