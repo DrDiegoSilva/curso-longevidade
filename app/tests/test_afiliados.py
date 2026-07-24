@@ -55,6 +55,15 @@ class TestAfiliadosDb(unittest.TestCase):
         self.assertAlmostEqual(linha["comissao_total"], 29.59, places=2)
         self.assertAlmostEqual(linha["comissao_pendente"], 2.67, places=2)   # c1 já paga
 
+    def test_pending_guarda_afiliado_codigo(self):
+        tok = self.db.criar_pending({"nome": "X", "whatsapp": "5543", "plano": "anual",
+                                     "afiliado_codigo": "DRAMARIA", "valor": 897.30})
+        p = self.db.obter_pending(tok)
+        self.assertEqual(p["afiliado_codigo"], "DRAMARIA")
+        # sem o campo -> continua funcionando (default vazio)
+        tok2 = self.db.criar_pending({"nome": "Y", "whatsapp": "5544", "plano": "mensal"})
+        self.assertIn(self.db.obter_pending(tok2)["afiliado_codigo"], (None, ""))
+
 
 if __name__ == "__main__":
     unittest.main()
