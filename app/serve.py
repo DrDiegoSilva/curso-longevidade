@@ -30,12 +30,29 @@ def proximo_disparo(now, horarios):
 
 
 def agendador():
-    """Dois disparos diários (fuso TZ): 18h prepara+avisa o curador; 08h envia à lista."""
-    import daily
-    tarefas = {"preparar": daily.preparar_18h, "enviar": daily.rotina_08h}
+    """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
+    08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
+    import daily, config
+    def _prep_e_18h():
+        daily.preparar_18h()
+        daily.enviar_slot("18h")
+    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h}
+    for s in config.SLOTS:
+        if s not in ("08h", "18h"):
+            tarefas[f"slot:{s}"] = (lambda sl=s: daily.enviar_slot(sl))
+    # (hora, nome) — 08h e 18h têm tarefas especiais; os demais slots enviam direto.
+    horarios = []
+    for s in config.SLOTS:
+        h = config.SLOT_HORA[s]
+        if s == "08h":
+            horarios.append((h, "rotina08"))
+        elif s == "18h":
+            horarios.append((h, "prep18"))
+        else:
+            horarios.append((h, f"slot:{s}"))
     while True:
         now = _now().replace(tzinfo=None)
-        alvo, nome = proximo_disparo(now, [(8, "enviar"), (18, "preparar")])
+        alvo, nome = proximo_disparo(now, horarios)
         espera = max(60, (alvo - now).total_seconds())
         print(f"[agendador] próximo: {nome} {alvo:%Y-%m-%d %H:%M} (em {int(espera)}s)", flush=True)
         time.sleep(espera)
