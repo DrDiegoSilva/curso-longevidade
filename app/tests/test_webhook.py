@@ -109,6 +109,19 @@ class TestAvisarVenda(unittest.TestCase):
         self.assertIn("Fulano", chamado["html"])
         self.assertIn("37", chamado["html"])
 
+    def test_avisar_venda_com_afiliado_mostra_comissao(self):
+        import webhook_asaas, email_send
+        chamado = {}
+        orig = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: chamado.update(to=to, assunto=assunto, html=html)
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "960", "f@x.com", 37,
+                                        afiliado="Dra. Maria", comissao=26.92)
+        finally:
+            email_send.enviar = orig
+        self.assertIn("Dra. Maria", chamado["html"])
+        self.assertIn("26.92", chamado["html"])
+
     def test_avisar_venda_nao_propaga_erro(self):
         import webhook_asaas, email_send
         orig = email_send.enviar

@@ -131,13 +131,20 @@ def _executar(event, pay, pid, enviar_fn):
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
         _boas_vindas(whatsapp, nome, email, enviar_fn)
         # Afiliado (D3): comissão sobre o valor pago; no cartão, reseta a renovação ao preço cheio.
-        af = db.afiliado_por_codigo((pending or {}).get("afiliado_codigo") or "")
+        # A busca do afiliado é protegida: uma falha transitória aqui NÃO pode derrubar a
+        # ativação (o chamador desfaria a idempotência -> Asaas re-tenta -> duplicaria o assinante).
+        try:
+            af = db.afiliado_por_codigo((pending or {}).get("afiliado_codigo") or "")
+        except Exception as e:
+            print(f"[webhook] afiliado_por_codigo falhou: {e}", flush=True)
+            af = None
+        valor_comissao = None
         if af:
             import pricing
             valor_venda = float(pay.get("value") or 0)
+            valor_comissao = pricing.comissao(valor_venda, af["pct_comissao"])
             try:
-                db.registrar_comissao(af["id"], reg["id"], plano.get("slug", ""),
-                                      valor_venda, pricing.comissao(valor_venda, af["pct_comissao"]))
+                db.registrar_comissao(af["id"], reg["id"], plano.get("slug", ""), valor_venda, valor_comissao)
             except Exception as e:
                 print(f"[webhook] registrar_comissao falhou: {e}", flush=True)
             if sid and config.ASAAS_API_KEY and plano.get("base"):
@@ -151,8 +158,7 @@ def _executar(event, pay, pid, enviar_fn):
         try:
             _avisar_venda(nome, (plano.get("nome") or plano.get("slug") or "—"),
                           pay.get("value"), email or whatsapp, len(subscribers.ativos()),
-                          afiliado=(af["nome"] if af else None),
-                          comissao=(pricing.comissao(float(pay.get("value") or 0), af["pct_comissao"]) if af else None))
+                          afiliado=(af["nome"] if af else None), comissao=valor_comissao)
         except Exception as e:
             print(f"[webhook] _avisar_venda: {e}", flush=True)
         return (200, "ativado")
