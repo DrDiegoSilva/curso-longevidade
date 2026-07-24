@@ -86,6 +86,19 @@ class TestRender(unittest.TestCase):
         self.assertIn("Disallow: /artigos", self.s.robots_txt())
         self.assertIn("Disallow: /assinar", self.s.robots_txt())
 
+    def test_minha_enxuta_e_cards(self):
+        html = self.s.pagina_minha({"nome": "Diego"}, admin=True)
+        self.assertNotIn("Ir para o arquivo", html)     # não duplica o topo
+        self.assertNotIn("Sair desta conta", html)
+        self.assertIn("Meus dados", html)               # novo caminho
+        self.assertIn("curbtn", html)                   # painel em botões-card
+        self.assertIn("Agenda", html)                   # atalho novo incluído
+        self.assertNotIn("Cancelar assinatura", html)   # cancelar saiu daqui
+
+    def test_topbar_omite_minha_conta_na_propria(self):
+        self.assertNotIn(">Minha conta<", self.s._topbar(True, atual="/minha"))
+        self.assertIn(">Minha conta<", self.s._topbar(True, atual="/artigos"))
+
 
 if __name__ == "__main__":
     unittest.main()

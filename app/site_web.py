@@ -149,6 +149,16 @@ label{display:block;font-family:system-ui,sans-serif;font-size:12px;letter-spaci
 input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;
   color:var(--creme);font-size:20px;font-family:Georgia,serif;padding:14px 16px;margin-bottom:18px;letter-spacing:.04em}
 .infobox{background:rgba(201,162,39,.12);border:1px solid rgba(201,162,39,.4);color:var(--creme);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
+.curgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 4px}
+.curbtn{display:flex;gap:12px;align-items:flex-start;text-decoration:none;background:rgba(201,162,39,.06);
+  border:1px solid rgba(201,162,39,.28);border-radius:14px;padding:14px 15px;color:var(--creme);
+  transition:transform .14s,border-color .14s,background .14s}
+.curbtn:hover{transform:translateY(-2px);border-color:rgba(201,162,39,.65);background:rgba(201,162,39,.12)}
+.curbtn:focus-visible{outline:2px solid var(--ouro2);outline-offset:2px}
+.curbtn .ic{font-size:20px;line-height:1.1;flex:none}
+.curbtn .nm{font-family:system-ui,sans-serif;font-size:14.5px;font-weight:700;color:var(--creme);display:block;margin-bottom:2px}
+.curbtn .ds{font-family:system-ui,sans-serif;font-size:12px;color:var(--suave);line-height:1.4;display:block}
+@media(max-width:520px){.curgrid{grid-template-columns:1fr}}
 .candi{display:flex;gap:14px;align-items:flex-start;background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:.15s}
 .candi:hover{border-color:rgba(201,162,39,.55);background:rgba(255,255,255,.06)}
 .candi input[type=checkbox]{margin-top:4px;width:20px;height:20px;flex:none;accent-color:var(--ouro);cursor:pointer}
@@ -294,9 +304,9 @@ def _cta():
     return _esc(config.cta_url())
 
 
-def _topbar(logado=False):
-    direita = ('<a class="plain" href="/artigos">Arquivo</a>'
-               '<a class="plain" href="/minha">Minha conta</a>'
+def _topbar(logado=False, atual=""):
+    minha = '' if atual == "/minha" else '<a class="plain" href="/minha">Minha conta</a>'
+    direita = ('<a class="plain" href="/artigos">Arquivo</a>' + minha +
                '<a class="pill" href="/sair">Sair</a>'
                if logado else
                '<a class="plain" href="/#planos">Planos</a>'
@@ -315,12 +325,12 @@ def _foot():
             f'</div></div>')
 
 
-def _pagina(titulo, corpo, logado=False, meta_extra=""):
+def _pagina(titulo, corpo, logado=False, meta_extra="", atual=""):
     return (f'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
             f'<link rel="icon" type="image/svg+xml" href="/favicon.svg">'
             f'<title>{_esc(titulo)}</title>{meta_extra}{_FONTS}<style>{_CSS}</style></head><body>'
-            f'{_topbar(logado)}{corpo}{_foot()}</body></html>')
+            f'{_topbar(logado, atual)}{corpo}{_foot()}</body></html>')
 
 
 # ── Landing (pública) ──
@@ -537,7 +547,6 @@ def _admin_nav(token="", atual=""):
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
             + lk("/agenda", "📅 Agenda", "agenda")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
-            + '<a class="actbtn ghost" href="/minha" style="text-decoration:none;padding:8px 15px;font-size:13px">← Minha conta</a>'
             + '</div>')
 
 
@@ -1026,20 +1035,26 @@ def pagina_digest(meta, d, vizinhos=None):
 
 
 def pagina_minha(sub, admin=False):
-    admin_html = ('<div class="infobox" style="margin:16px 0"><strong>Painel do curador</strong><br>'
-                  '<a href="/curadoria" style="color:var(--ouro2)">🔬 Curadoria / Reserva</a> &nbsp;·&nbsp; '
-                  '<a href="/admin" style="color:var(--ouro2)">👥 Assinantes</a> &nbsp;·&nbsp; '
-                  '<a href="/admin/whatsapp" style="color:var(--ouro2)">📱 WhatsApp</a></div>') if admin else ""
+    def card(href, ic, nm, ds):
+        return (f'<a class="curbtn" href="{href}"><span class="ic">{ic}</span>'
+                f'<span><span class="nm">{nm}</span><span class="ds">{ds}</span></span></a>')
+    admin_html = ('<p class="plabel" style="margin-top:18px;font-family:system-ui,sans-serif;'
+                  'font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ouro2)">Painel do curador</p>'
+                  '<div class="curgrid">'
+                  + card("/curadoria", "🔬", "Curadoria &amp; Estoque", "Varredura, seleção e fila de resumos")
+                  + card("/agenda", "📅", "Agenda de envios", "O que sai cada dia da semana")
+                  + card("/admin", "👥", "Assinantes", "Quem recebe e status das contas")
+                  + card("/admin/whatsapp", "📱", "WhatsApp", "Conexão e envio das mensagens")
+                  + '</div>') if admin else ""
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Minha assinatura</h2>
       <p class="hint">Olá, {_esc(sub.get("nome") or "assinante")}. Sua assinatura está ativa.</p>
       {admin_html}
-      <p style="margin:18px 0"><a class="cta ghost" href="/artigos">Ir para o arquivo</a></p>
-      <p class="hint" style="margin-top:20px"><a href="/sair" style="color:var(--suave)">Sair desta conta</a>
-       &nbsp;·&nbsp; <a href="/cancelar" style="color:var(--suave)">Cancelar assinatura</a></p>
+      <p style="margin:22px 0 0"><a class="cta ghost" href="/meus-dados">Meus dados</a></p>
     </div></div>"""
-    return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+    return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, atual="/minha",
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_cancelar(erro=""):
