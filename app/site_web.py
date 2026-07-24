@@ -1293,7 +1293,7 @@ def pagina_obrigado():
 
 def robots_txt():
     return ("User-agent: *\nAllow: /$\nAllow: /\nDisallow: /artigos\nDisallow: /entrar\n"
-            "Disallow: /minha\nDisallow: /assinar\nDisallow: /obrigado\nDisallow: /admin\n"
+            "Disallow: /minha\nDisallow: /meus-dados\nDisallow: /assinar\nDisallow: /obrigado\nDisallow: /admin\n"
             "Disallow: /revisar\nDisallow: /pdf\n")
 
 

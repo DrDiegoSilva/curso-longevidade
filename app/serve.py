@@ -246,6 +246,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not self._sessao():
                 return self._redirect("/entrar")
             return self._html(site_web.pagina_cancelar())
+        if path == "/meus-dados":
+            sub = self._sub_logado()
+            if not sub:
+                return self._redirect("/entrar")
+            return self._html(site_web.pagina_meus_dados(sub))
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             sub = self._sessao()
@@ -449,6 +454,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._cancelar_motivo(g)
         if path == "/cancelar/confirmar":
             return self._cancelar_confirmar(g)
+        if path == "/meus-dados":
+            import site_web, subscribers, auth_web
+            sub = self._sub_logado()
+            if not sub:
+                return self._redirect("/entrar")
+            acao = g("acao")
+            if acao == "salvar_contato":
+                subscribers.atualizar_contato(sub["id"], g("nome"), g("email"))
+                return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Dados salvos."), 200)
+            if acao == "iniciar_troca":
+                if not self._rate_ok("otp", 5, 600):
+                    return
+                r = auth_web.iniciar_troca_numero(sub["id"], g("novo_numero"))
+                if r == "enviado":
+                    return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo", novo_num=g("novo_numero")), 200)
+                msg = "Número inválido." if r == "invalido" else "Esse número já é de outro assinante."
+                return self._html(site_web.pagina_meus_dados(sub, msg=msg), 200)
+            if acao == "confirmar_troca":
+                if not self._rate_ok("otp", 5, 600):
+                    return
+                st = auth_web.confirmar_troca_numero(sub["id"], g("novo_numero"), g("codigo"))
+                if st == "ok":
+                    return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Número atualizado."), 200)
+                erros = {"codigo_errado": "Código errado.", "expirado": "Código expirado, tente de novo.",
+                         "bloqueado": "Muitas tentativas, peça um novo código."}
+                return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo",
+                                  novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
+            return self._redirect("/meus-dados")
         return self._html("<h3>rota inválida</h3>", 404)
 
     def _sub_logado(self):
