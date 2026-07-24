@@ -166,6 +166,23 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .ctitle{font-family:"Cormorant Garamond",Georgia,serif;font-size:19px;color:var(--creme);line-height:1.22}
 .cperg{font-family:system-ui,sans-serif;font-size:14px;color:var(--ouro2)}
 .cmeta{font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--suave)}
+.statgroup{margin:0 0 16px}
+.statgroup .gh{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;color:var(--creme);margin:0 0 3px}
+.statgroup .gsub{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave);margin:0 0 10px}
+.statcards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.statcard{background:rgba(255,255,255,.035);border:1px solid rgba(233,225,198,.14);border-radius:14px;padding:15px 16px;position:relative;overflow:hidden}
+.statcard.key::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--ouro2),var(--ouro))}
+.statcard .num{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--creme);font-variant-numeric:tabular-nums;line-height:1}
+.statcard.key .num{color:var(--ouro2)}
+.statcard .lb{font-family:system-ui,sans-serif;font-size:12.5px;font-weight:600;color:var(--creme);margin-top:6px}
+.statcard .hp{font-family:system-ui,sans-serif;font-size:11.5px;color:var(--suave);margin-top:2px;line-height:1.35}
+.legend{display:flex;gap:12px 18px;flex-wrap:wrap;align-items:center;background:rgba(255,255,255,.03);
+  border:1px solid rgba(233,225,198,.14);border-radius:12px;padding:10px 14px;margin:14px 0;font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave)}
+.chip{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 9px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
+.chip.hi{background:linear-gradient(180deg,#22705a,#1a5344);color:#eafaf3;border:1px solid rgba(127,208,173,.5)}
+.chip.md{background:rgba(201,162,39,.16);color:var(--ouro2);border:1px solid rgba(201,162,39,.45)}
+.chip.lo{background:rgba(255,255,255,.05);color:var(--suave);border:1px solid rgba(233,225,198,.16)}
+@media(max-width:560px){.statcards{grid-template-columns:1fr}}
 .actbtn{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.03em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));border:none;cursor:pointer;padding:11px 22px;border-radius:100px}
 .actbtn.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5)}
 input:focus{outline:none;border-color:var(--ouro)}
@@ -697,6 +714,13 @@ def pagina_admin(assinantes, token="", cupons=None):
 
 
 # ── Curadoria / Reserva (admin, token) — banco privado, NÃO publica no arquivo ──
+def _chip_score(score):
+    v = round(float(score or 0), 1)
+    cls = "hi" if v >= 7 else ("md" if v >= 4 else "lo")
+    estrela = "★ " if v >= 7 else ""
+    return f'<span class="chip {cls}">{estrela}{v:g}</span>'
+
+
 def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
     from collections import OrderedDict
     tok = _esc(token)
@@ -705,11 +729,27 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
         grupos.setdefault(c.get("tema", "—"), []).append(c)
     prontos = sum(1 for r in reserva if r.get("status") == "pronto")
     enviados = sum(1 for r in reserva if r.get("status") == "enviado")
+
+    def sc(lb, n, hp, key=False):
+        return (f'<div class="statcard{" key" if key else ""}"><div class="num">{n}</div>'
+                f'<div class="lb">{lb}</div><div class="hp">{hp}</div></div>')
     stats = (
-        f'<strong>Candidatos da varredura</strong> <span style="color:var(--suave)">(estudos encontrados, ainda sem resumo)</span>: '
-        f'{contagem.get("novo", 0)} novos · {contagem.get("selecionado", 0)} selecionados · {contagem.get("resumido", 0)} já resumidos<br>'
-        f'<strong>Fila de envio (reserva)</strong> <span style="color:var(--suave)">(resumos prontos, inclui o que você subiu)</span>: '
-        f'{prontos} prontos p/ enviar · {enviados} já enviados = {len(reserva)} no total')
+        '<div class="statgroup"><p class="gh">Candidatos da varredura</p>'
+        '<p class="gsub">Estudos que a busca automática achou — ainda sem resumo.</p><div class="statcards">'
+        + sc("Novos", contagem.get("novo", 0), "achados; você ainda não decidiu", key=True)
+        + sc("Selecionados", contagem.get("selecionado", 0), "marcados p/ virar resumo")
+        + sc("Já resumidos", contagem.get("resumido", 0), "a IA já transformou em resumo")
+        + '</div></div>'
+        '<div class="statgroup"><p class="gh">Estoque de resumos · fila de envio</p>'
+        '<p class="gsub">Resumos prontos que vão pros assinantes.</p><div class="statcards">'
+        + sc("Prontos p/ enviar", prontos, "esperando a vez na fila", key=True)
+        + sc("Já enviados", enviados, "entregues aos assinantes")
+        + sc("Total na reserva", len(reserva), "prontos + enviados")
+        + '</div></div>')
+    legenda = ('<div class="legend"><span><b>score</b> = importância clínica que a IA dá, '
+               'de 0 a 10 (só ordena a lista; o assinante não vê)</span>'
+               '<span class="chip hi">★ 8</span> alta &nbsp;<span class="chip md">5</span> média '
+               '&nbsp;<span class="chip lo">2</span> baixa</div>')
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     acoes = f"""
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 22px">
@@ -727,9 +767,10 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
         itens = "".join(
             f'<label class="candi">'
             f'<input type="checkbox" name="sel" value="{_esc(c.get("id"))}"{" checked" if c.get("status") == "selecionado" else ""}>'
-            f'<span class="cbody"><span class="ctitle">{_esc(c.get("titulo"))}</span>'
+            f'<span class="cbody"><span style="display:flex;align-items:center;gap:8px;justify-content:space-between">'
+            f'<span class="ctitle">{_esc(c.get("titulo"))}</span>{_chip_score(c.get("score"))}</span>'
             f'<span class="cperg">❓ {_esc(c.get("pergunta") or "—")}</span>'
-            f'<span class="cmeta">{_esc(c.get("fonte", ""))} · {_esc(c.get("data", ""))} · score {_esc(round(float(c.get("score") or 0), 1))}'
+            f'<span class="cmeta">{_esc(c.get("fonte", ""))} · {_esc(c.get("data", ""))}'
             f'{" · DOI " + _esc(c.get("doi")) if c.get("doi") else ""}</span></span></label>'
             for c in lst)
         emoji = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵", "Performance": "🏃", "Longevidade": "🧬"}.get(tema, "•")
@@ -792,9 +833,10 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
     <div class="wrap">
       {_admin_nav(token, "curadoria")}
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:6px 0 4px">Curadoria · Reserva 2026</h2>
-      <p class="hint">{stats}</p>
+      {stats}
       {msg_html}{acoes}{add_form}
       <p class="hint">Leia o <strong>título</strong> + a <strong>pergunta</strong> e marque os que valem resumir. Nada vai pro arquivo dos assinantes — é sua reserva privada.</p>
+      {legenda}
       {form_lista}
       <section class="sec"><h2 class="disp" style="font-size:30px">Reserva pronta</h2>{res_html}</section>
     </div>"""

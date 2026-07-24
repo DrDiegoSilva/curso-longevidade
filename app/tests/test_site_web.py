@@ -99,6 +99,16 @@ class TestRender(unittest.TestCase):
         self.assertNotIn(">Minha conta<", self.s._topbar(True, atual="/minha"))
         self.assertIn(">Minha conta<", self.s._topbar(True, atual="/artigos"))
 
+    def test_estoque_cards_e_chip(self):
+        cont = {"novo": 12, "selecionado": 4, "resumido": 31}
+        reserva = [{"status": "pronto", "tema": "Obesidade", "titulo_pt": "X"}]
+        cand = [{"id": "1", "tema": "Obesidade", "titulo": "T", "pergunta": "P",
+                 "fonte": "NEJM", "data": "2026-01-01", "score": 8.5, "doi": ""}]
+        html = self.s.pagina_curadoria(cand, reserva, cont, "tok")
+        self.assertIn("statcard", html)        # números viraram cartões
+        self.assertIn("chip hi", html)         # score 8.5 -> chip verde (alto)
+        self.assertIn("importância clínica", html)  # legenda do score
+
 
 if __name__ == "__main__":
     unittest.main()
