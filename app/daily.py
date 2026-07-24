@@ -226,7 +226,11 @@ def _preparar_da_reserva(reserva_id=None):
     alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_08h
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
-    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
+    try:                                     # fail-safe: PDF nunca pode derrubar a preparação/revisão
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
+    except Exception as e:
+        print(f"[preparar] PDF preview falhou (segue sem PDF; /pdf regenera sob demanda): {e}", flush=True)
+        preview = None
     r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
@@ -250,7 +254,11 @@ def _preparar_de_artigo(art):
     alvo = amanha.strftime("%Y-%m-%d")
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
-    pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
+    try:                                     # fail-safe: PDF nunca pode derrubar a preparação/revisão
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
+    except Exception as e:
+        print(f"[preparar] PDF preview falhou (segue sem PDF; /pdf regenera sob demanda): {e}", flush=True)
+        preview = None
     r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
     r["gancho"] = c["gancho"]
     r["grafico"] = c["grafico"]
