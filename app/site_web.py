@@ -615,11 +615,25 @@ def pagina_whatsapp(info_dict, conn, token=""):
     return _pagina("WhatsApp · Admin", corpo, logado=True, meta_extra=refresh + '<meta name="robots" content="noindex">')
 
 
-def pagina_admin(assinantes, token="", cupons=None):
+def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
     """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
     import phone
     tk = _esc(token)
     admins = {phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])}
+    alvo = next((s for s in assinantes if str(s.get("id")) == str(confirmar_id)), None) if confirmar_id else None
+    confirm_html = ""
+    if alvo:
+        confirm_html = (
+            '<div class="infobox" style="border-color:#c0562f66;background:#c0562f18;margin:14px 0">'
+            f'<strong>Remover {_esc(alvo.get("nome") or alvo.get("whatsapp") or "este assinante")}?</strong> '
+            f'Esta ação é permanente e apaga o cadastro ({_esc(alvo.get("whatsapp") or "—")}).'
+            '<div style="display:flex;gap:10px;margin-top:12px">'
+            '<form method="post" action="/admin" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover_confirmar">'
+            f'<input type="hidden" name="id" value="{_esc(alvo.get("id"))}">'
+            '<button class="actbtn" style="background:#c0562f;color:#fff;padding:8px 16px">Confirmar remoção</button></form>'
+            f'<a class="actbtn ghost" href="/admin?token={tk}" style="padding:8px 16px;text-decoration:none">Cancelar</a>'
+            '</div></div>')
     def badge(st):
         cor = {"ATIVO": "#2f9e6b", "INADIMPLENTE": "#c9a227", "CANCELADO": "#c0562f"}.get(st, "#7a8a84")
         return (f'<span style="font-family:system-ui;font-size:11px;font-weight:700;letter-spacing:.05em;'
@@ -672,6 +686,7 @@ def pagina_admin(assinantes, token="", cupons=None):
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      {confirm_html}
       <div class="infobox" style="margin:14px 0"><strong>Curadoria:</strong> quem estiver marcado como <strong>curador</strong> recebe, todo dia útil às <strong>18h</strong>, o resumo do dia com o link para revisar/aprovar antes do envio das 8h. Você (admin) recebe <em>sempre</em>. Marque um médico convidado aqui para ele ajudar na revisão.</div>
       <div style="overflow-x:auto;margin:18px 0">
         <table style="width:100%;border-collapse:collapse;min-width:820px">

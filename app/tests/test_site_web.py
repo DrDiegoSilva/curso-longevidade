@@ -132,6 +132,16 @@ class TestRender(unittest.TestCase):
         self.assertIn("confirmar_troca", self.s.pagina_meus_dados(
             {"nome": "D", "whatsapp": "x"}, etapa_troca="codigo", novo_num="5541988887777"))
 
+    def test_admin_dupla_confirmacao_remover(self):
+        assin = [{"id": "abc", "nome": "Fulano", "whatsapp": "5543999990000", "status": "ATIVO"}]
+        normal = self.s.pagina_admin(assin, token="tk")
+        self.assertNotIn("remover_confirmar", normal)         # sem confirmar_id: nada apaga direto
+        self.assertIn('name="acao" value="remover"', normal)  # botão da linha = pedir confirmação
+        conf = self.s.pagina_admin(assin, token="tk", confirmar_id="abc")
+        self.assertIn("remover_confirmar", conf)              # banner de confirmação
+        self.assertIn("Fulano", conf)                          # nomeia quem será removido
+        self.assertIn("Cancelar", conf)
+
 
 if __name__ == "__main__":
     unittest.main()

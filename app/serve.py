@@ -148,7 +148,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
-            return self._html(site_web.pagina_admin(subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons()), 200)
+            return self._html(site_web.pagina_admin(
+                subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons(),
+                confirmar_id=q.get("confirmar", [""])[0] or None), 200)
         if path.startswith("/agenda"):
             import config, db, daily, agenda_plan, site_web
             from datetime import datetime, timedelta
@@ -337,6 +339,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if acao == "adicionar":
                 subscribers.adicionar(g("nome"), g("whatsapp"))
             elif acao == "remover":
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&confirmar={g('id')}" if token_ok else "/admin")
+            elif acao == "remover_confirmar":
                 subscribers.remover(g("id"))
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
