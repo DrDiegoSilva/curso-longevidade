@@ -102,12 +102,24 @@ class TestRender(unittest.TestCase):
     def test_estoque_cards_e_chip(self):
         cont = {"novo": 12, "selecionado": 4, "resumido": 31}
         reserva = [{"status": "pronto", "tema": "Obesidade", "titulo_pt": "X"}]
-        cand = [{"id": "1", "tema": "Obesidade", "titulo": "T", "pergunta": "P",
-                 "fonte": "NEJM", "data": "2026-01-01", "score": 8.5, "doi": ""}]
+        # 3 candidatos cobrindo as 3 faixas de _chip_score (hi >=7, md >=4, lo <4)
+        cand = [
+            {"id": "1", "tema": "Obesidade", "titulo": "Alto", "pergunta": "P",
+             "fonte": "NEJM", "data": "2026-01-01", "score": 8.5, "doi": ""},
+            {"id": "2", "tema": "Obesidade", "titulo": "Medio", "pergunta": "P",
+             "fonte": "NEJM", "data": "2026-01-01", "score": 5.0, "doi": ""},
+            {"id": "3", "tema": "Obesidade", "titulo": "Baixo", "pergunta": "P",
+             "fonte": "NEJM", "data": "2026-01-01", "score": 2.0, "doi": ""},
+        ]
         html = self.s.pagina_curadoria(cand, reserva, cont, "tok")
         self.assertIn("statcard", html)        # números viraram cartões
-        self.assertIn("chip hi", html)         # score 8.5 -> chip verde (alto)
         self.assertIn("importância clínica", html)  # legenda do score
+        # markup EXATO produzido por _chip_score (não a legenda estática) — falha
+        # se os limiares (>=7 hi, >=4 md, <4 lo) ou o formato "{v:g}" mudarem.
+        self.assertIn('<span class="scorechip hi">★ 8.5</span>', html)   # 8.5 -> hi, com estrela
+        self.assertIn('<span class="scorechip md">5</span>', html)       # 5.0 -> md, sem estrela
+        self.assertIn('<span class="scorechip lo">2</span>', html)       # 2.0 -> lo, sem estrela
+        self.assertNotIn("· score ", html)     # regressão: formato textual antigo não deve voltar
 
 
 if __name__ == "__main__":

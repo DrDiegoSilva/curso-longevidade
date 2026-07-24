@@ -38,6 +38,10 @@ _CSS = """
   --ink:#0a1712;--g900:#0e211a;--g800:#14332a;--g700:#1e5045;--g600:#2c6656;
   --gold:#c9a227;--gold2:#e7c766;--cream:#f4f1e7;--paper:#f7f4ec;--inkpaper:#16302a;
   --muted:#9fb3a9;--line:rgba(233,225,198,.14);
+  /* score-chip (severidade semântica: alto/médio/baixo — cores deliberadas, não decorativas) */
+  --score-hi-bg1:#22705a;--score-hi-bg2:#1a5344;--score-hi-tx:#eafaf3;--score-hi-bd:rgba(127,208,173,.5);
+  --score-md-bg:rgba(201,162,39,.16);--score-md-tx:var(--ouro2);--score-md-bd:rgba(201,162,39,.45);
+  --score-lo-bg:rgba(255,255,255,.05);--score-lo-tx:var(--suave);--score-lo-bd:rgba(233,225,198,.16);
   --disp:"Hoefler Text","Iowan Old Style","Cormorant Garamond",Georgia,serif;
   --body:Georgia,"Times New Roman",serif;--ui:system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:ui-monospace,"SF Mono",Menlo,monospace}
@@ -178,10 +182,10 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .statcard .hp{font-family:system-ui,sans-serif;font-size:11.5px;color:var(--suave);margin-top:2px;line-height:1.35}
 .legend{display:flex;gap:12px 18px;flex-wrap:wrap;align-items:center;background:rgba(255,255,255,.03);
   border:1px solid rgba(233,225,198,.14);border-radius:12px;padding:10px 14px;margin:14px 0;font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave)}
-.chip{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 9px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
-.chip.hi{background:linear-gradient(180deg,#22705a,#1a5344);color:#eafaf3;border:1px solid rgba(127,208,173,.5)}
-.chip.md{background:rgba(201,162,39,.16);color:var(--ouro2);border:1px solid rgba(201,162,39,.45)}
-.chip.lo{background:rgba(255,255,255,.05);color:var(--suave);border:1px solid rgba(233,225,198,.16)}
+.scorechip{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 9px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
+.scorechip.hi{background:linear-gradient(180deg,var(--score-hi-bg1),var(--score-hi-bg2));color:var(--score-hi-tx);border:1px solid var(--score-hi-bd)}
+.scorechip.md{background:var(--score-md-bg);color:var(--score-md-tx);border:1px solid var(--score-md-bd)}
+.scorechip.lo{background:var(--score-lo-bg);color:var(--score-lo-tx);border:1px solid var(--score-lo-bd)}
 @media(max-width:560px){.statcards{grid-template-columns:1fr}}
 .actbtn{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.03em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));border:none;cursor:pointer;padding:11px 22px;border-radius:100px}
 .actbtn.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5)}
@@ -718,7 +722,7 @@ def _chip_score(score):
     v = round(float(score or 0), 1)
     cls = "hi" if v >= 7 else ("md" if v >= 4 else "lo")
     estrela = "★ " if v >= 7 else ""
-    return f'<span class="chip {cls}">{estrela}{v:g}</span>'
+    return f'<span class="scorechip {cls}">{estrela}{v:g}</span>'
 
 
 def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
@@ -748,8 +752,8 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
         + '</div></div>')
     legenda = ('<div class="legend"><span><b>score</b> = importância clínica que a IA dá, '
                'de 0 a 10 (só ordena a lista; o assinante não vê)</span>'
-               '<span class="chip hi">★ 8</span> alta &nbsp;<span class="chip md">5</span> média '
-               '&nbsp;<span class="chip lo">2</span> baixa</div>')
+               '<span class="scorechip hi">★ 8</span> alta &nbsp;<span class="scorechip md">5</span> média '
+               '&nbsp;<span class="scorechip lo">2</span> baixa</div>')
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     acoes = f"""
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 22px">
