@@ -34,8 +34,8 @@ def agendador():
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
     import daily, config
     def _prep_e_18h():
-        daily.preparar_18h()
-        daily.enviar_slot("18h")
+        daily.enviar_slot("18h")   # envia HOJE 1º (independente da preparação de amanhã, que pode falhar)
+        daily.preparar_18h()       # prepara amanhã (o try/except do loop do agendador cobre se falhar)
     tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h}
     for s in config.SLOTS:
         if s not in ("08h", "18h"):

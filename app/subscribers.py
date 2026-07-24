@@ -13,7 +13,7 @@ _migrado = False
 _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
          "asaas_customer_id", "asaas_subscription_id", "asaas_payment_id",
          "proximo_vencimento", "acesso_ate", "carencia_ate", "aviso_renov_em",
-         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em", "senha_hash", "slot_envio"]
+         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em", "senha_hash"]
 
 
 def _norm(w):

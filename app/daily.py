@@ -486,6 +486,7 @@ def enviar_slot(slot):
     destinatarios = [s for s in subscribers.ativos() if subscribers.slot_de(s) == slot]
     res = deliver.distribuir(r, destinatarios, config.SEND_DELAY_SEC, _envia)
     _finalizar_dia(hoje, r, art, conteudo, tmeta)
-    deliver.enviar_curador(f"✅ Enviado (slot {slot}, {art.get('tema','')}): {res['ok']} assinantes"
-                           + (f" · {len(res['falhas'])} falhas" if res["falhas"] else "")
-                           + (" · ⚠️ SEM PDF (erro na geração)" if master_pdf is None else ""))
+    if destinatarios:
+        deliver.enviar_curador(f"✅ Enviado (slot {slot}, {art.get('tema','')}): {res['ok']} assinantes"
+                               + (f" · {len(res['falhas'])} falhas" if res["falhas"] else "")
+                               + (" · ⚠️ SEM PDF (erro na geração)" if master_pdf is None else ""))
