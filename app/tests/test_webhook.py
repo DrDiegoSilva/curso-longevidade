@@ -112,6 +112,29 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(self.db.listar_comissoes(), [])    # comissão não entrou
         self.assertTrue(any("comissão" in m for m in alertas))  # admin avisado
 
+    def test_ativar_atribui_por_cpf_quando_externalref_nao_bate(self):
+        # Asaas não propaga o externalReference -> o pending é recuperado pelo CPF do cliente.
+        import asaas
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria", 10, 3)
+        self.db.criar_pending({"nome": "Dr. N", "whatsapp": "5543999993333", "cpf": "11144477735",
+                               "email": "n@x.com", "plano": "anual", "metodo": "CARTAO",
+                               "afiliado_codigo": "DRAMARIA", "valor": 897.30})
+        self.cfg.ASAAS_API_KEY = "k"   # liga o branch que busca o cliente Asaas
+        orig_cli, orig_ass = asaas.obter_cliente, asaas.obter_assinatura
+        asaas.obter_cliente = lambda cid: {"name": "Dr. N", "mobilePhone": "5543999993333",
+                                           "email": "n@x.com", "cpfCnpj": "111.444.777-35"}
+        asaas.obter_assinatura = lambda sid: {"cycle": "YEARLY"}
+        try:
+            body = self._body_valor(ext="TOKEN_INEXISTENTE", value=897.30, sub=None)
+            st, msg = self.w.processar(body, "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente, asaas.obter_assinatura = orig_cli, orig_ass
+            self.cfg.ASAAS_API_KEY = None
+        self.assertEqual((st, msg), (200, "ativado"))
+        comis = self.db.listar_comissoes()
+        self.assertEqual(len(comis), 1)                       # atribuiu via CPF, sem externalReference
+        self.assertAlmostEqual(comis[0]["valor_comissao"], 26.92, places=2)
+
 
 class TestAvisarVenda(unittest.TestCase):
     def test_avisar_venda_monta_email(self):

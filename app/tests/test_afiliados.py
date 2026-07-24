@@ -64,6 +64,18 @@ class TestAfiliadosDb(unittest.TestCase):
         tok2 = self.db.criar_pending({"nome": "Y", "whatsapp": "5544", "plano": "mensal"})
         self.assertIn(self.db.obter_pending(tok2)["afiliado_codigo"], (None, ""))
 
+    def test_obter_pending_por_cpf(self):
+        # pega o pending MAIS RECENTE do CPF (compara só dígitos), p/ recuperar o afiliado
+        self.db.criar_pending({"nome": "A", "cpf": "11144477735", "plano": "mensal"})
+        self.db.criar_pending({"nome": "B", "cpf": "11144477735", "plano": "anual",
+                               "afiliado_codigo": "DRAMARIA", "valor": 897.30})
+        p = self.db.obter_pending_por_cpf("111.444.777-35")   # com máscara -> normaliza
+        self.assertIsNotNone(p)
+        self.assertEqual(p["plano"], "anual")                 # o mais recente
+        self.assertEqual(p["afiliado_codigo"], "DRAMARIA")
+        self.assertIsNone(self.db.obter_pending_por_cpf(""))
+        self.assertIsNone(self.db.obter_pending_por_cpf("00000000000"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,7 +114,10 @@ def _executar(event, pay, pid, enviar_fn):
                     sub_obj = asaas.obter_assinatura(sid) or {}
                 except Exception as e:
                     print(f"[webhook] obter_assinatura falhou: {e}", flush=True)
-        pending = db.obter_pending(pay.get("externalReference"))
+        # O Asaas não propaga o externalReference do checkout p/ o pagamento -> além de
+        # buscar pelo token, casa o pending pelo CPF do cliente Asaas (recupera o afiliado).
+        pending = (db.obter_pending(pay.get("externalReference"))
+                   or db.obter_pending_por_cpf(cust.get("cpfCnpj")))
         whatsapp = phone.normalizar(cust.get("mobilePhone") or cust.get("phone")
                                     or (pending or {}).get("whatsapp") or "")
         if not whatsapp:

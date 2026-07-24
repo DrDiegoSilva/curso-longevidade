@@ -271,6 +271,19 @@ def obter_pending(token):
     return dict(r) if r else None
 
 
+def obter_pending_por_cpf(cpf):
+    """Pending mais recente para esse CPF (compara só dígitos). Fallback do webhook
+    quando o Asaas NÃO propaga o externalReference do checkout — recupera o
+    afiliado_codigo (e nome/e-mail/plano) pela pessoa. None se CPF vazio/sem match."""
+    dig = "".join(ch for ch in (cpf or "") if ch.isdigit())
+    if not dig:
+        return None
+    with _conn() as c:
+        r = c.execute("SELECT * FROM pending_signups WHERE cpf=? ORDER BY criado_em DESC LIMIT 1",
+                      (dig,)).fetchone()
+    return dict(r) if r else None
+
+
 def registrar_webhook(payment_id, event):
     """True se é a 1ª vez (processar); False se já visto (idempotência)."""
     from datetime import datetime
