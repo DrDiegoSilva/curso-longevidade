@@ -191,12 +191,26 @@ A landing usa `pricing.preco_str_vigente` corretamente (`site_web.py:382`), mas
 cobra `pricing.preco_vigente`. No 21º assinante ativo (`FOUNDER_LIMITE = 20`) a página
 anuncia R$ 997 e o Asaas cobra R$ 1.497. Repassado ao agente que cuida de preços.
 
-**2. Renovação automática do anual no cartão nunca foi verificada.**
-O docstring do `asaas.py:5-6` registra a dúvida em aberto: o Asaas aceita `RECURRENT` +
+**2. Renovação automática do anual no cartão nunca foi verificada. [EM ABERTO]**
+O docstring do `asaas.py:5-6` registra a dúvida: o Asaas aceita `RECURRENT` +
 `installmentCount` juntos? A conta é a real, não sandbox. Se o Asaas ignorar silenciosamente
 um dos dois, ou cobra R$ 997 à vista no cartão do médico, ou o anual não renova e isso só
-aparece daqui a 12 meses. **Verificar no painel antes de escrever a cláusula 2 dos termos**,
-já que o documento vai afirmar que o cartão renova sozinho.
+aparece daqui a 12 meses.
+
+Isso **não bloqueia o projeto** — afeta uma única frase da cláusula 2 (a que descreve a
+renovação). Por isso a cláusula 2 é a **última** coisa a ser redigida, e a publicação de
+`/termos` fica condicionada a confirmá-la. Formas de verificar, da mais simples para a mais cara:
+
+1. Painel do Asaas → *Assinaturas*: existe alguma com ciclo Anual? (só funciona se já houver
+   venda anual no cartão)
+2. `GET /subscriptions` + `GET /payments?subscription=` — read-only, script pronto em
+   `scratchpad/verificar_recorrencia.py`
+3. `POST /checkouts` com o payload real e leitura da resposta crua — não cobra ninguém, cria
+   só um link; script pronto em `scratchpad/testar_checkout_anual.py`
+4. Venda de teste real: plano oculto `YEARLY` de R$ 60 em 12× (R$ 5/parcela é o mínimo do
+   Asaas), comprar, conferir no painel e estornar
+
+Decisão do Diego em 2026-07-24: adiado, sem bloquear o resto.
 
 **3. Pix não renova, em nenhum plano.** `montar_checkout` (`asaas.py:48-51`) manda Pix como
 `DETACHED`. O `config.py:70` menciona `recorrente_pix = Pix Automático` e o campo existe nos
