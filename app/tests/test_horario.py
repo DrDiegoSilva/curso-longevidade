@@ -165,6 +165,23 @@ class TestEnviarSlot(unittest.TestCase):
         self.assertFalse(self.daily.enviar_catch_up(d))
         self.assertEqual(self.enviados, [])
 
+    def test_troca_para_slot_ja_disparado_dispara_catch_up(self):
+        self.daily.enviar_slot("08h")                 # 08h dispara (B recebe) -> slot_ja_enviou True
+        self.enviados.clear()
+        reg = self.s.adicionar("E", "5543000000005")  # E não recebeu ainda
+        self.s.definir_slot(reg["id"], "20h")
+        # --- simula a lógica do salvar_horario ao trocar 20h -> 08h (já passou) ---
+        hoje = self.daily._hoje_iso()
+        self.s.definir_slot(reg["id"], "08h")
+        if self.db.slot_ja_enviou(hoje, "08h"):
+            self.daily.enviar_catch_up(self.s.por_id(reg["id"]))
+        # ---
+        self.assertEqual([e["nome"] for e in self.enviados], ["E"])   # recebeu na hora (1x)
+
+    def test_slot_futuro_nao_esta_disparado(self):
+        hoje = self.daily._hoje_iso()
+        self.assertFalse(self.db.slot_ja_enviou(hoje, "20h"))   # 20h não rodou -> handler não faz catch-up
+
 
 class TestMeusDadosHorario(unittest.TestCase):
     def setUp(self):
