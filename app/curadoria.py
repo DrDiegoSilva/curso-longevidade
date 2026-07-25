@@ -263,25 +263,33 @@ def rodar_varredura_classicos(caps=None):
     return n
 
 
-def gerar_selecionados():
-    """Gera o resumo (padrão) de cada candidato 'selecionado' -> reserva. Retorna quantos."""
-    import db
-    db.init()                       # garante as tabelas (deploy novo / CLI)
+def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
+    """Gera o resumo (padrão) de cada candidato 'selecionado'. tipo='classico' -> banco de
+    clássicos; senão -> reserva. Retorna quantos. db_mod/gerar_resumo_fn injetáveis p/ teste."""
+    if db_mod is None:
+        import db as db_mod
+    db_mod.init()                   # garante as tabelas (deploy novo / CLI)
+    _gera = gerar_resumo_fn or gerar_resumo
     feitos = 0
-    for c in db.listar_candidatos(status="selecionado"):
+    for c in db_mod.listar_candidatos(status="selecionado"):
         try:
-            r = gerar_resumo(c)
-            db.salvar_reserva({
-                "candidato_id": c["id"], "tema": c["tema"], "titulo_pt": r["titulo_pt"],
-                "resumo": r["resumo"], "gancho": r.get("gancho", ""),
-                "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
-                "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
-                "data": c.get("data", "")})
-            db.marcar_candidatos([c["id"]], "resumido")
+            r = _gera(c)
+            reg = {"tema": c["tema"], "titulo_pt": r["titulo_pt"], "resumo": r["resumo"],
+                   "gancho": r.get("gancho", ""),
+                   "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
+                   "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
+                   "data": c.get("data", "")}
+            if c.get("tipo") == "classico":
+                reg["citacoes"] = c.get("citacoes", 0)
+                db_mod.salvar_classico(reg)
+            else:
+                reg["candidato_id"] = c["id"]
+                db_mod.salvar_reserva(reg)
+            db_mod.marcar_candidatos([c["id"]], "resumido")
             feitos += 1
         except Exception as e:
             print(f"[curadoria] gerar resumo falhou ({c.get('titulo','')[:40]}): {e}", flush=True)
-    print(f"[curadoria] {feitos} resumo(s) gerado(s) para a reserva", flush=True)
+    print(f"[curadoria] {feitos} resumo(s) gerado(s)", flush=True)
     return feitos
 
 

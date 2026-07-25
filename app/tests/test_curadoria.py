@@ -164,5 +164,24 @@ class TestVarrerClassicos(unittest.TestCase):
         self.assertEqual(obes[0]["citacoes"], 5000)
 
 
+class TestGerarRoteia(unittest.TestCase):
+    def test_classico_vai_pro_banco(self):
+        chamados = {"classico": 0, "reserva": 0}
+        class FakeDB:
+            def init(self): pass
+            def listar_candidatos(self, status=None):
+                return [{"id": "c1", "tema": "Obesidade", "tipo": "classico", "titulo": "STEP",
+                         "abstract": "z" * 300, "citacoes": 4000, "doi": "d", "fonte": "f", "url": "u", "data": "2021-01-01"},
+                        {"id": "c2", "tema": "Hormonal", "tipo": "varredura", "titulo": "Novo",
+                         "abstract": "w" * 300, "doi": "d2", "fonte": "f", "url": "u", "data": "2026-07-01"}]
+            def salvar_classico(self, reg): chamados["classico"] += 1; return "k"
+            def salvar_reserva(self, reg): chamados["reserva"] += 1; return "r"
+            def marcar_candidatos(self, ids, status): pass
+        import curadoria
+        curadoria.gerar_selecionados(db_mod=FakeDB(),
+                                     gerar_resumo_fn=lambda c: {"titulo_pt": "T", "resumo": "R", "gancho": "", "grafico": None})
+        self.assertEqual(chamados, {"classico": 1, "reserva": 1})
+
+
 if __name__ == "__main__":
     unittest.main()
