@@ -472,12 +472,19 @@ def registrar_comissao(afiliado_id, subscriber_id, plano, valor_venda, valor_com
 
 
 def listar_comissoes(afiliado_id=None, pago=None):
+    """`pago=False` é a consulta de "pendente" (usada no painel) — por isso, quando
+    filtramos por não-paga, também excluímos as ESTORNADAS: uma comissão estornada
+    (venda devolvida) não é mais devida, então não pode aparecer como pendente nem
+    entrar na fila de pagamento. Sem filtro (`pago=None`) continua trazendo tudo,
+    inclusive estornadas — é o que a tela de histórico/auditoria precisa ver."""
     q = "SELECT * FROM comissoes"
     conds, params = [], []
     if afiliado_id is not None:
         conds.append("afiliado_id=?"); params.append(afiliado_id)
     if pago is not None:
         conds.append("pago=?"); params.append(1 if pago else 0)
+        if not pago:
+            conds.append("estornada_em IS NULL")
     if conds:
         q += " WHERE " + " AND ".join(conds)
     q += " ORDER BY criado_em DESC"
@@ -486,9 +493,13 @@ def listar_comissoes(afiliado_id=None, pago=None):
 
 
 def marcar_comissao_paga(id):
+    """`AND estornada_em IS NULL` é rede de segurança: mesmo que a listagem do painel
+    já exclua comissões estornadas de "pendente", isto impede que um POST direto
+    (bypass da tela) marque como paga uma comissão de venda que foi devolvida."""
     from datetime import datetime
     with _conn() as c:
-        c.execute("UPDATE comissoes SET pago=1, pago_em=? WHERE id=?", (datetime.now().isoformat(), id))
+        c.execute("UPDATE comissoes SET pago=1, pago_em=? WHERE id=? AND estornada_em IS NULL",
+                  (datetime.now().isoformat(), id))
 
 
 def estornar_comissao(subscriber_id):
@@ -553,13 +564,17 @@ def encerrar_acesso(subscriber_id):
 
 
 def listar_afiliados():
-    """Afiliados + agregados de comissão (n_vendas, comissao_total, comissao_pendente)."""
+    """Afiliados + agregados de comissão (n_vendas, comissao_total, comissao_pendente).
+
+    `comissao_pendente` exclui comissão estornada (venda devolvida): sem essa
+    exclusão, o painel mostraria como devido dinheiro de uma venda que já foi
+    reembolsada integralmente ao cliente."""
     with _conn() as c:
         afs = [dict(r) for r in c.execute("SELECT * FROM afiliados ORDER BY criado_em DESC").fetchall()]
         for a in afs:
             ag = c.execute(
                 "SELECT COUNT(*) n, COALESCE(SUM(valor_comissao),0) tot, "
-                "COALESCE(SUM(CASE WHEN pago=0 THEN valor_comissao ELSE 0 END),0) pend "
+                "COALESCE(SUM(CASE WHEN pago=0 AND estornada_em IS NULL THEN valor_comissao ELSE 0 END),0) pend "
                 "FROM comissoes WHERE afiliado_id=?", (a["id"],)).fetchone()
             a["n_vendas"] = ag["n"]
             a["comissao_total"] = round(float(ag["tot"] or 0), 2)

@@ -45,6 +45,38 @@ class TestTermosDB(unittest.TestCase):
     def test_estornar_comissao_de_assinante_sem_comissao_devolve_zero(self):
         self.assertEqual(self.db.estornar_comissao("nao-existe"), 0)
 
+    def test_comissao_estornada_nao_entra_no_total_pendente(self):
+        # ACHADO 1: a reversão gravava `estornada_em`, mas nada excluía essa comissão
+        # do agregado "pendente" nem da lista de pendentes do painel — o Diego pagaria
+        # comissão de uma venda que foi integralmente devolvida.
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria", 10, 3)
+        af = self.db.afiliado_por_codigo("dramaria")
+        self.db.registrar_comissao(af["id"], "sub-estornado", "anual", 1099.0, 32.97)
+        self.db.registrar_comissao(af["id"], "sub-normal", "anual", 897.30, 26.92)
+        self.db.estornar_comissao("sub-estornado")
+
+        linha = next(a for a in self.db.listar_afiliados() if a["codigo"] == "DRAMARIA")
+        self.assertAlmostEqual(linha["comissao_pendente"], 26.92, places=2)  # só a normal
+
+        pendentes = self.db.listar_comissoes(af["id"], pago=False)
+        self.assertEqual([c["subscriber_id"] for c in pendentes], ["sub-normal"])
+
+        # a estornada continua existindo (auditoria), só não entra como pendente
+        todas = self.db.listar_comissoes(af["id"])
+        self.assertEqual(len(todas), 2)
+
+    def test_marcar_comissao_paga_nao_tem_efeito_em_comissao_estornada(self):
+        # rede de segurança: mesmo um POST direto (bypass da tela) não consegue dar
+        # baixa numa comissão de venda que já foi devolvida.
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria2", 10, 3)
+        af = self.db.afiliado_por_codigo("dramaria2")
+        cid = self.db.registrar_comissao(af["id"], "sub-x", "anual", 1099.0, 32.97)
+        self.db.estornar_comissao("sub-x")
+        self.db.marcar_comissao_paga(cid)
+        com = [c for c in self.db.listar_comissoes(af["id"]) if c["id"] == cid][0]
+        self.assertEqual(com["pago"], 0)
+        self.assertIsNone(com["pago_em"])
+
     def _criar_subscriber(self, sid):
         with self.db._conn() as c:
             c.execute("INSERT INTO subscribers (id, nome, criado_em) VALUES (?,?,?)",
