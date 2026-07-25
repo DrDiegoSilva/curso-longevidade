@@ -11,6 +11,7 @@ import html as _html
 import config
 import pdf
 import pricing
+import ui
 
 MARCA = "Dr. Diego Silva"
 CRM = "CRM-PR 54310"
@@ -80,6 +81,7 @@ a{color:inherit;text-decoration:none}
 .btn.solid:hover{transform:translateY(-2px);box-shadow:0 18px 40px -10px rgba(201,162,39,.65)}
 .btn.ghost{color:var(--cream);border:1px solid rgba(201,162,39,.5)}
 .btn.ghost:hover{border-color:var(--gold);color:var(--gold2)}
+button.btn{border:none;cursor:pointer}
 .trust{margin-top:20px;font-family:var(--ui);font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center}
 .trust b{color:var(--cream);font-weight:600}
 /* sample dispatch (papel) */
@@ -190,7 +192,10 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .actbtn{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.03em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));border:none;cursor:pointer;padding:11px 22px;border-radius:100px}
 .actbtn.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5)}
 input:focus{outline:none;border-color:var(--ouro)}
-button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
+button.cta{border:none;cursor:pointer;width:100%;font-size:16px;font-family:var(--ui);font-weight:700;letter-spacing:.02em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));padding:15px 28px;border-radius:100px;box-shadow:0 12px 30px -10px rgba(201,162,39,.5);transition:transform .18s,box-shadow .18s}
+button.cta:hover{transform:translateY(-2px);box-shadow:0 18px 40px -10px rgba(201,162,39,.62)}
+button.cta.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5);box-shadow:none}
+button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:none}
 .erro{background:rgba(180,40,40,.18);border:1px solid rgba(220,90,90,.4);color:#ffd9d9;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
 /* arquivo */
 .crumb{font-family:system-ui,sans-serif;font-size:13px;color:var(--suave);margin:8px 0 24px}
@@ -454,7 +459,7 @@ def pagina_entrar(etapa="numero", whatsapp="", erro=""):
             <input type="hidden" name="whatsapp" value="{_esc(whatsapp)}">
             <label>Código</label>
             <input type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" autofocus>
-            <button class="cta" type="submit">Entrar</button>
+            {ui.btn('Entrar')}
           </form>
           <p class="hint" style="margin-top:16px"><a href="/entrar-codigo" style="color:var(--ouro2)">Usar outro número</a> &nbsp;·&nbsp; <a href="/entrar" style="color:var(--suave)">Entrar com senha</a></p>
         </div></div>"""
@@ -468,9 +473,9 @@ def pagina_entrar(etapa="numero", whatsapp="", erro=""):
             <input type="hidden" name="etapa" value="numero">
             <label>WhatsApp (com DDD)</label>
             <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" autofocus>
-            <button class="cta" type="submit">Enviar código</button>
+            {ui.btn('Enviar código')}
           </form>
-          <p class="hint" style="margin-top:16px"><a href="/entrar" style="color:var(--ouro2)">← Entrar com senha</a></p>
+          {ui.btn('Entrar com senha', href='/entrar', variant='ghost', extra='margin-top:12px')}
         </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
 
@@ -491,14 +496,14 @@ def pagina_login(erro="", sem_senha=False, whatsapp=""):
         <input type="text" name="whatsapp" inputmode="tel" value="{_esc(whatsapp)}" placeholder="(43) 99999-0000" autofocus>
         <label>Senha</label>
         <input type="password" name="senha" placeholder="sua senha">
-        <button class="cta" type="submit">Entrar</button>
+        {ui.btn('Entrar')}
       </form>
+      {ui.btn('Entrar com código', href='/entrar-codigo', variant='ghost', extra='margin-top:12px')}
       <p class="hint" style="margin-top:16px">
         <a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>
         &nbsp;·&nbsp;
         <a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a>
       </p>
-      <p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>
       <p class="hint" style="margin-top:14px">Ainda não assina? <a href="/" style="color:var(--ouro2)">Conheça o plano</a>.</p>
     </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
