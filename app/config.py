@@ -75,7 +75,7 @@ PLANOS = [
     # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
     {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},
     {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês", "oculto": True},
-    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 997.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 997", "nota": "≈ R$ 83/mês · em até 12x sem juros", "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
+    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 1099.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 1.099", "nota": "≈ R$ 92/mês · em até 12x sem juros", "pix_desconto_pct": 5, "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
     # Plano de TESTE (R$5) — OCULTO da landing; só via link direto /assinar?plano=teste. Pagar por Pix (à vista).
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
 ]

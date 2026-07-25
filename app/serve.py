@@ -792,7 +792,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Cupom de afiliado: 10% off na 1ª venda + atribuição (segue pro checkout PAGO)
         af = db.afiliado_por_codigo(cupom) if cupom else None
         af_codigo = af["codigo"] if af else ""
-        base_final = pricing.valor_com_desconto(base_vig, af["pct_desconto"]) if af else base_vig
+        base_final = pricing.base_cobrada(plano, metodo, base_vig, af["pct_desconto"] if af else 0.0)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
                                   "parcelas": parcelas, "valor": valor, "afiliado_codigo": af_codigo})

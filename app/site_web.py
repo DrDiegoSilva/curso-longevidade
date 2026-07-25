@@ -1432,7 +1432,7 @@ def pagina_assinar(plano_slug=None, erro=""):
                        meta_extra='<meta name="robots" content="noindex">')
     base = float(plano["base"])
     erro_html = f'<div class="erro" style="margin-bottom:16px">{_esc(erro)}</div>' if erro else ""
-    pix_desc = f"{pricing.fmt_brl(base)} à vista"
+    pix_desc = f"{pricing.fmt_brl(pricing.base_cobrada(plano, 'PIX', base))} à vista"
     if plano.get("recorrente_pix"):   # mensal (sem parcelamento)
         cartao_desc = f"{pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês · renova"
         parcelas_html = '<input type="hidden" name="parcelas" value="1">'

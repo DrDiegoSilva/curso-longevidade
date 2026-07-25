@@ -60,6 +60,15 @@ def valor_com_desconto(base, pct):
     return round(float(base) * (1 - float(pct) / 100.0), 2)
 
 
+def base_cobrada(plano, metodo, base_vig, cupom_pct=0.0):
+    """Valor efetivamente cobrado: aplica o cupom (%) sobre a base vigente e, se for PIX e o plano
+    oferecer `pix_desconto_pct`, o desconto Pix por cima (empilha com o cupom). Puro/testável."""
+    v = valor_com_desconto(base_vig, cupom_pct) if cupom_pct else round(float(base_vig), 2)
+    if (metodo or "").upper() == "PIX" and plano.get("pix_desconto_pct"):
+        v = valor_com_desconto(v, plano["pix_desconto_pct"])
+    return v
+
+
 def comissao(valor_venda, pct):
     """pct% de comissão sobre o valor pago. comissao(897.30, 3) -> 26.92"""
     return round(float(valor_venda) * float(pct) / 100.0, 2)
