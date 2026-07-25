@@ -20,5 +20,22 @@ class TestTextoResumo(unittest.TestCase):
         self.assertTrue(txt.startswith("🔬 *Título X*"))       # sem tema -> sem badge
 
 
+class TestSeloFresco(unittest.TestCase):
+    def test_fresco_tem_selo(self):
+        tmeta = {"rotulo": "Obesidade", "emoji": "⚖️"}
+        txt = daily.montar_texto_resumo("Título X", "corpo", tmeta, fresco=True)
+        self.assertIn("🆕", txt)
+        self.assertIn("Estudo recente", txt)
+        self.assertTrue(txt.index("Estudo recente") < txt.index("Título X"))  # selo no topo
+
+    def test_nao_fresco_sem_selo(self):
+        txt = daily.montar_texto_resumo("Título X", "corpo", {"rotulo": "Obesidade"}, fresco=False)
+        self.assertNotIn("Estudo recente", txt)
+
+    def test_default_sem_selo(self):
+        txt = daily.montar_texto_resumo("T", "c", {})
+        self.assertNotIn("Estudo recente", txt)
+
+
 if __name__ == "__main__":
     unittest.main()

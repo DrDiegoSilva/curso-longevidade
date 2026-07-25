@@ -384,13 +384,14 @@ def rotina_08h():
     enviar_slot("08h")
 
 
-def montar_texto_resumo(titulo, resumo, tmeta):
-    """Texto do WhatsApp p/ o assinante: badge do tema (emoji + rótulo) no topo,
-    depois o título do estudo e o resumo — assim o leitor já sabe o tema do dia."""
+def montar_texto_resumo(titulo, resumo, tmeta, fresco=False):
+    """Texto do WhatsApp p/ o assinante: selo de recência (se fresco) + badge do tema
+    (emoji + rótulo) + título + resumo."""
     rot = (tmeta or {}).get("rotulo", "")
     emoji = (tmeta or {}).get("emoji", "")
+    selo = "🆕 *Estudo recente*\n" if fresco else ""
     hdr = f"{emoji} *{rot}*\n".lstrip() if rot else ""
-    return f"{hdr}🔬 *{titulo}*\n\n{resumo}"
+    return f"{selo}{hdr}🔬 *{titulo}*\n\n{resumo}"
 
 
 def _audio_master(hoje, art, conteudo):
@@ -465,6 +466,7 @@ def _montar_ctx(hoje, r):
     conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
     tmeta = _tema_meta(art.get("tema", ""))
     return {"r": r, "art": art, "titulo": titulo, "conteudo": conteudo, "tmeta": tmeta,
+            "fresco": _e_fresco(art.get("data", "")),
             "audio_bytes": _audio_master(hoje, art, conteudo),
             "master_pdf": _pdf_master(hoje, art, conteudo, tmeta)}
 
@@ -485,7 +487,9 @@ def _enviar_estudo_para(whatsapp, nome, ctx):
     import phone
     whatsapp = phone.normalizar(whatsapp)
     link = f"{config.PUBLIC_URL}/entrar"
-    msg = deliver.personalizar_rodape(montar_texto_resumo(ctx["titulo"], ctx["r"]["resumo"], ctx["tmeta"]), nome, link)
+    msg = deliver.personalizar_rodape(
+        montar_texto_resumo(ctx["titulo"], ctx["r"]["resumo"], ctx["tmeta"], fresco=ctx.get("fresco", False)),
+        nome, link)
     deliver.enviar_texto(whatsapp, msg)
     if ctx["master_pdf"]:
         try:
