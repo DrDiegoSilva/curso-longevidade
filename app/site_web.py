@@ -966,9 +966,12 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
           <button class="actbtn ghost" type="submit">✍️ Gerar resumos dos selecionados</button>
         </form>
       </div>"""
-    blocos = []
-    for tema, lst in grupos.items():
-        itens = "".join(
+    ORDEM = ["Obesidade", "Hormonal", "Lipedema", "Performance", "Longevidade"]
+    EMOJI = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵", "Performance": "🏃", "Longevidade": "🧬"}
+    temas_todos = ORDEM + [t for t in grupos if t not in ORDEM]   # 5 frentes sempre + extras
+
+    def _itens(lst):
+        return "".join(
             f'<label class="candi">'
             f'<input type="checkbox" name="sel" value="{_esc(c.get("id"))}"{" checked" if c.get("status") == "selecionado" else ""}>'
             f'<span class="cbody"><span style="display:flex;align-items:center;gap:8px;justify-content:space-between">'
@@ -976,10 +979,25 @@ def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
             f'<span class="cperg">❓ {_esc(c.get("pergunta") or "—")}</span>'
             f'<span class="cmeta">{_esc(c.get("fonte", ""))} · {_esc(c.get("data", ""))}'
             f'{" · DOI " + _esc(c.get("doi")) if c.get("doi") else ""}</span></span></label>'
-            for c in lst)
-        emoji = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵", "Performance": "🏃", "Longevidade": "🧬"}.get(tema, "•")
-        blocos.append(f'<div class="sectag" style="margin-top:24px">{emoji} {_esc(tema)} · {len(lst)}</div>{itens}')
-    lista = "".join(blocos) or '<p class="hint">Nenhum candidato ainda. Clique em <strong>Rodar varredura 2026</strong>.</p>'
+            for c in lst) or ('<p class="hint" style="padding:16px 2px">Nenhum candidato neste tema. '
+                              'Rode a varredura ou ajuste a busca deste tema.</p>')
+
+    tabs, panels = [], []
+    for i, tema in enumerate(temas_todos):
+        lst = grupos.get(tema, [])
+        on = " on" if i == 0 else ""
+        tabs.append(f'<a class="tab{on}" onclick="curTab(this,{i})" style="cursor:pointer">'
+                    f'{EMOJI.get(tema, "•")} {_esc(tema)} <span class="cnt">{len(lst)}</span></a>')
+        panels.append(f'<div class="curpanel" data-i="{i}" style="display:{"block" if i == 0 else "none"}">{_itens(lst)}</div>')
+    if candidatos:
+        lista = (f'<div class="tabs">{"".join(tabs)}</div>'
+                 f'<div id="curpanels">{"".join(panels)}</div>'
+                 '<script>function curTab(el,i){'
+                 'document.querySelectorAll(".tabs .tab").forEach(function(t){t.classList.remove("on")});el.classList.add("on");'
+                 'document.querySelectorAll("#curpanels .curpanel").forEach(function(p){'
+                 'p.style.display=(String(p.dataset.i)===String(i))?"block":"none"});}</script>')
+    else:
+        lista = '<p class="hint">Nenhum candidato ainda. Clique em <strong>Rodar varredura 2026</strong>.</p>'
     form_lista = f"""
       <form method="post" action="/curadoria">
         <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="selecionar">
