@@ -304,6 +304,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "Peça um novo link em 'Primeiro acesso' ou 'Esqueci minha senha'."))
             return self._html(site_web.pagina_criar_senha(tok))
         if path == "/sair":
+            # logout NUNCA passa pelo gate de aceite: só encerra a sessão, não muta
+            # dados do assinante, e é a única saída de quem ficaria preso na tela de
+            # aceite se este endpoint também exigisse aceitar primeiro.
             import auth_web
             auth_web.logout(auth_web._parse_cookie(self.headers.get("Cookie", "")).get("sid"))
             return self._redirect("/", clear=True)
@@ -319,12 +322,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._redirect("/entrar")
             import subscribers as _subs
             reg = self._sub_logado()
-            if reg and _subs.precisa_aceitar(reg):
+            if reg is None:
+                # sessão viva mas sem assinante correspondente (removido/órfã) -> sessão
+                # inválida. Sem este `return`, o `if reg and ...` abaixo pulava a checagem
+                # de aceite em silêncio e caía direto em pagina_minha(sub, ...) usando só o
+                # dict raso da sessão (sem os campos do cadastro).
+                return self._redirect("/entrar")
+            if _subs.precisa_aceitar(reg):
                 import site_legal
                 return self._html(site_legal.pagina_aceite_termos("/minha"))
             import auth_web
             return self._html(site_web.pagina_minha(sub, admin=auth_web.eh_admin(sub["whatsapp"])))
         if path == "/cancelar":
+            # exceção deliberada ao gate de aceite: quem quer sair da assinatura não
+            # pode ser obrigado a aceitar termos novos antes — ver docstring de
+            # _cancelar_motivo/_cancelar_confirmar (POST) para o mesmo raciocínio.
             if not self._sessao():
                 return self._redirect("/entrar")
             return self._html(site_web.pagina_cancelar())
@@ -343,6 +355,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
+            # /artigos só LÊ conteúdo (não muta dado nenhum do assinante) — o critério
+            # do gate de aceite é mutação, então esta rota fica de fora de propósito.
+            # Gateá-la também bloquearia o acesso ao conteúdo já pago, na prática igual
+            # a parar o envio diário, que é uma restrição global deste projeto.
             sub = self._sessao()
             if not sub:
                 return self._redirect("/entrar")
@@ -595,55 +611,77 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._cancelar_motivo(g)
         if path == "/cancelar/confirmar":
             return self._cancelar_confirmar(g)
+        # /aceitar-termos e o fluxo de /cancelar (+ /cancelar/confirmar) são as
+        # exceções deliberadas ao gate de aceite dos termos: /aceitar-termos é o
+        # próprio caminho de aceitar (bloqueá-lo prenderia o assinante sem conseguir
+        # aceitar nunca), e quem quer cancelar não pode ser obrigado a aceitar termos
+        # novos primeiro — ver comentário em _cancelar_motivo/_cancelar_confirmar.
         if path == "/aceitar-termos":
             return self._aceitar_termos(g)
         if path == "/meus-dados":
-            import site_web, subscribers, auth_web
-            sub = self._sub_logado()
-            if not sub:
-                return self._redirect("/entrar")
-            acao = g("acao")
-            if acao == "salvar_contato":
-                subscribers.atualizar_contato(sub["id"], g("nome"), g("email"))
-                return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Dados salvos."), 200)
-            if acao == "salvar_horario":
-                import db as _db, config as _cfg, daily as _daily
-                novo = g("slot")
-                atual = subscribers.slot_de(sub)
-                teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
-                if novo != atual and novo in subscribers.slots_com_vaga(teto):
-                    subscribers.definir_slot(sub["id"], novo)
-                    hoje = _daily._hoje_iso()
-                    if _db.slot_ja_enviou(hoje, novo):     # novo horário já disparou hoje -> catch-up
-                        try:
-                            _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
-                        except Exception as e:
-                            print(f"[meus-dados] catch-up falhou: {e}", flush=True)  # não derruba a página
-                sub2 = subscribers.por_id(sub["id"])
-                atual2 = subscribers.slot_de(sub2)
-                return self._html(site_web.pagina_meus_dados(
-                    sub2, msg="Horário salvo.",
-                    slots=subscribers.slots_com_vaga(teto, atual2), slot_atual=atual2), 200)
-            if acao == "iniciar_troca":
-                if not self._rate_ok("otp", 5, 600):
-                    return
-                r = auth_web.iniciar_troca_numero(sub["id"], g("novo_numero"))
-                if r == "enviado":
-                    return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo", novo_num=g("novo_numero")), 200)
-                msg = "Número inválido." if r == "invalido" else "Esse número já é de outro assinante."
-                return self._html(site_web.pagina_meus_dados(sub, msg=msg), 200)
-            if acao == "confirmar_troca":
-                if not self._rate_ok("otp", 5, 600):
-                    return
-                st = auth_web.confirmar_troca_numero(sub["id"], g("novo_numero"), g("codigo"))
-                if st == "ok":
-                    return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Número atualizado."), 200)
-                erros = {"codigo_errado": "Código errado.", "expirado": "Código expirado, tente de novo.",
-                         "bloqueado": "Muitas tentativas, peça um novo código."}
-                return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo",
-                                  novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
-            return self._redirect("/meus-dados")
+            return self._meus_dados_post(g)
         return self._html("<h3>rota inválida</h3>", 404)
+
+    def _meus_dados_post(self, g):
+        """POST /meus-dados: as quatro ações daqui (salvar_contato, salvar_horario,
+        iniciar_troca, confirmar_troca) MUTAM dados do assinante — por isso passam
+        pelo mesmo gate de aceite (`subscribers.precisa_aceitar`) que os GETs de
+        /minha e /meus-dados já tinham.
+
+        PORQUÊ: sem esta checagem aqui, um form de /meus-dados já aberto no navegador
+        antes do deploy do re-aceite (ou uma requisição POST direta, sem passar pelo
+        GET) continuava gravando normalmente mesmo com o aceite pendente — o bloqueio
+        da área de conta valia só pra quem clicava em links, não pra quem já tinha a
+        página aberta ou usava a API diretamente. Com aceite pendente, NENHUMA ação é
+        executada: devolve a mesma tela de aceite que o GET devolveria."""
+        import site_web, subscribers, auth_web
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if subscribers.precisa_aceitar(sub):
+            import site_legal
+            return self._html(site_legal.pagina_aceite_termos("/meus-dados"))
+        acao = g("acao")
+        if acao == "salvar_contato":
+            subscribers.atualizar_contato(sub["id"], g("nome"), g("email"))
+            return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Dados salvos."), 200)
+        if acao == "salvar_horario":
+            import db as _db, config as _cfg, daily as _daily
+            novo = g("slot")
+            atual = subscribers.slot_de(sub)
+            teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
+            if novo != atual and novo in subscribers.slots_com_vaga(teto):
+                subscribers.definir_slot(sub["id"], novo)
+                hoje = _daily._hoje_iso()
+                if _db.slot_ja_enviou(hoje, novo):     # novo horário já disparou hoje -> catch-up
+                    try:
+                        _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
+                    except Exception as e:
+                        print(f"[meus-dados] catch-up falhou: {e}", flush=True)  # não derruba a página
+            sub2 = subscribers.por_id(sub["id"])
+            atual2 = subscribers.slot_de(sub2)
+            return self._html(site_web.pagina_meus_dados(
+                sub2, msg="Horário salvo.",
+                slots=subscribers.slots_com_vaga(teto, atual2), slot_atual=atual2), 200)
+        if acao == "iniciar_troca":
+            if not self._rate_ok("otp", 5, 600):
+                return
+            r = auth_web.iniciar_troca_numero(sub["id"], g("novo_numero"))
+            if r == "enviado":
+                return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo", novo_num=g("novo_numero")), 200)
+            msg = "Número inválido." if r == "invalido" else "Esse número já é de outro assinante."
+            return self._html(site_web.pagina_meus_dados(sub, msg=msg), 200)
+        if acao == "confirmar_troca":
+            if not self._rate_ok("otp", 5, 600):
+                return
+            st = auth_web.confirmar_troca_numero(sub["id"], g("novo_numero"), g("codigo"))
+            if st == "ok":
+                return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Número atualizado."), 200)
+            erros = {"codigo_errado": "Código errado.", "expirado": "Código expirado, tente de novo.",
+                     "bloqueado": "Muitas tentativas, peça um novo código."}
+            return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo",
+                              novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
+        return self._redirect("/meus-dados")
 
     def _sub_logado(self):
         import subscribers
@@ -707,6 +745,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
 
     def _aceitar_termos(self, g):
+        """Exceção deliberada ao gate: esta rota É o próprio caminho de aceitar os
+        termos, então não pode exigir `precisa_aceitar` == False como pré-condição —
+        isso prenderia o assinante pendente num loop sem saída."""
         import subscribers, legal, site_legal
         sub = self._sub_logado()
         if not sub:
@@ -717,11 +758,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
               or self.client_address[0])
         subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
         destino = g("destino") or "/minha"
-        if not destino.startswith("/"):        # nunca redireciona pra fora do site
+        # nunca redireciona pra fora do site: "//evil.com" começa com "/" mas é uma URL
+        # protocolo-relativa (o navegador resolve pro host de evil.com), por isso o "//"
+        # também precisa cair no destino padrão, não só ausência da barra inicial.
+        if not destino.startswith("/") or destino.startswith("//"):
             destino = "/minha"
         return self._redirect(destino)
 
     def _cancelar_motivo(self, g):
+        """Passo 1 do cancelamento. Exceção deliberada ao gate de aceite dos termos:
+        `sub` vem de `_sub_logado()` sem checar `subscribers.precisa_aceitar` — quem
+        quer sair da assinatura não pode ficar preso tendo que aceitar termos novos
+        primeiro. Isso vale pra todo o fluxo de cancelamento (aqui e em
+        `_cancelar_confirmar`), que é o único jeito de sair sem depender do suporte."""
         import site_web
         sub = self._sub_logado()
         if not sub:
@@ -734,6 +783,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelar_oferta(motivo))
 
     def _cancelar_confirmar(self, g):
+        """Passo 2 do cancelamento (aceitar oferta de retenção OU confirmar de vez).
+        Mesma exceção deliberada de `_cancelar_motivo`: sem gate de aceite — quem está
+        cancelando não pode ser barrado por termos pendentes."""
         import site_web, subscribers, asaas
         from datetime import datetime, timedelta
         sub = self._sub_logado()
