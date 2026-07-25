@@ -82,6 +82,17 @@ class TestParseOpenAlex(unittest.TestCase):
             inv[word].append(i)
         return inv
 
+    def _make_short_inv(self):
+        """Create inverted index for abstract with <120 chars."""
+        # Using 5 words gives ~10 chars when reconstructed (well under 120)
+        words = ["short", "test", "abstract", "for", "filtering"]
+        inv = {}
+        for i, word in enumerate(words):
+            if word not in inv:
+                inv[word] = []
+            inv[word].append(i)
+        return inv
+
     def test_extrai_citacoes(self):
         inv = self._make_long_inv()
         got = sources.parse_openalex(self._fake(inv, 3120))
@@ -93,6 +104,11 @@ class TestParseOpenAlex(unittest.TestCase):
         inv = self._make_long_inv()
         d = self._fake(inv, 0); del d["results"][0]["cited_by_count"]
         self.assertEqual(sources.parse_openalex(d)[0]["citacoes"], 0)
+
+    def test_filtra_abstract_curto(self):
+        inv = self._make_short_inv()
+        got = sources.parse_openalex(self._fake(inv, 100))
+        self.assertEqual(len(got), 0)  # abstract < 120 chars -> filtered out
 
 
 class TestBackoff(unittest.TestCase):
