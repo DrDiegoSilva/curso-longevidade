@@ -69,6 +69,7 @@ SLOT_TETO_DEFAULT = 100
 
 # ── Máquina de conteúdo ──
 FRESCO_DIAS = int(os.environ.get("DSCURSO_FRESCO_DIAS") or 30)   # ≤ N dias = "Estudo recente"
+CLASSICO_REUSO_MESES = int(os.environ.get("DSCURSO_CLASSICO_REUSO_MESES") or 6)   # piso p/ repetir um clássico
 
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
