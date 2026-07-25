@@ -102,5 +102,37 @@ class TestMaterializar(unittest.TestCase):
         self.assertEqual(len(self.q.listar()), 2)
 
 
+class TestPoolPiramide(unittest.TestCase):
+    def setUp(self):   # padrão do repo (igual TestMaterializar neste arquivo)
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ.pop("DATABASE_URL", None)
+        import importlib
+        import config as _cfg; importlib.reload(_cfg)
+        import db as _db; importlib.reload(_db)
+        import queue_store as _q; importlib.reload(_q)
+        import daily as _d; importlib.reload(_d)
+        self.db, self.daily = _db, _d
+        _db.init()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_candidato_fresco_entra_como_candidato(self):
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": "Fresco", "chave": "k1", "score": 6,
+                                    "tipo": "varredura", "data": self.daily._hoje_iso()}])
+        self.daily.materializar_agenda(datas=["2026-07-27"])   # segunda futura
+        slot = self.db.agenda_slot("2026-07-27")
+        self.assertEqual(slot["tipo"], "candidato")
+
+    def test_classico_preenche_quando_nao_ha_fresco_nem_reserva(self):
+        self.db.salvar_classico({"tema": "Obesidade", "titulo_pt": "STEP", "resumo": "r",
+                                 "data": "2021-01-01", "citacoes": 4000})
+        self.daily.materializar_agenda(datas=["2026-07-27"])
+        self.assertEqual(self.db.agenda_slot("2026-07-27")["tipo"], "classico")
+
+
 if __name__ == "__main__":
     unittest.main()

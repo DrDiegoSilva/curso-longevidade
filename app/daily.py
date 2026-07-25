@@ -121,10 +121,15 @@ def materializar_agenda(n_semanas=4, datas=None):
     #  - ref_ids/chaves = itens já presos a algum slot;
     #  - devolve a 'pronto' qualquer reserva 'agendado' que NENHUM slot referencia (órfão);
     #  - mais abaixo, exclui dos candidatos o que já está referenciado (evita double-book).
-    ref_ids = db.agenda_ref_ids_reserva()
+    ref_ids = db.agenda_ref_ids("reserva")
     for r in db.listar_reserva(status="agendado"):
         if r["id"] not in ref_ids:
             db.marcar_reserva_pronto(r["id"])
+    cand_ref_ids = db.agenda_ref_ids("candidato")
+    for c in db.listar_candidatos(status="agendado", tipo="varredura"):
+        if c["id"] not in cand_ref_ids:
+            db.marcar_candidato_pronto(c["id"])
+    classico_ref_ids = db.agenda_ref_ids("classico")   # p/ não repetir o mesmo clássico no horizonte
     fila_chaves = set()
     for p in db.agenda_payloads_fila():
         try:
@@ -156,7 +161,21 @@ def materializar_agenda(n_semanas=4, datas=None):
         if r["id"] in ref_ids:          # já preso a um slot (consume meio-falho) -> não re-agenda
             continue
         cands.append({"tipo": "reserva", "tema": r.get("tema", ""), "titulo": r.get("titulo_pt", ""),
-                      "ref_id": r["id"], "payload": None})
+                      "ref_id": r["id"], "payload": None,
+                      "fresco": _e_fresco(r.get("data", "")), "classico": False,
+                      "score": float(r.get("prioridade", 0) or 0)})
+    for c in db.listar_candidatos(status="novo", tipo="varredura"):
+        cands.append({"tipo": "candidato", "tema": c.get("tema", ""), "titulo": c.get("titulo", ""),
+                      "ref_id": c["id"], "payload": None,
+                      "fresco": _e_fresco(c.get("data", "")), "classico": False,
+                      "score": float(c.get("score", 0) or 0)})
+    for cl in db.listar_classicos(elegiveis=True):
+        if cl["id"] in classico_ref_ids:
+            continue
+        cands.append({"tipo": "classico", "tema": cl.get("tema", ""), "titulo": cl.get("titulo_pt", ""),
+                      "ref_id": cl["id"], "payload": None,
+                      "fresco": False, "classico": True,
+                      "score": float(cl.get("citacoes", 0) or 0)})
     for a in queue_store.listar():
         if queue_store._chave(a) in fila_chaves:   # já preso a um slot de fila
             continue
@@ -171,6 +190,14 @@ def materializar_agenda(n_semanas=4, datas=None):
                 db.agenda_upsert(data, tipo="reserva", ref_id=cand["ref_id"], payload=None,
                                  tema=cand["tema"], titulo=cand["titulo"], fixado=0)
                 db.marcar_reserva_agendado(cand["ref_id"])   # consome só APÓS gravar o slot
+            elif cand["tipo"] == "candidato":
+                db.agenda_upsert(data, tipo="candidato", ref_id=cand["ref_id"], payload=None,
+                                 tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+                db.marcar_candidato_agendado(cand["ref_id"])   # consome só APÓS gravar o slot
+            elif cand["tipo"] == "classico":
+                db.agenda_upsert(data, tipo="classico", ref_id=cand["ref_id"], payload=None,
+                                 tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+                # clássico NÃO é consumido (reusável); o ref na agenda já evita repetir no horizonte
             else:
                 payload = json.dumps(cand["payload"], ensure_ascii=False)
                 db.agenda_upsert(data, tipo="fila", ref_id=None, payload=payload,
