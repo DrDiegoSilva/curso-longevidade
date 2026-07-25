@@ -45,6 +45,23 @@ class TestTermosDB(unittest.TestCase):
     def test_estornar_comissao_de_assinante_sem_comissao_devolve_zero(self):
         self.assertEqual(self.db.estornar_comissao("nao-existe"), 0)
 
+    def _criar_subscriber(self, sid):
+        with self.db._conn() as c:
+            c.execute("INSERT INTO subscribers (id, nome, criado_em) VALUES (?,?,?)",
+                      (sid, "Teste", "2026-01-01T00:00:00"))
+
+    def test_claim_cancelamento_primeira_chamada_vence(self):
+        # Guard contra cancelamento em duplicidade (ACHADO 2): a 1ª chamada marca
+        # cancelado_em e vence o claim.
+        self._criar_subscriber("sub-claim-1")
+        self.assertTrue(self.db.claim_cancelamento("sub-claim-1"))
+
+    def test_claim_cancelamento_segunda_chamada_perde(self):
+        # Duplo clique/retry concorrente para o MESMO assinante: só uma vence.
+        self._criar_subscriber("sub-claim-2")
+        self.assertTrue(self.db.claim_cancelamento("sub-claim-2"))
+        self.assertFalse(self.db.claim_cancelamento("sub-claim-2"))
+
 
 if __name__ == "__main__":
     unittest.main()

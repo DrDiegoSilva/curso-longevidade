@@ -735,13 +735,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
         estornado = estornar_arrependimento(sub)      # None fora dos 7 dias ou se falhou
-        if estornado:                                  # arrependimento: acesso cessa agora
-            acesso_ate = None
+        if estornado is not None:                       # arrependimento: acesso cessa agora
+            acesso_ate = None                            # (0.0 é estorno válido, não "sem estorno")
         else:                                          # regra normal: acesso até o fim do pago
             acesso_ate = sub.get("proximo_vencimento")
         subscribers.registrar_cancelamento(sub["id"], motivo, acesso_ate=acesso_ate)
         if sub.get("email"):
-            if estornado:
+            if estornado is not None:                    # idem: 0.0 também é estorno válido
                 corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
                          f"Científica dentro do prazo de arrependimento.</p>"
                          f"<p>O reembolso integral de <strong>R$ {estornado:.2f}</strong> foi "
@@ -826,8 +826,17 @@ def estornar_arrependimento(sub):
     """Estorno INTEGRAL quando o cancelamento cai dentro dos 7 dias (CDC art. 49).
 
     Devolve o valor estornado, ou None quando não havia direito, não havia cobrança
-    (cortesia por cupom) ou o estorno falhou. Falha aqui NUNCA bloqueia o cancelamento:
-    o assinante não pode ficar preso por um problema nosso — vira alerta pro admin.
+    (cortesia por cupom), a corrida de cancelamento foi perdida (claim) ou o estorno
+    no Asaas falhou. Falha aqui NUNCA bloqueia o cancelamento: o assinante não pode
+    ficar preso por um problema nosso — vira alerta pro admin.
+
+    O estorno no Asaas e a baixa da comissão do afiliado rodam em try/except
+    SEPARADOS de propósito: é o estorno no Asaas que decide o retorno da função,
+    porque é ele que move dinheiro de verdade. Se ele der certo, a função SEMPRE
+    devolve o valor, mesmo que a baixa de comissão falhe em seguida (ex.: "database
+    is locked" no servidor multi-thread) — senão o chamador acha que não houve
+    estorno, mantém o acesso do cliente e ainda manda alerta dizendo que o dinheiro
+    não saiu, quando na verdade já saiu.
     """
     from datetime import date
     import asaas, db, refunds, webhook_asaas
@@ -836,6 +845,10 @@ def estornar_arrependimento(sub):
     pid = sub.get("asaas_payment_id")
     if not pid:                       # cortesia por cupom: não houve cobrança pra estornar
         return None
+    if not db.claim_cancelamento(sub["id"]):
+        # Corrida: duplo clique ou retry de rede já cancelou este assinante em outra
+        # chamada concorrente. Não é falha — não alerta — só evita estornar 2x no Asaas.
+        return None
     try:
         pagamento = asaas.obter_pagamento(pid)
         tipo, alvo = refunds.alvo_estorno(pagamento)
@@ -843,8 +856,6 @@ def estornar_arrependimento(sub):
             asaas.estornar_parcelamento(alvo)
         else:
             asaas.estornar_pagamento(alvo)
-        db.estornar_comissao(sub["id"])
-        return float(pagamento.get("value") or 0)
     except Exception as e:
         print(f"[cancelar] estorno de arrependimento falhou: {e}", flush=True)
         webhook_asaas._alertar_admin(
@@ -852,6 +863,19 @@ def estornar_arrependimento(sub):
             f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
             f"({e}) — estorne manualmente no painel do Asaas")
         return None
+    valor = float(pagamento.get("value") or 0)
+    try:
+        db.estornar_comissao(sub["id"])
+    except Exception as e:
+        # O estorno no Asaas JÁ deu certo (dinheiro já saiu) — isso nunca pode virar
+        # None pro chamador. Só a baixa de comissão do afiliado ficou pendente.
+        print(f"[cancelar] baixa de comissão falhou após estorno OK: {e}", flush=True)
+        webhook_asaas._alertar_admin(
+            pid, sub.get("asaas_subscription_id"),
+            f"Estorno de arrependimento CONCLUÍDO para {sub.get('nome') or sub.get('id')} — "
+            f"mas a baixa da comissão do afiliado FALHOU ({e}) — ajuste manualmente no "
+            f"painel de afiliados")
+    return valor
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):

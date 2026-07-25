@@ -20,13 +20,17 @@ class TestEstornoArrependimento(unittest.TestCase):
         self.estornos = []
         self.comissoes = []
         self.alertas = []
+        self.claims = []
 
         self._orig = (asaas.obter_pagamento, asaas.estornar_pagamento,
-                      asaas.estornar_parcelamento, db.estornar_comissao)
+                      asaas.estornar_parcelamento, db.estornar_comissao, db.claim_cancelamento)
         asaas.obter_pagamento = lambda pid: {"id": pid, "value": 997.0}
         asaas.estornar_pagamento = lambda pid, valor=None: self.estornos.append(("payment", pid))
         asaas.estornar_parcelamento = lambda iid, valor=None: self.estornos.append(("installment", iid))
         db.estornar_comissao = lambda sid: self.comissoes.append(sid) or 1
+        # Por padrão o claim é sempre vencido (não há concorrência) — os testes de
+        # corrida sobrescrevem isso pontualmente.
+        db.claim_cancelamento = lambda sid: self.claims.append(sid) or True
 
         import webhook_asaas
         self._orig_alerta = webhook_asaas._alertar_admin
@@ -34,7 +38,8 @@ class TestEstornoArrependimento(unittest.TestCase):
 
     def tearDown(self):
         (self.asaas.obter_pagamento, self.asaas.estornar_pagamento,
-         self.asaas.estornar_parcelamento, self.db.estornar_comissao) = self._orig
+         self.asaas.estornar_parcelamento, self.db.estornar_comissao,
+         self.db.claim_cancelamento) = self._orig
         import webhook_asaas
         webhook_asaas._alertar_admin = self._orig_alerta
 
@@ -66,6 +71,38 @@ class TestEstornoArrependimento(unittest.TestCase):
         self.assertIsNone(self.serve.estornar_arrependimento(_sub(2)))
         self.assertEqual(len(self.alertas), 1)
         self.assertIn("estorno", self.alertas[0].lower())
+
+    def test_estorno_ok_mas_baixa_de_comissao_falha_devolve_valor_e_alerta_diferente(self):
+        # ACHADO 1: o estorno no Asaas já saiu — a falha é só na baixa da comissão do
+        # afiliado. A função tem que devolver o valor (não None) e o alerta precisa
+        # deixar claro que o estorno DEU CERTO, não usar a mensagem de "estorno falhou".
+        def explode(sid):
+            raise RuntimeError("database is locked")
+        self.db.estornar_comissao = explode
+        valor = self.serve.estornar_arrependimento(_sub(3))
+        self.assertEqual(valor, 997.0)
+        self.assertEqual(self.estornos, [("payment", "pay_1")])
+        self.assertEqual(len(self.alertas), 1)
+        msg = self.alertas[0].lower()
+        self.assertIn("comiss", msg)
+        self.assertNotIn("estorne manualmente no painel do asaas", msg)
+
+    def test_claim_perdido_nao_estorna_nem_alerta_e_devolve_none(self):
+        # ACHADO 2: outra chamada concorrente (duplo clique/retry) já reivindicou o
+        # cancelamento — não é falha, então sem alerta, e sem chamar o Asaas de novo.
+        self.db.claim_cancelamento = lambda sid: False
+        self.assertIsNone(self.serve.estornar_arrependimento(_sub(3)))
+        self.assertEqual(self.estornos, [])
+        self.assertEqual(self.comissoes, [])
+        self.assertEqual(self.alertas, [])
+
+    def test_claim_vencido_segue_o_fluxo_normal_de_estorno(self):
+        valor = self.serve.estornar_arrependimento(_sub(3))
+        self.assertEqual(valor, 997.0)
+        self.assertEqual(self.claims, ["s1"])
+        self.assertEqual(self.estornos, [("payment", "pay_1")])
+        self.assertEqual(self.comissoes, ["s1"])
+        self.assertEqual(self.alertas, [])
 
 
 if __name__ == "__main__":

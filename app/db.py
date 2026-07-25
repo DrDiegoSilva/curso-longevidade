@@ -500,6 +500,21 @@ def estornar_comissao(subscriber_id):
         return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 
 
+def claim_cancelamento(subscriber_id):
+    """Claim atômico do cancelamento por assinante (mesmo padrão do guard-slot em
+    registrar_envio_assinante): UPDATE condicional que só uma chamada concorrente
+    vence. Duplo clique ou retry de rede em /cancelar não pode disparar dois
+    estornos no Asaas para o mesmo assinante.
+    True se esta chamada marcou cancelado_em agora (venceu o claim); False se outra
+    chamada concorrente já tinha marcado (perdeu — não é falha, é corrida)."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE subscribers SET cancelado_em=? WHERE id=? AND (cancelado_em IS NULL OR cancelado_em='')",
+            (datetime.now().isoformat(), subscriber_id))
+        return cur.rowcount > 0
+
+
 def listar_afiliados():
     """Afiliados + agregados de comissão (n_vendas, comissao_total, comissao_pendente)."""
     with _conn() as c:
