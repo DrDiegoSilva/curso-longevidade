@@ -36,7 +36,8 @@ def agendador():
     def _prep_e_18h():
         daily.enviar_slot("18h")   # envia HOJE 1º (independente da preparação de amanhã, que pode falhar)
         daily.preparar_18h()       # prepara amanhã (o try/except do loop do agendador cobre se falhar)
-    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h}
+    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h,
+               "varredura_semanal": daily.varredura_semanal}
     for s in config.SLOTS:
         if s not in ("08h", "18h"):
             tarefas[f"slot:{s}"] = (lambda sl=s: daily.enviar_slot(sl))
@@ -50,6 +51,7 @@ def agendador():
             horarios.append((h, "prep18"))
         else:
             horarios.append((h, f"slot:{s}"))
+    horarios.append((config.HORA_VARREDURA, "varredura_semanal"))   # self-gate: só domingo, 1x/semana
     while True:
         now = _now().replace(tzinfo=None)
         alvo, nome = proximo_disparo(now, horarios)

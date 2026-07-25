@@ -475,6 +475,27 @@ def rotina_08h():
     enviar_slot("08h")
 
 
+def varredura_semanal(hoje=None, rodar_fn=None):
+    """Roda a varredura geral 1x por semana ISO, só no DIA_VARREDURA (domingo de manhã).
+    Idempotente via db.registrar_envio_slot(chave-semana, 'varredura'). Retorna True se rodou."""
+    from datetime import date
+    hoje = hoje or date.today()
+    if DIAS[hoje.weekday()] != config.DIA_VARREDURA:
+        return False
+    import db
+    ano, semana, _ = hoje.isocalendar()
+    chave = f"{ano}-W{semana:02d}"
+    if not db.registrar_envio_slot(chave, "varredura"):   # já rodou esta semana
+        return False
+    rodar_fn = rodar_fn or (lambda: __import__("curadoria").rodar_varredura())
+    try:
+        n = rodar_fn()
+        print(f"[varredura-semanal] {chave}: {n} novos candidatos", flush=True)
+    except Exception as e:
+        print(f"[varredura-semanal] erro: {e}", flush=True)
+    return True
+
+
 def montar_texto_resumo(titulo, resumo, tmeta, fresco=False):
     """Texto do WhatsApp p/ o assinante: selo de recência (se fresco) + badge do tema
     (emoji + rótulo) + título + resumo."""
