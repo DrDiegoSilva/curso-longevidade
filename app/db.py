@@ -239,6 +239,12 @@ def _migrar_colunas():
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
         _add_coluna(c, "pending_signups", "afiliado_codigo", "TEXT")
+        _add_coluna(c, "subscribers", "termos_versao", "TEXT")
+        _add_coluna(c, "subscribers", "termos_aceito_em", "TEXT")
+        _add_coluna(c, "subscribers", "termos_ip", "TEXT")
+        _add_coluna(c, "pending_signups", "termos_versao", "TEXT")
+        _add_coluna(c, "pending_signups", "termos_ip", "TEXT")
+        _add_coluna(c, "comissoes", "estornada_em", "TEXT")
 
 
 def _habilitar_rls():
@@ -481,6 +487,17 @@ def marcar_comissao_paga(id):
     from datetime import datetime
     with _conn() as c:
         c.execute("UPDATE comissoes SET pago=1, pago_em=? WHERE id=?", (datetime.now().isoformat(), id))
+
+
+def estornar_comissao(subscriber_id):
+    """Marca como estornada toda comissão gerada por esse assinante (venda devolvida).
+    Sem isso o afiliado receberia comissão de uma venda que deixou de existir.
+    Retorna quantas linhas foram marcadas."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("UPDATE comissoes SET estornada_em=? WHERE subscriber_id=? AND estornada_em IS NULL",
+                        (datetime.now().isoformat(), subscriber_id))
+        return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 
 
 def listar_afiliados():
