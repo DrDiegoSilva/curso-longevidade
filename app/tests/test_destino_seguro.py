@@ -33,6 +33,12 @@ class TestDestinoSeguro(unittest.TestCase):
         # "https://evil.com" do mesmo jeito que "//evil.com"
         self.assertEqual(self.f("/\\evil.com"), "/minha")
 
+    def test_open_redirect_com_tab_embutido(self):
+        # o parser de URL do WHATWG REMOVE tab/CR/LF de qualquer posição antes de
+        # resolver, então o navegador lê "/\t/evil.com" como "//evil.com" — mesma
+        # família dos dois testes acima, e o bypass clássico de filtro que só olha "//"
+        self.assertEqual(self.f("/\t/evil.com"), "/minha")
+
     def test_crlf_injection_com_r_n_literais(self):
         self.assertEqual(self.f("/x\r\nX-Injected: 1"), "/minha")
 

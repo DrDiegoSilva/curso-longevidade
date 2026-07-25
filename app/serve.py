@@ -38,9 +38,11 @@ def _destino_seguro(destino):
     - começa com "//" ou "/\\" — o navegador trata "\\" como "/" na resolução de URL,
       então "/\\evil.com" também resolve pro host evil.com (mesma família de bug do
       "//evil.com", só que com barra invertida);
-    - contém "\\r" ou "\\n" — response splitting: `send_header` do `http.server` não
-      valida CRLF no valor do header, então isso injetaria headers/corpo extras na
-      resposta (ex.: um Set-Cookie forjado);
+    - contém "\\r", "\\n" ou "\\t" — CR/LF é response splitting (`send_header` do
+      `http.server` não valida CRLF no valor do header, então injetaria headers/corpo
+      extras, ex.: um Set-Cookie forjado). O TAB entra na mesma regra porque o parser
+      de URL do WHATWG REMOVE tab/CR/LF de qualquer posição antes de resolver: sem
+      isso, "/\\t/evil.com" passaria aqui e o navegador leria "//evil.com";
     - tem caractere fora de latin-1 — `send_header` codifica o valor em latin-1
       estrito, e um caractere fora dessa faixa derrubava a resposta inteira com
       UnicodeEncodeError em vez de cair no padrão.
@@ -50,7 +52,7 @@ def _destino_seguro(destino):
         return "/minha"
     if len(destino) > 1 and destino[1] in ("/", "\\"):
         return "/minha"
-    if "\r" in destino or "\n" in destino:
+    if "\r" in destino or "\n" in destino or "\t" in destino:
         return "/minha"
     try:
         destino.encode("latin-1")
