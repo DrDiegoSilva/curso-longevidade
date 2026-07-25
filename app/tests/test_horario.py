@@ -102,6 +102,7 @@ class TestEnviarSlot(unittest.TestCase):
         self.daily._audio_master = lambda *a, **k: None
         self.daily._pdf_master = lambda *a, **k: None
         self.daily._e_dia_util = lambda dt: True
+        self.daily._enviar_estudo_para = lambda w, n, ctx: self.enviados.append({"whatsapp": w, "nome": n})
         # 2 assinantes: um no 12h, um no default (08h)
         self.s.definir_slot(self.s.adicionar("A", "5543000000001")["id"], "12h")
         self.s.adicionar("B", "5543000000002")   # 08h default
@@ -146,6 +147,23 @@ class TestEnviarSlot(unittest.TestCase):
         self.s.definir_slot(a_id, "20h")              # A troca de horário no meio do dia
         self.daily.enviar_slot("20h")                 # 20h dispara depois
         self.assertEqual(self.enviados, [])           # claim já usado -> NÃO reenvia
+
+    def test_catch_up_envia_uma_vez(self):
+        reg = self.s.adicionar("C", "5543000000003")
+        self.s.definir_slot(reg["id"], "20h")
+        c = self.s.por_id(reg["id"])
+        self.assertTrue(self.daily.enviar_catch_up(c))              # envia
+        self.assertEqual([e["nome"] for e in self.enviados], ["C"])
+        self.enviados.clear()
+        self.assertFalse(self.daily.enviar_catch_up(c))            # já recebeu -> não repete
+        self.assertEqual(self.enviados, [])
+
+    def test_catch_up_sem_rascunho_nao_envia(self):
+        self.daily._ctx_do_dia = lambda hoje: None                 # simula dia sem rascunho / não útil
+        reg = self.s.adicionar("D", "5543000000004")
+        d = self.s.por_id(reg["id"])
+        self.assertFalse(self.daily.enviar_catch_up(d))
+        self.assertEqual(self.enviados, [])
 
 
 class TestMeusDadosHorario(unittest.TestCase):

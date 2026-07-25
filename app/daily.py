@@ -511,3 +511,18 @@ def enviar_slot(slot):
         deliver.enviar_curador(f"✅ Enviado (slot {slot}, {ctx['art'].get('tema','')}): {res['ok']} assinantes"
                                + (f" · {len(res['falhas'])} falhas" if res["falhas"] else "")
                                + (" · ⚠️ SEM PDF (erro na geração)" if ctx["master_pdf"] is None else ""))
+
+
+def enviar_catch_up(sub):
+    """Envia o estudo de hoje a UM assinante que trocou pra um slot já disparado e ainda não
+    recebeu. Idempotente (claim em envios_dia). Retorna True se enviou; False se nada a enviar
+    ou já recebeu. NÃO chama _finalizar_dia (já rodou no 1º slot do dia)."""
+    import db
+    hoje = _hoje_iso()
+    ctx = _ctx_do_dia(hoje)
+    if ctx is None:
+        return False
+    if not db.registrar_envio_assinante(hoje, sub["id"]):   # já recebeu hoje -> não repete
+        return False
+    _enviar_estudo_para(sub["whatsapp"], sub.get("nome", ""), ctx)
+    return True
