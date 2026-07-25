@@ -56,6 +56,32 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(len(self.s.ativos()), 1)
         self.assertEqual(len(self.enviados), 1)      # boas-vindas
 
+    def test_ativar_pix_grava_acesso_ate_no_vencimento(self):
+        # CORREÇÃO 1: Pix é pagamento avulso (DETACHED) — não existe assinatura
+        # recorrente que gere um PAYMENT_OVERDUE quando o período acabar, e não há
+        # rotina que expire ninguém. Sem acesso_ate, ATIVO sem acesso_ate = acesso PRA
+        # SEMPRE (subscribers.tem_acesso). Grava o mesmo vencimento já calculado (prox)
+        # pra expirar no fim do período pago (evento sem "subscription" = Pix avulso).
+        tok = self.db.criar_pending({"nome": "Dr. Pix", "whatsapp": "5543999994444",
+                                     "email": "pix@x.com", "plano": "anual", "metodo": "PIX"})
+        st, msg = self.w.processar(self._body(ext=tok, sub=None), "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        reg = self.s.por_whatsapp("5543999994444")
+        self.assertEqual(reg["acesso_ate"], "2027-07-19")     # dueDate 2026-07-19 + 365d (YEARLY)
+        self.assertFalse(self.s.tem_acesso(reg, agora=__import__("datetime").datetime(2027, 8, 1)))
+
+    def test_ativar_cartao_nao_grava_acesso_ate(self):
+        # Cartão tem assinatura recorrente (sid presente): ela renova sozinha, então
+        # gravar acesso_ate cortaria o acesso na virada do ciclo antes da próxima
+        # cobrança confirmar. Só o Pix avulso (sem subscription) precisa da expiração.
+        tok = self.db.criar_pending({"nome": "Dr. Cartao", "whatsapp": "5543999995555",
+                                     "email": "cartao@x.com", "plano": "anual", "metodo": "CARTAO"})
+        st, msg = self.w.processar(self._body(ext=tok, sub="sub_cartao"), "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        reg = self.s.por_whatsapp("5543999995555")
+        self.assertIsNone(reg["acesso_ate"])
+        self.assertTrue(self.s.tem_acesso(reg))
+
     def test_idempotente(self):
         tok = self.db.criar_pending({"nome": "Dr. A", "whatsapp": "5543", "plano": "mensal"})
         self.w.processar(self._body(ext=tok), "segredo", enviar_fn=self.envfn)

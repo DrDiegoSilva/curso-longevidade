@@ -133,6 +133,16 @@ def _executar(event, pay, pid, enviar_fn):
              "termos_versao": (pending or {}).get("termos_versao", ""),
              "termos_ip": (pending or {}).get("termos_ip", "")},
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
+        if not sid:
+            # Pix é pagamento DETACHED (avulso), sem assinatura recorrente por trás — não
+            # existe cobrança futura agendada, logo nunca chega um PAYMENT_OVERDUE pra
+            # expirar ninguém. Sem acesso_ate, ATIVO sem acesso_ate = acesso PRA SEMPRE
+            # (subscribers.tem_acesso), então quem pagou uma vez ficaria recebendo os
+            # estudos indefinidamente. Grava o mesmo vencimento já calculado (prox) —
+            # decisão do Diego. No cartão (com subscription/sid) NÃO gravamos: o cartão
+            # renova sozinho e uma data de fim cortaria o acesso na virada do ciclo,
+            # antes da próxima cobrança confirmar.
+            subscribers.marcar_status(reg["id"], "ATIVO", acesso_ate=prox)
         _boas_vindas(whatsapp, nome, email, enviar_fn)
         # Afiliado (D3): comissão sobre o valor pago (só na 1ª venda). No cartão o desconto
         # é RECORRENTE (o Asaas não deixa alterar o `value` da assinatura por API) — decisão do
