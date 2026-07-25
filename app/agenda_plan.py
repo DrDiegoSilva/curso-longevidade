@@ -1,8 +1,9 @@
 """Planejamento puro da agenda de envios — sem I/O (testável em memória).
 
-Regras: preencher só os dias VAZIOS; rotação de tema como guia + variedade
-(não repetir o tema do dia anterior quando houver alternativa) + preferência
-reserva pronta > fila fresca. Não consome candidato duas vezes.
+Regras: preencher só os dias VAZIOS; variedade (não repetir o tema do dia
+anterior quando houver alternativa) > rotação de tema como guia da vez >
+fresh-first (candidato fresco, ≤30d) > clássico como PISO (só entra quando
+não há melhor) > score. Não consome candidato duas vezes.
 """
 from datetime import datetime, timedelta
 
@@ -41,9 +42,11 @@ def semanas_do_mes(hoje, dias_envio, n_semanas=4):
 
 def _rank(cand, preferido, prev):
     return (
-        1 if cand["tema"] != prev else 0,           # variedade (regra forte)
-        1 if cand["tipo"] == "reserva" else 0,      # reserva pronta > fila fresca
-        1 if cand["tema"] == preferido else 0,      # rotação: só guia/desempate
+        1 if cand["tema"] != prev else 0,            # variedade (regra forte)
+        1 if cand["tema"] == preferido else 0,       # rotação = tema do dia (guia da vez)
+        1 if cand.get("fresco") else 0,              # fresh-first (≤30d)
+        0 if cand.get("classico") else 1,            # clássico é PISO (só quando não há melhor)
+        cand.get("score", 0),                        # qualidade puxa pra frente
     )
 
 
@@ -86,6 +89,10 @@ def classificar_slot(slot):
         return ("pulado", None)
     if t == "reserva" and slot.get("ref_id"):
         return ("reserva", slot["ref_id"])
+    if t == "candidato" and slot.get("ref_id"):
+        return ("candidato", slot["ref_id"])
+    if t == "classico" and slot.get("ref_id"):
+        return ("classico", slot["ref_id"])
     if t == "fila" and slot.get("payload"):
         return ("fila", slot["payload"])
     return ("fallback", None)

@@ -8,8 +8,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import agenda_plan as ap
 
 
-def _cand(tema, tipo="reserva", titulo="t", ref_id="r", payload=None):
-    return {"tipo": tipo, "tema": tema, "titulo": titulo, "ref_id": ref_id, "payload": payload}
+def _cand(tema, tipo="reserva", titulo="t", ref_id="r", payload=None,
+          fresco=False, classico=False, score=5):
+    return {"tipo": tipo, "tema": tema, "titulo": titulo, "ref_id": ref_id, "payload": payload,
+            "fresco": fresco, "classico": classico, "score": score}
+
+
+def _c(tema, tipo="reserva", fresco=False, classico=False, score=5, ref_id="r"):
+    return {"tipo": tipo, "tema": tema, "titulo": "t", "ref_id": ref_id, "payload": None,
+            "fresco": fresco, "classico": classico, "score": score}
 
 
 class TestDiasUteis(unittest.TestCase):
@@ -69,11 +76,13 @@ class TestPlanejar(unittest.TestCase):
         # 29 vem depois de bloqueado tema A -> variedade tenta != A, mas só há A -> ainda preenche
         self.assertIn("2026-07-29", plano)
 
-    def test_reserva_antes_de_fila(self):
+    def test_tipo_nao_decide_mais_score_sim(self):
+        # "reserva > fila" saiu do _rank: com o resto empatado, quem decide é o score
         dias = self._dias(["2026-07-27"])
-        cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}), _cand("A", tipo="reserva")]
+        cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}, score=9),
+                 _cand("A", tipo="reserva", score=3)]
         plano = ap.planejar_agenda(dias, cands, ["A"], None)
-        self.assertEqual(plano["2026-07-27"]["tipo"], "reserva")
+        self.assertEqual(plano["2026-07-27"]["tipo"], "fila")
 
     def test_estoque_magro_deixa_vazio(self):
         dias = self._dias(["2026-07-27", "2026-07-28"])
@@ -94,12 +103,37 @@ class TestPlanejar(unittest.TestCase):
         plano = ap.planejar_agenda(dias, cands, ["A"], "A")
         self.assertEqual(plano["2026-07-27"]["tema"], "B")
 
-    def test_reserva_vence_rotacao(self):
-        # rotação pede A (fila), mas há reserva B -> prefere a reserva
+    def test_rotacao_vence_quando_tipo_e_score_empatam(self):
+        # tipo não é mais critério de rank: rotação (tema==preferido) decide entre A e B
         dias = self._dias(["2026-07-27"])
         cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}), _cand("B", tipo="reserva")]
         plano = ap.planejar_agenda(dias, cands, ["A"], "X")
-        self.assertEqual(plano["2026-07-27"]["tipo"], "reserva")
+        self.assertEqual(plano["2026-07-27"]["tema"], "A")
+
+
+class TestRankPiramide(unittest.TestCase):
+    def test_fresco_vence_estoque_mesmo_tema(self):
+        dias = [("2026-07-27", None, False)]
+        cands = [_c("Obesidade", fresco=False, score=9), _c("Obesidade", fresco=True, score=6, ref_id="f")]
+        plano = ap.planejar_agenda(dias, cands, ["Obesidade"], None)
+        self.assertEqual(plano["2026-07-27"]["ref_id"], "f")     # fresco fura, mesmo com score menor
+
+    def test_classico_e_piso(self):
+        dias = [("2026-07-27", None, False)]
+        cands = [_c("Obesidade", classico=True, score=9, ref_id="cl"),
+                 _c("Obesidade", classico=False, score=3, ref_id="rs")]
+        plano = ap.planejar_agenda(dias, cands, ["Obesidade"], None)
+        self.assertEqual(plano["2026-07-27"]["ref_id"], "rs")    # estoque comum > clássico
+
+    def test_emprestimo_entre_temas(self):
+        dias = [("2026-07-27", None, False)]
+        cands = [_c("Obesidade", classico=True, score=8, ref_id="ob")]   # só há clássico de Obesidade
+        plano = ap.planejar_agenda(dias, cands, ["Performance"], None)   # dia pedia Performance
+        self.assertEqual(plano["2026-07-27"]["ref_id"], "ob")            # empresta do gigante
+
+    def test_classificar_slot_novos_tipos(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "candidato", "ref_id": "x"}), ("candidato", "x"))
+        self.assertEqual(ap.classificar_slot({"tipo": "classico", "ref_id": "y"}), ("classico", "y"))
 
 
 class TestClassificarSlot(unittest.TestCase):
@@ -111,6 +145,12 @@ class TestClassificarSlot(unittest.TestCase):
 
     def test_reserva(self):
         self.assertEqual(ap.classificar_slot({"tipo": "reserva", "ref_id": "abc"}), ("reserva", "abc"))
+
+    def test_candidato(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "candidato", "ref_id": "xyz"}), ("candidato", "xyz"))
+
+    def test_classico(self):
+        self.assertEqual(ap.classificar_slot({"tipo": "classico", "ref_id": "cls"}), ("classico", "cls"))
 
     def test_fila(self):
         self.assertEqual(ap.classificar_slot({"tipo": "fila", "payload": "{}"}), ("fila", "{}"))
