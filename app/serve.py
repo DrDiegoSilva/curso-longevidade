@@ -734,13 +734,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 asaas.cancelar_assinatura(sid)
         except Exception as e:
             print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
-        acesso_ate = sub.get("proximo_vencimento")   # acesso até o fim do período pago
+        estornado = estornar_arrependimento(sub)      # None fora dos 7 dias ou se falhou
+        if estornado:                                  # arrependimento: acesso cessa agora
+            acesso_ate = None
+        else:                                          # regra normal: acesso até o fim do pago
+            acesso_ate = sub.get("proximo_vencimento")
         subscribers.registrar_cancelamento(sub["id"], motivo, acesso_ate=acesso_ate)
         if sub.get("email"):
-            ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
-            html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>"
-                    f"<p>Confirmamos o cancelamento da sua assinatura da Atualização Científica. "
-                    f"Não haverá novas cobranças.{site_web._esc(ate)}</p>"
+            if estornado:
+                corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
+                         f"Científica dentro do prazo de arrependimento.</p>"
+                         f"<p>O reembolso integral de <strong>R$ {estornado:.2f}</strong> foi "
+                         f"solicitado e aparece em até 10 dias úteis, conforme o meio de "
+                         f"pagamento utilizado.</p>")
+            else:
+                ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
+                corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
+                         f"Científica. Não haverá novas cobranças.{site_web._esc(ate)}</p>")
+            html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>{corpo}"
                     f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
                     f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
             email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
@@ -809,6 +820,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+
+def estornar_arrependimento(sub):
+    """Estorno INTEGRAL quando o cancelamento cai dentro dos 7 dias (CDC art. 49).
+
+    Devolve o valor estornado, ou None quando não havia direito, não havia cobrança
+    (cortesia por cupom) ou o estorno falhou. Falha aqui NUNCA bloqueia o cancelamento:
+    o assinante não pode ficar preso por um problema nosso — vira alerta pro admin.
+    """
+    from datetime import date
+    import asaas, db, refunds, webhook_asaas
+    if not refunds.dentro_arrependimento(sub.get("criado_em"), date.today()):
+        return None
+    pid = sub.get("asaas_payment_id")
+    if not pid:                       # cortesia por cupom: não houve cobrança pra estornar
+        return None
+    try:
+        pagamento = asaas.obter_pagamento(pid)
+        tipo, alvo = refunds.alvo_estorno(pagamento)
+        if tipo == "installment":
+            asaas.estornar_parcelamento(alvo)
+        else:
+            asaas.estornar_pagamento(alvo)
+        db.estornar_comissao(sub["id"])
+        return float(pagamento.get("value") or 0)
+    except Exception as e:
+        print(f"[cancelar] estorno de arrependimento falhou: {e}", flush=True)
+        webhook_asaas._alertar_admin(
+            pid, sub.get("asaas_subscription_id"),
+            f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
+            f"({e}) — estorne manualmente no painel do Asaas")
+        return None
+
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
