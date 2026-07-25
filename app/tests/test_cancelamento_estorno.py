@@ -24,8 +24,11 @@ class TestEstornoArrependimento(unittest.TestCase):
         self._orig = (asaas.obter_pagamento, asaas.estornar_pagamento,
                       asaas.estornar_parcelamento, db.estornar_comissao)
         asaas.obter_pagamento = lambda pid: {"id": pid, "value": 997.0}
-        asaas.estornar_pagamento = lambda pid, valor=None: self.estornos.append(("payment", pid))
-        asaas.estornar_parcelamento = lambda iid, valor=None: self.estornos.append(("installment", iid))
+        # Gravam também `valor` de propósito (ACHADO 5): a regra é estorno sempre
+        # INTEGRAL, nunca parcial. Um mutante que passasse `asaas.estornar_pagamento(alvo,
+        # valor)` (estorno PARCIAL) passaria verde se os fakes descartassem esse argumento.
+        asaas.estornar_pagamento = lambda pid, valor=None: self.estornos.append(("payment", pid, valor))
+        asaas.estornar_parcelamento = lambda iid, valor=None: self.estornos.append(("installment", iid, valor))
         db.estornar_comissao = lambda sid: self.comissoes.append(sid) or 1
 
         import webhook_asaas
@@ -40,8 +43,8 @@ class TestEstornoArrependimento(unittest.TestCase):
 
     def test_cancelou_no_dia_3_estorna_integral(self):
         valor = self.serve.estornar_arrependimento(_sub(3))
-        self.assertEqual(valor, 997.0)
-        self.assertEqual(self.estornos, [("payment", "pay_1")])
+        self.assertEqual(valor, (997.0, "payment"))
+        self.assertEqual(self.estornos, [("payment", "pay_1", None)])
         self.assertEqual(self.comissoes, ["s1"])
 
     def test_cancelou_no_dia_30_nao_estorna(self):
@@ -49,9 +52,13 @@ class TestEstornoArrependimento(unittest.TestCase):
         self.assertEqual(self.estornos, [])
 
     def test_parcelado_estorna_o_parcelamento_inteiro(self):
+        # ACHADO 1 (bloqueante): "value" aqui é o de UMA parcela (83.08); quem chama
+        # tem que saber, pelo `tipo`, que esse número NÃO é o total estornado (o
+        # Asaas estorna o parcelamento inteiro) — daí o e-mail não poder imprimi-lo.
         self.asaas.obter_pagamento = lambda pid: {"id": pid, "value": 83.08, "installment": "ins_9"}
-        self.serve.estornar_arrependimento(_sub(2))
-        self.assertEqual(self.estornos, [("installment", "ins_9")])
+        valor, tipo = self.serve.estornar_arrependimento(_sub(2))
+        self.assertEqual(tipo, "installment")
+        self.assertEqual(self.estornos, [("installment", "ins_9", None)])
 
     def test_cortesia_sem_pagamento_nao_estorna_nem_alerta(self):
         # cupom de cortesia entra sem asaas_payment_id — não é falha, é ausência de cobrança
@@ -66,6 +73,7 @@ class TestEstornoArrependimento(unittest.TestCase):
         self.assertIsNone(self.serve.estornar_arrependimento(_sub(2)))
         self.assertEqual(len(self.alertas), 1)
         self.assertIn("estorno", self.alertas[0].lower())
+        self.assertEqual(self.comissoes, [])   # estorno nunca saiu -> nada a dar baixa
 
     def test_estorno_ok_mas_baixa_de_comissao_falha_devolve_valor_e_alerta_diferente(self):
         # ACHADO 1: o estorno no Asaas já saiu — a falha é só na baixa da comissão do
@@ -75,8 +83,8 @@ class TestEstornoArrependimento(unittest.TestCase):
             raise RuntimeError("database is locked")
         self.db.estornar_comissao = explode
         valor = self.serve.estornar_arrependimento(_sub(3))
-        self.assertEqual(valor, 997.0)
-        self.assertEqual(self.estornos, [("payment", "pay_1")])
+        self.assertEqual(valor, (997.0, "payment"))
+        self.assertEqual(self.estornos, [("payment", "pay_1", None)])
         self.assertEqual(len(self.alertas), 1)
         msg = self.alertas[0].lower()
         self.assertIn("comiss", msg)
@@ -86,15 +94,33 @@ class TestEstornoArrependimento(unittest.TestCase):
         # IMPORTANT A: timeout de rede DEPOIS de o Asaas ter processado o estorno. Se
         # isso virasse "não estornou", o alerta pediria estorno manual em cima de um
         # estorno já feito (devolução em dobro) e o cliente ficaria com acesso pago de
-        # volta. A re-consulta ao Asaas desfaz a ambiguidade.
+        # volta. A re-consulta ao Asaas desfaz a ambiguidade. REFUNDED é definitivo:
+        # nenhum alerta extra de confirmação (diferente de REFUND_IN_PROGRESS, abaixo).
         def timeout(pid, valor=None):
             raise RuntimeError("timed out")
         self.asaas.estornar_pagamento = timeout
         self.asaas.obter_pagamento = lambda pid: {"id": pid, "value": 997.0, "status": "REFUNDED"}
         valor = self.serve.estornar_arrependimento(_sub(3))
-        self.assertEqual(valor, 997.0)
+        self.assertEqual(valor, (997.0, "payment"))
         self.assertEqual(self.alertas, [])          # nada de "estorne manualmente"
         self.assertEqual(self.comissoes, ["s1"])     # e a comissão do afiliado cai junto
+
+    def test_falha_ambigua_com_estorno_em_processamento_conta_como_sucesso_mas_alerta(self):
+        # IMPORTANT 3: REFUND_REQUESTED/REFUND_IN_PROGRESS ainda NÃO terminaram no
+        # Asaas. Continua tratado como sucesso (não re-estorna — evitaria duplicidade),
+        # mas se isso falhar depois (ex.: Pix sem saldo na conta Asaas) o cliente fica
+        # sem dinheiro E sem acesso, e ninguém saberia — por isso alerta pedindo
+        # confirmação, mesmo seguindo como sucesso.
+        def timeout(pid, valor=None):
+            raise RuntimeError("timed out")
+        self.asaas.estornar_pagamento = timeout
+        self.asaas.obter_pagamento = lambda pid: {"id": pid, "value": 997.0,
+                                                   "status": "REFUND_IN_PROGRESS"}
+        valor = self.serve.estornar_arrependimento(_sub(3))
+        self.assertEqual(valor, (997.0, "payment"))
+        self.assertEqual(len(self.alertas), 1)
+        self.assertIn("confir", self.alertas[0].lower())
+        self.assertEqual(self.comissoes, ["s1"])     # segue dando baixa na comissão
 
     def test_falha_ambigua_com_pagamento_ainda_confirmado_alerta_e_devolve_none(self):
         # O Asaas diz que NÃO houve estorno: aí é falha de verdade — alerta e None.
@@ -223,7 +249,7 @@ class TestExecutarCancelamento(unittest.TestCase):
                                         "acesso_ate": "2026-12-31"}])
 
     def test_dentro_dos_7_dias_zera_acesso_e_email_de_reembolso(self):
-        self.serve.estornar_arrependimento = lambda sub: 997.0
+        self.serve.estornar_arrependimento = lambda sub: (997.0, "payment")
         self._chamar(self._sub(), "mudei de ideia")
         # o claim grava o acesso padrão; o estorno é o AJUSTE que zera depois
         self.assertEqual(self.claims[0]["acesso_ate"], "2026-12-31")
@@ -231,16 +257,31 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.assertEqual(self.paginas, [None])
         self.assertEqual(len(self.emails), 1)
         self.assertIn("reembolso", self.emails[0]["html"].lower())
+        self.assertIn("997,00", self.emails[0]["html"])   # ACHADO 1: valor certo, em pt-BR
 
     def test_estorno_de_zero_ainda_conta_como_estorno(self):
         # `estornado is not None` importa: 0.0 é um estorno VÁLIDO (pagamento de valor
         # zero/cortesia paga). Com truthiness (`if estornado:`) este teste quebra — o
         # acesso não seria encerrado e o e-mail seria o comum, não o de reembolso.
-        self.serve.estornar_arrependimento = lambda sub: 0.0
+        self.serve.estornar_arrependimento = lambda sub: (0.0, "payment")
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(self.encerrados, ["s1"])
         self.assertEqual(self.paginas, [None])
         self.assertIn("reembolso", self.emails[0]["html"].lower())
+
+    def test_estorno_parcelado_nao_mostra_valor_da_parcela_no_email(self):
+        # ACHADO 1 (bloqueante): no cartão parcelado o Asaas estorna o PARCELAMENTO
+        # inteiro (ex.: R$ 997), mas o valor que `estornar_arrependimento` devolve é o
+        # de UMA parcela (ex.: R$ 83,08) — não existe, aqui, o total certo pra mostrar.
+        # Com tipo == "installment" o e-mail não pode imprimir NENHUM valor (nem o
+        # errado), só confirmar que o reembolso integral foi pedido.
+        self.serve.estornar_arrependimento = lambda sub: (83.08, "installment")
+        self._chamar(self._sub(), "mudei de ideia")
+        self.assertEqual(len(self.emails), 1)
+        html = self.emails[0]["html"]
+        self.assertIn("reembolso integral", html.lower())
+        self.assertNotIn("83,08", html)
+        self.assertNotIn("83.08", html)
 
     def test_fora_dos_7_dias_mantem_proximo_vencimento_sem_reembolso_no_email(self):
         self.serve.estornar_arrependimento = lambda sub: None
@@ -254,7 +295,7 @@ class TestExecutarCancelamento(unittest.TestCase):
     def test_falha_ao_encerrar_acesso_apos_estorno_nao_derruba_e_alerta(self):
         # O dinheiro já saiu e o cancelamento já está gravado — só o ajuste do acesso
         # ficou pendente. Não pode virar erro na tela do cliente.
-        self.serve.estornar_arrependimento = lambda sub: 997.0
+        self.serve.estornar_arrependimento = lambda sub: (997.0, "payment")
         self.db.encerrar_acesso = lambda sid: (_ for _ in ()).throw(RuntimeError("database is locked"))
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(len(self.emails), 1)
@@ -278,7 +319,11 @@ class TestExecutarCancelamento(unittest.TestCase):
 
     def test_falha_no_claim_com_cancelamento_ja_no_banco_e_tratada_como_perdida(self):
         # A exceção pode ter estourado DEPOIS do commit. A releitura mostra o
-        # cancelamento gravado -> foi corrida perdida: nada de estornar de novo.
+        # cancelamento gravado -> foi corrida perdida (ou foi a própria chamada que
+        # commitou e a exceção estourou depois — indistinguível daqui): nada de
+        # estornar de novo, mas o admin é SEMPRE avisado pra conferir manualmente
+        # (ACHADO 2) — sem isso, o caso "commitou e explodiu depois" (Asaas nunca
+        # cancelado, cliente seguindo cobrado) passaria em silêncio total.
         def explode(sid, motivo, acesso_ate):
             raise RuntimeError("connection reset")
         self.db.claim_cancelamento = explode
@@ -289,6 +334,8 @@ class TestExecutarCancelamento(unittest.TestCase):
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(self.emails, [])
         self.assertEqual(self.paginas, [None])
+        self.assertEqual(len(self.alertas), 1)
+        self.assertIn("asaas", self.alertas[0].lower())
 
     def test_falha_no_claim_com_banco_ok_e_sem_cancelamento_tenta_gravar_de_novo(self):
         # A releitura prova que o UPDATE não passou: o banco responde e o assinante
@@ -303,7 +350,7 @@ class TestExecutarCancelamento(unittest.TestCase):
             return True
         self.db.claim_cancelamento = as_vezes
         self.subscribers.por_id = lambda sid: self._sub(status="ATIVO")
-        self.serve.estornar_arrependimento = lambda sub: 997.0
+        self.serve.estornar_arrependimento = lambda sub: (997.0, "payment")
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(tentativas, ["2026-12-31", "2026-12-31"])
         self.assertEqual(self.encerrados, ["s1"])         # estornou e encerrou o acesso

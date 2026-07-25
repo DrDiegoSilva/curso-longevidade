@@ -617,6 +617,34 @@ Depois, substituir o corpo de `_executar_cancelamento` (`app/serve.py:729-747`) 
         return self._html(site_web.pagina_cancelado(acesso_ate))
 ```
 
+> **Nota (2026-07-25, rodada final de revisão da Task 4):** o esboço acima —
+> `subscribers.registrar_cancelamento(sub["id"], motivo, acesso_ate=acesso_ate)` gravando
+> DEPOIS do estorno — foi a versão inicial do Step 3 e não é mais o desenho implementado.
+> `subscribers.registrar_cancelamento` **foi removida**: gravar o cancelamento depois de já
+> ter mexido no Asaas deixava uma janela em que uma falha no meio (Asaas cancelado mas o
+> banco não gravado, ou vice-versa) corrompia o estado. O desenho atual inverte a ordem —
+> **claim atômico primeiro, estorno como ajuste depois**:
+>
+> - `db.claim_cancelamento(sub["id"], motivo, acesso_ate)` grava o cancelamento
+>   **inteiro** (status + cancelado_em + motivo + acesso_ate) num único UPDATE
+>   condicional — é ao mesmo tempo o claim contra corrida (duplo clique/retry) e a
+>   gravação final. `serve._gravar_cancelamento(sub, motivo, acesso_ate)` envolve essa
+>   chamada e trata a ambiguidade de exceção (venceu/perdeu/incerto — ver docstring em
+>   `app/serve.py`).
+> - Só depois disso o Asaas é cancelado e `estornar_arrependimento(sub)` roda (só
+>   quando o claim venceu com certeza — nunca em "incerto").
+> - Se o estorno sai, o AJUSTE é `db.encerrar_acesso(sub["id"])` (zera o acesso), não
+>   uma segunda gravação do cancelamento inteiro.
+> - `estornar_arrependimento` hoje devolve `(valor, tipo)` — não só `float` — porque
+>   no cartão parcelado o Asaas estorna o parcelamento inteiro mas `valor` continua
+>   sendo o de uma parcela; `tipo` é o que deixa `_email_cancelamento` saber que não
+>   pode imprimir esse número.
+>
+> Ver o código real em `app/serve.py` (`_executar_cancelamento`, `_gravar_cancelamento`,
+> `estornar_arrependimento`, `_email_cancelamento`) em vez deste esboço histórico —
+> qualquer task futura gerada a partir deste plano deve implementar contra o código
+> atual, não reintroduzir `subscribers.registrar_cancelamento`.
+
 - [ ] **Step 4: Rodar os testes e confirmar que passam**
 
 Run: `cd app && python3 -m unittest tests.test_cancelamento_estorno -v && python3 -m unittest discover -s tests`

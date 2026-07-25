@@ -762,7 +762,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                               f"senão ela continua cobrando")
         # Estorno só quando temos CERTEZA do estado gravado. Em "incerto" (banco falhou e
         # não deu pra confirmar) o dinheiro não se move — regra global.
-        estornado = estornar_arrependimento(sub) if estado == "venceu" else None
+        resultado = estornar_arrependimento(sub) if estado == "venceu" else None
+        estornado, tipo_estorno = resultado if resultado is not None else (None, None)
         if estornado is not None:              # 0.0 é estorno válido, não "sem estorno"
             acesso_ate = None                   # reembolsou integral -> acesso cessa agora
             try:
@@ -774,7 +775,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 _alertar(sub, f"estorno de {sub.get('nome') or sub.get('id')} CONCLUÍDO, mas não "
                               f"consegui encerrar o acesso no cadastro ({e}) — zere o 'acesso até' "
                               f"manualmente")
-        _email_cancelamento(sub, estornado, acesso_ate)
+        _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate)
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
@@ -882,6 +883,20 @@ def _gravar_cancelamento(sub, motivo, acesso_ate):
                       f"o estorno manualmente (não estornei para não devolver em dobro)")
         return "incerto"
     if atual.get("cancelado_em") or (atual.get("status") or "") == "CANCELADO":
+        # Daqui pra frente há duas causas possíveis, e não dá pra distinguir qual foi:
+        # (a) outra chamada ganhou a corrida e já tratou tudo (Asaas cancelado, e-mail
+        # enviado) — nada a fazer; ou (b) foi o UPDATE desta PRÓPRIA chamada que
+        # commitou e a exceção estourou DEPOIS — nesse caso ninguém cancelou no Asaas,
+        # ninguém mandou e-mail, e o cliente vê "cancelado" na tela mas SEGUE sendo
+        # cobrado. O custo de alertar à toa no caso (a) é bem menor que o de deixar
+        # (b) passar em silêncio — por isso alerta sempre, não só quando a 2ª
+        # tentativa também falha.
+        _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} caiu numa exceção "
+                      f"no claim mas já aparece gravado no banco — pode ter sido corrida "
+                      f"perdida (nada a fazer) OU o próprio UPDATE desta chamada que commitou "
+                      f"antes da exceção estourar (Asaas NÃO cancelado, e-mail NÃO enviado, "
+                      f"cliente pode seguir sendo cobrado) — confira o cadastro e o Asaas "
+                      f"manualmente")
         return "perdeu"           # o UPDATE tinha gravado (ou outra chamada ganhou a corrida)
     try:
         return "venceu" if db.claim_cancelamento(sub["id"], motivo, acesso_ate) else "perdeu"
@@ -905,18 +920,30 @@ def _acesso_ate_persistido(sub):
         return sub.get("acesso_ate")
 
 
-def _email_cancelamento(sub, estornado, acesso_ate):
+def _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate):
     """Confirmação por e-mail: versão com reembolso ou versão comum. À prova de exceção
-    — o cancelamento já está gravado, um problema de e-mail não pode virar erro na tela."""
+    — o cancelamento já está gravado, um problema de e-mail não pode virar erro na tela.
+
+    `tipo_estorno` (o mesmo de `refunds.alvo_estorno`, vindo de `estornar_arrependimento`)
+    decide se o valor entra no e-mail. No cartão parcelado o Asaas estorna o
+    PARCELAMENTO inteiro (ex.: R$ 997), mas `estornado` aqui é o valor de UMA parcela
+    (ex.: R$ 83,08) — é o único número que a API do Asaas devolve pra essa cobrança, e
+    ele não representa o total reembolsado. Imprimir esse número como "reembolso
+    integral" mentiria por um fator de N parcelas. Quando `tipo_estorno == "installment"`
+    o e-mail não imprime NENHUM valor — só confirma que o reembolso integral foi pedido."""
     if not sub.get("email"):
         return
     try:
-        import site_web, email_send
+        import site_web, email_send, pricing
         if estornado is not None:            # 0.0 é estorno válido, não "sem estorno"
+            if tipo_estorno == "installment":
+                linha_valor = "O reembolso integral do valor pago foi solicitado"
+            else:
+                linha_valor = (f"O reembolso integral de <strong>{pricing.fmt_brl(estornado)}"
+                               f"</strong> foi solicitado")
             corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
                      f"Científica dentro do prazo de arrependimento.</p>"
-                     f"<p>O reembolso integral de <strong>R$ {estornado:.2f}</strong> foi "
-                     f"solicitado e aparece em até 10 dias úteis, conforme o meio de "
+                     f"<p>{linha_valor} e aparece em até 10 dias úteis, conforme o meio de "
                      f"pagamento utilizado.</p>")
         else:
             ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
@@ -943,15 +970,23 @@ def _estorno_confirmado_no_asaas(pid):
     estorno. Tratar isso como "não estornou" gera o pior par possível — alerta pedindo
     estorno manual (devolução em dobro) e cliente sem o acesso que já foi pago de volta.
 
-    Devolve o valor estornado quando o Asaas confirma o estorno; None quando ele diz que
-    não houve, ou quando a própria re-consulta falha (sem certeza, não afirmamos que o
-    dinheiro saiu)."""
-    import asaas
+    Devolve `(valor, tipo, pendente)` quando o Asaas confirma o estorno (mesmo que
+    ainda em andamento); None quando ele diz que não houve, ou quando a própria
+    re-consulta falha (sem certeza, não afirmamos que o dinheiro saiu).
+
+    `pendente` é True para REFUND_REQUESTED/REFUND_IN_PROGRESS — status que ainda
+    podem falhar depois (ex.: Pix sem saldo na conta Asaas), então mesmo tratados como
+    sucesso aqui, o chamador precisa alertar pedindo confirmação humana. É False só
+    para REFUNDED, que é definitivo."""
+    import asaas, refunds
     try:
         atual = asaas.obter_pagamento(pid) or {}
-        if str(atual.get("status") or "").upper() not in _STATUS_ESTORNADO:
+        status = str(atual.get("status") or "").upper()
+        if status not in _STATUS_ESTORNADO:
             return None
-        return float(atual.get("value") or 0)
+        tipo, _ = refunds.alvo_estorno(atual)
+        valor = float(atual.get("value") or 0)
+        return (valor, tipo, status != "REFUNDED")
     except Exception as e:
         print(f"[cancelar] re-consulta do pagamento após falha do estorno falhou: {e}", flush=True)
         return None
@@ -960,10 +995,14 @@ def _estorno_confirmado_no_asaas(pid):
 def estornar_arrependimento(sub):
     """Estorno INTEGRAL quando o cancelamento cai dentro dos 7 dias (CDC art. 49).
 
-    Devolve o valor estornado, ou None quando não havia direito, não havia cobrança
-    (cortesia por cupom) ou o estorno no Asaas falhou. Falha aqui NUNCA bloqueia o
-    cancelamento: o assinante não pode ficar preso por um problema nosso — vira
-    alerta pro admin.
+    Devolve `(valor, tipo)` quando o estorno sai (ou já tinha saído — falha ambígua
+    confirmada no Asaas), ou None quando não havia direito, não havia cobrança
+    (cortesia por cupom) ou o estorno no Asaas falhou de verdade. `tipo` vem de
+    `refunds.alvo_estorno`: "installment" quando o alvo foi o parcelamento inteiro, ou
+    "payment" quando foi um pagamento avulso — quem manda e-mail (`_email_cancelamento`)
+    usa isso pra saber se pode imprimir `valor` (no parcelado ele é só o de UMA
+    parcela, não o total estornado). Falha aqui NUNCA bloqueia o cancelamento: o
+    assinante não pode ficar preso por um problema nosso — vira alerta pro admin.
 
     NÃO faz claim de corrida (duplo clique / retry concorrente). Isso é
     responsabilidade de quem chama: db.claim_cancelamento grava o cancelamento inteiro
@@ -1004,15 +1043,27 @@ def estornar_arrependimento(sub):
         # (timeout de rede na resposta). Pergunta ao Asaas antes de concluir que o
         # dinheiro não saiu — senão pediríamos estorno manual em cima de um estorno já
         # feito (devolução em dobro) e ainda manteríamos o acesso do reembolsado.
-        valor = _estorno_confirmado_no_asaas(pid)
-        if valor is None:
+        resultado = _estorno_confirmado_no_asaas(pid)
+        if resultado is None:
             webhook_asaas._alertar_admin(
                 pid, sub.get("asaas_subscription_id"),
                 f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
                 f"({e}) — estorne manualmente no painel do Asaas")
             return None
+        valor, tipo, pendente = resultado
         print(f"[cancelar] apesar do erro ({e}), o Asaas confirma o estorno de {pid} "
               f"— seguindo como sucesso", flush=True)
+        if pendente:
+            # REFUND_REQUESTED/REFUND_IN_PROGRESS: o Asaas ainda não terminou de
+            # processar. Continuamos tratando como sucesso (não re-estornar, evita
+            # duplicidade), mas se isso falhar depois (ex.: Pix sem saldo na conta
+            # Asaas) o cliente fica sem o dinheiro E sem acesso, e ninguém saberia —
+            # por isso pede confirmação humana mesmo seguindo em frente.
+            webhook_asaas._alertar_admin(
+                pid, sub.get("asaas_subscription_id"),
+                f"Estorno de arrependimento de {sub.get('nome') or sub.get('id')} ainda está em "
+                f"processamento no Asaas (status != REFUNDED) — confirme manualmente que ele "
+                f"conclui")
     try:
         db.estornar_comissao(sub["id"])
     except Exception as e:
@@ -1024,7 +1075,7 @@ def estornar_arrependimento(sub):
             f"Estorno de arrependimento CONCLUÍDO para {sub.get('nome') or sub.get('id')} — "
             f"mas a baixa da comissão do afiliado FALHOU ({e}) — ajuste manualmente no "
             f"painel de afiliados")
-    return valor
+    return (valor, tipo)
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):

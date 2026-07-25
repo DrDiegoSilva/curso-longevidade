@@ -89,6 +89,28 @@ class TestProcessar(unittest.TestCase):
         self.assertTrue(self.s.tem_acesso(atual))
         self.assertTrue(self.db.claim_cancelamento(reg["id"], "de novo", None))
 
+    def test_renovar_sobre_cancelado_alerta_admin(self):
+        # ACHADO 4: o Asaas cobrou (e confirmou) alguém que já tinha cancelado —
+        # cenário real no anual em 12x, em que as parcelas seguem sendo cobradas
+        # mesmo depois do cancelamento no nosso lado. Reativa mesmo assim (quem pagou
+        # tem que ter acesso), mas sem alerta a trilha de auditoria do cancelamento
+        # (cancel_motivo/cancelado_em) sumiria em silêncio e ninguém saberia que uma
+        # cobrança pós-cancelamento aconteceu.
+        reg = self.s.criar_de_pagamento({"nome": "D", "whatsapp": "5543", "plano": "mensal"},
+                                         {"subscription": "sub_rc2"})
+        self.db.claim_cancelamento(reg["id"], "caro demais", "2026-01-01T00:00:00")
+        alertas = []
+        orig_alert = self.w._alertar_admin
+        self.w._alertar_admin = lambda pid, sid, motivo: alertas.append(motivo)
+        try:
+            self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p10", sub="sub_rc2"),
+                             "segredo", enviar_fn=self.envfn)
+        finally:
+            self.w._alertar_admin = orig_alert
+        self.assertEqual(self.s.por_subscription("sub_rc2")["status"], "ATIVO")  # reativou mesmo assim
+        self.assertEqual(len(alertas), 1)
+        self.assertIn("cancel", alertas[0].lower())
+
     def _body_valor(self, event="PAYMENT_CONFIRMED", ext="tok", pid="pay_af", value=897.30, sub=None):
         return {"event": event, "payment": {"id": pid, "externalReference": ext, "value": value,
                 "customer": "cus_af", "subscription": sub, "dueDate": "2026-07-19"}}

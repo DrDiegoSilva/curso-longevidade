@@ -164,6 +164,18 @@ def _executar(event, pay, pid, enviar_fn):
     if acao == "RENOVAR" and sub:
         plano = config.plano_por_slug(sub.get("plano", "")) or {}
         prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
+        if (sub.get("status") or "") == "CANCELADO":
+            # O Asaas confirmou um pagamento de quem já tinha cancelado — cenário
+            # concreto no anual em 12x, em que as parcelas seguem sendo cobradas
+            # mesmo depois do cancelamento no nosso lado. Reativar continua sendo o
+            # certo (quem pagou tem que ter acesso), mas isso apaga a trilha de
+            # auditoria do cancelamento anterior (cancel_motivo/cancelado_em) e
+            # ninguém fica sabendo que uma cobrança pós-cancelamento aconteceu —
+            # alerta antes de limpar as marcas.
+            _alertar_admin(pid, sid, f"assinante {sub.get('nome') or sub.get('id')} estava "
+                           f"CANCELADO (motivo: {sub.get('cancel_motivo') or '—'}) e o Asaas "
+                           f"confirmou um novo pagamento — reativando automaticamente; confira "
+                           f"se é legítimo")
         # Limpar as marcas de cancelamento faz parte da reativação:
         # - cancelado_em: db.claim_cancelamento só grava quando ele está vazio. Um
         #   assinante reativado com a marca antiga ficaria PERMANENTEMENTE impedido de
