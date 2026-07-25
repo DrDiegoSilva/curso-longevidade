@@ -361,6 +361,58 @@ def _preparar_de_artigo(art):
     return r
 
 
+def _preparar_de_candidato(cand_id):
+    """Monta o rascunho de amanhã de um CANDIDATO cru (resumo JIT). Mira _preparar_de_artigo."""
+    import db
+    c = next((x for x in db.listar_candidatos() if x["id"] == cand_id), None)
+    if not c:
+        return None
+    art = {"titulo": c.get("titulo", ""), "tema": c.get("tema", ""), "fonte": c.get("fonte", ""),
+           "doi": c.get("doi", ""), "url": c.get("url", ""), "data": c.get("data", ""),
+           "resumo": c.get("abstract", "")}
+    r = _preparar_de_artigo(art)          # gera conteúdo, cria draft, manda preview + áudio
+    if r:
+        r["candidato_id"] = cand_id
+        draft_store.salvar(r)
+    return r
+
+
+def _preparar_de_classico(classico_id):
+    """Monta o rascunho de amanhã de um CLÁSSICO já bancado (usa o resumo pronto, sem regenerar).
+    Mira _preparar_da_reserva."""
+    import db
+    cl = db.obter_classico(classico_id)
+    if not cl:
+        return None
+    art = {"titulo": cl.get("titulo_pt", ""), "tema": cl.get("tema", ""), "fonte": cl.get("fonte", ""),
+           "doi": cl.get("doi", ""), "url": cl.get("url", ""), "data": cl.get("data", "")}
+    try:
+        grafico = json.loads(cl.get("grafico") or "null")
+    except Exception:
+        grafico = None
+    c = {"titulo_pt": cl.get("titulo_pt", ""), "resumo": cl.get("resumo", ""),
+         "gancho": cl.get("gancho", ""), "grafico": grafico}
+    alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    os.makedirs(config.drafts_dir(), exist_ok=True)
+    preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
+    try:
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
+    except Exception as e:
+        print(f"[preparar] PDF preview (clássico) falhou (segue sem): {e}", flush=True)
+        preview = None
+    r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
+    r["gancho"] = c["gancho"]; r["grafico"] = c["grafico"]; r["titulo_pt"] = c["titulo_pt"]
+    r["classico_id"] = classico_id
+    draft_store.salvar(r)
+    link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
+    extra = "\n🎧 O áudio do estudo chega logo abaixo pra você escutar." if config.audio_ligado() else ""
+    deliver.enviar_curador(f"📋 Amanhã (clássico) · {art.get('tema','')}:\n*{c['titulo_pt']}*\n{art.get('fonte','')}\n"
+                           f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
+                           f"(se não mexer, envio automático às 08h){extra}")
+    enviar_audio_preview(r)
+    return r
+
+
 def _preparar_fallback():
     """Comportamento original: fila fresca (gera conteúdo) e, se vazia, reserva."""
     if queue_store.tamanho() < REFILL_MINIMO:
@@ -392,6 +444,16 @@ def preparar_18h(amanha=None):
             if r:
                 return r
             print("[preparar] item da reserva sumiu — fallback", flush=True)
+        elif fonte == "candidato":
+            r = _preparar_de_candidato(ref)
+            if r:
+                return r
+            print("[preparar] candidato sumiu — fallback", flush=True)
+        elif fonte == "classico":
+            r = _preparar_de_classico(ref)
+            if r:
+                return r
+            print("[preparar] clássico sumiu — fallback", flush=True)
         elif fonte == "fila":
             r = _preparar_de_artigo(json.loads(ref))
             if r:
@@ -480,6 +542,16 @@ def _finalizar_dia(hoje, r, art, conteudo, tmeta):
             db.marcar_reserva_enviado(r["reserva_id"])
         except Exception as e:
             print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
+    if r.get("candidato_id"):
+        try:
+            db.marcar_candidatos([r["candidato_id"]], "resumido")
+        except Exception as e:
+            print(f"[enviar] marcar candidato falhou: {e}", flush=True)
+    if r.get("classico_id"):
+        try:
+            db.marcar_classico_enviado(r["classico_id"], hoje)
+        except Exception as e:
+            print(f"[enviar] marcar clássico falhou: {e}", flush=True)
     rd.registrar([art["doi"]] if art.get("doi") else [])
     try:
         avisar_estoque_baixo()   # avisa o curador se a reserva ficou abaixo do mínimo
