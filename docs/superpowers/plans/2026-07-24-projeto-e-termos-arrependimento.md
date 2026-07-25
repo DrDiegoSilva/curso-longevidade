@@ -46,7 +46,8 @@ o cliente Asaas que já existe.
 | `app/tests/test_db_termos.py` | **Criar.** Migração e reversão de comissão | 3 |
 | `app/serve.py` | **Modificar.** Estorno no cancelamento; rotas; re-aceite; checkbox | 4, 5, 6, 7 |
 | `app/legal.py` | **Criar.** Texto dos termos e da privacidade + `VERSAO` | 5 |
-| `app/site_web.py` | **Modificar.** Páginas `/termos`, `/privacidade`, re-aceite, checkbox | 5, 6, 7 |
+| `app/site_legal.py` | **Criar.** Páginas `/termos`, `/privacidade` e re-aceite | 5, 6 |
+| `app/site_web.py` | **Modificar.** Só o checkbox no checkout | 7 |
 | `app/tests/test_legal.py` | **Criar.** Versão, cláusulas obrigatórias, escape | 5 |
 | `app/tests/test_reaceite.py` | **Criar.** Bloqueio da área de conta | 6 |
 
@@ -634,7 +635,9 @@ git commit -m "feat(termos): estorno integral automático no cancelamento dentro
 
 **Files:**
 - Create: `app/legal.py`
-- Modify: `app/site_web.py` — duas funções de página novas, no fim do arquivo
+- Create: `app/site_legal.py` — páginas legais em módulo próprio (o `site_web.py` já tem 1545
+  linhas e está sendo editado por outro agente; manter as páginas legais fora dele evita
+  conflito de merge)
 - Modify: `app/serve.py` — duas rotas GET públicas (junto das outras rotas públicas, perto da
   linha 305)
 - Test: `app/tests/test_legal.py`
@@ -646,7 +649,7 @@ git commit -m "feat(termos): estorno integral automático no cancelamento dentro
   - `legal.VERSAO: str` — `"2026-07-24"`
   - `legal.TERMOS: list[tuple[str, str]]` — lista de `(título_da_cláusula, html_do_corpo)`
   - `legal.PRIVACIDADE: list[tuple[str, str]]` — mesma forma
-  - `site_web.pagina_termos() -> str`, `site_web.pagina_privacidade() -> str`
+  - `site_legal.pagina_termos() -> str`, `site_legal.pagina_privacidade() -> str`
 
 **Cláusula 2 (renovação):** é a única que depende da verificação pendente descrita no spec
 (Risco 2). O texto abaixo descreve a renovação **por método**, que é verdade pelo código
@@ -703,15 +706,15 @@ class TestLegal(unittest.TestCase):
 
 class TestPaginasLegais(unittest.TestCase):
     def test_pagina_termos_renderiza(self):
-        import site_web, legal
-        html = site_web.pagina_termos()
+        import site_legal, legal
+        html = site_legal.pagina_termos()
         self.assertIn("<!doctype html>", html)
         self.assertIn(legal.VERSAO, html)
         self.assertIn(legal.TERMOS[0][0], html)
 
     def test_pagina_privacidade_renderiza(self):
-        import site_web, legal
-        html = site_web.pagina_privacidade()
+        import site_legal, legal
+        html = site_legal.pagina_privacidade()
         self.assertIn("<!doctype html>", html)
         self.assertIn("52.891.914/0001-93", html)
 
@@ -889,9 +892,14 @@ PRIVACIDADE = [
 ]
 ```
 
-Acrescentar ao final de `app/site_web.py`:
+Criar `app/site_legal.py`:
 
 ```python
+"""Páginas dos documentos legais. Reaproveita o layout do site_web (_pagina/_esc/PRODUTO)
+sem engordar aquele arquivo, que já é o maior do projeto."""
+from site_web import _pagina, _esc, PRODUTO
+
+
 def _pagina_legal(titulo, secoes):
     """Renderiza um documento legal numerado (termos ou privacidade)."""
     import legal
@@ -925,9 +933,9 @@ Em `app/serve.py`, junto das rotas GET públicas (perto da linha 305, antes do b
 
 ```python
         if path == "/termos":
-            return self._html(site_web.pagina_termos())
+            return self._html(site_legal.pagina_termos())
         if path == "/privacidade":
-            return self._html(site_web.pagina_privacidade())
+            return self._html(site_legal.pagina_privacidade())
 ```
 
 - [ ] **Step 4: Rodar os testes e confirmar que passam**
@@ -938,7 +946,7 @@ Expected: PASS — 8 testes novos + suíte verde
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/legal.py app/site_web.py app/serve.py app/tests/test_legal.py
+git add app/legal.py app/site_legal.py app/serve.py app/tests/test_legal.py
 git commit -m "feat(termos): legal.py + páginas públicas /termos e /privacidade"
 ```
 
@@ -949,7 +957,7 @@ git commit -m "feat(termos): legal.py + páginas públicas /termos e /privacidad
 **Files:**
 - Modify: `app/serve.py` — rotas GET `/minha` (linha ~310) e `/meus-dados` (linha ~320);
   rota POST `/aceitar-termos` nova (perto da linha 579)
-- Modify: `app/site_web.py` — `pagina_aceite_termos`
+- Modify: `app/site_legal.py` — `pagina_aceite_termos`
 - Modify: `app/subscribers.py` — `registrar_aceite`
 - Test: `app/tests/test_reaceite.py`
 
@@ -958,7 +966,7 @@ git commit -m "feat(termos): legal.py + páginas públicas /termos e /privacidad
 - Produces:
   - `subscribers.precisa_aceitar(sub: dict) -> bool`
   - `subscribers.registrar_aceite(id: str, versao: str, ip: str = "") -> None`
-  - `site_web.pagina_aceite_termos(destino: str) -> str`
+  - `site_legal.pagina_aceite_termos(destino: str) -> str`
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -1008,8 +1016,8 @@ class TestPrecisaAceitar(unittest.TestCase):
 
 class TestPaginaAceite(unittest.TestCase):
     def test_pagina_tem_checkbox_e_links(self):
-        import site_web
-        html = site_web.pagina_aceite_termos("/minha")
+        import site_legal
+        html = site_legal.pagina_aceite_termos("/minha")
         self.assertIn('name="aceito"', html)
         self.assertIn('action="/aceitar-termos"', html)
         self.assertIn('href="/termos"', html)
@@ -1046,7 +1054,7 @@ def registrar_aceite(id, versao, ip=""):
                   (versao, datetime.now().isoformat(), ip or "", id))
 ```
 
-Acrescentar ao final de `app/site_web.py`:
+Acrescentar ao final de `app/site_legal.py`:
 
 ```python
 def pagina_aceite_termos(destino="/minha"):
@@ -1087,7 +1095,7 @@ resolver a sessão e **antes** de renderizar a página:
             import subscribers as _subs
             reg = self._sub_logado()
             if reg and _subs.precisa_aceitar(reg):
-                return self._html(site_web.pagina_aceite_termos("/minha"))
+                return self._html(site_legal.pagina_aceite_termos("/minha"))
             import auth_web
             return self._html(site_web.pagina_minha(sub, admin=auth_web.eh_admin(sub["whatsapp"])))
 ```
@@ -1098,7 +1106,7 @@ redirect de não-logado:
 ```python
             import subscribers as _subs_t
             if _subs_t.precisa_aceitar(sub):
-                return self._html(site_web.pagina_aceite_termos("/meus-dados"))
+                return self._html(site_legal.pagina_aceite_termos("/meus-dados"))
 ```
 
 E acrescentar a rota POST (perto da linha 579, junto de `/cancelar`):
@@ -1117,7 +1125,7 @@ Com o handler (junto de `_cancelar_motivo`, perto da linha 692):
         if not sub:
             return self._redirect("/entrar")
         if g("aceito") != "1":
-            return self._html(site_web.pagina_aceite_termos(g("destino") or "/minha"))
+            return self._html(site_legal.pagina_aceite_termos(g("destino") or "/minha"))
         ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
               or self.client_address[0])
         subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
@@ -1135,7 +1143,7 @@ Expected: PASS — 5 testes novos + suíte verde
 - [ ] **Step 5: Commit**
 
 ```bash
-git add app/subscribers.py app/site_web.py app/serve.py app/tests/test_reaceite.py
+git add app/subscribers.py app/site_legal.py app/serve.py app/tests/test_reaceite.py
 git commit -m "feat(termos): re-aceite bloqueando /minha e /meus-dados"
 ```
 
