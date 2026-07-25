@@ -227,3 +227,18 @@ def slots_com_vaga(teto, slot_atual=None):
     (pra o assinante poder manter o horário mesmo se lotou depois)."""
     cont = contar_por_slot()
     return [s for s in config.SLOTS if cont.get(s, 0) < int(teto) or s == slot_atual]
+
+
+def precisa_aceitar(sub):
+    """True quando o assinante ainda não aceitou a versão vigente dos termos.
+    Vale tanto pra base antiga (nunca aceitou) quanto pra quem aceitou versão anterior."""
+    import legal
+    return (sub or {}).get("termos_versao") != legal.VERSAO
+
+
+def registrar_aceite(id, versao, ip=""):
+    """Grava o aceite: versão, momento e IP — é a prova de que o assinante concordou."""
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET termos_versao=?, termos_aceito_em=?, termos_ip=? WHERE id=?",
+                  (versao, datetime.now().isoformat(), ip or "", id))

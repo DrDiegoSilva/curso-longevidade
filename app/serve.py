@@ -317,6 +317,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sub = self._sessao()
             if not sub:
                 return self._redirect("/entrar")
+            import subscribers as _subs
+            reg = self._sub_logado()
+            if reg and _subs.precisa_aceitar(reg):
+                import site_legal
+                return self._html(site_legal.pagina_aceite_termos("/minha"))
             import auth_web
             return self._html(site_web.pagina_minha(sub, admin=auth_web.eh_admin(sub["whatsapp"])))
         if path == "/cancelar":
@@ -327,7 +332,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sub = self._sub_logado()
             if not sub:
                 return self._redirect("/entrar")
-            import subscribers as _subs, db as _db, config as _cfg
+            import subscribers as _subs
+            if _subs.precisa_aceitar(sub):
+                import site_legal
+                return self._html(site_legal.pagina_aceite_termos("/meus-dados"))
+            import db as _db, config as _cfg
             atual = _subs.slot_de(sub)
             teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
             return self._html(site_web.pagina_meus_dados(
@@ -586,6 +595,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._cancelar_motivo(g)
         if path == "/cancelar/confirmar":
             return self._cancelar_confirmar(g)
+        if path == "/aceitar-termos":
+            return self._aceitar_termos(g)
         if path == "/meus-dados":
             import site_web, subscribers, auth_web
             sub = self._sub_logado()
@@ -694,6 +705,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msg = "Falha ao processar o estudo (ver logs)."
         import urllib.parse as _up
         return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
+
+    def _aceitar_termos(self, g):
+        import subscribers, legal, site_legal
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if g("aceito") != "1":
+            return self._html(site_legal.pagina_aceite_termos(g("destino") or "/minha"))
+        ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+              or self.client_address[0])
+        subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
+        destino = g("destino") or "/minha"
+        if not destino.startswith("/"):        # nunca redireciona pra fora do site
+            destino = "/minha"
+        return self._redirect(destino)
 
     def _cancelar_motivo(self, g):
         import site_web
