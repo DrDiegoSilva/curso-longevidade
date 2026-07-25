@@ -1458,7 +1458,7 @@ def pagina_assinar(plano_slug=None, erro=""):
           <div class="sum-plan">Plano {_esc(plano["nome"])}</div>
           <div class="sum-price">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
           <ul class="sum-list">{inclui}</ul>
-          <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>Cancele quando quiser, sem multa.</div>
+          <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>7 dias de garantia com reembolso integral.</div>
         </aside>
         <div class="form-side">
           {erro_html}
