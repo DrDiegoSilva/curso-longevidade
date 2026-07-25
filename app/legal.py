@@ -39,17 +39,21 @@ TERMOS = [
      "<p><strong>Renovação depende da forma de pagamento escolhida:</strong></p>"
      "<ul>"
      "<li><strong>Cartão de crédito:</strong> a assinatura é recorrente e <strong>renova "
-     "automaticamente</strong> ao fim de cada ciclo, pelo preço vigente à época da renovação, "
-     "até que o assinante cancele.</li>"
+     "automaticamente</strong> ao fim de cada ciclo, <strong>pelo mesmo valor contratado</strong>, "
+     "até que o assinante cancele a renovação.</li>"
      "<li><strong>Pix:</strong> o pagamento é avulso e <strong>não renova automaticamente</strong>. "
      "Ao fim do período contratado o acesso se encerra, salvo nova contratação.</li>"
      "</ul>"
      "<p>Avisamos por e-mail antes do fim de cada ciclo.</p>"),
 
-    ("Cancelamento",
-     "<p>O assinante pode cancelar a qualquer momento, sem multa, pela área de conta "
-     "(<em>Minha conta → Cancelar assinatura</em>). O cancelamento interrompe cobranças "
-     "futuras de imediato.</p>"),
+    ("Cancelamento da renovação",
+     "<p>O assinante pode cancelar a renovação a qualquer momento, sem multa, pela área de conta "
+     "(<em>Minha conta → Cancelar assinatura</em>). O cancelamento <strong>encerra a renovação "
+     "automática</strong>: não haverá cobrança de um novo período, e <strong>a assinatura "
+     "permanece ativa até o término do período já contratado</strong> — mensal ou anual, conforme "
+     "o plano.</p>"
+     "<p>No plano Anual pago de forma parcelada, as parcelas restantes seguem sendo cobradas "
+     "normalmente, por corresponderem aos 12 meses já contratados.</p>"),
 
     ("Reembolso",
      "<p><strong>4.1 — Direito de arrependimento (7 dias).</strong> Por se tratar de contratação "
@@ -58,10 +62,9 @@ TERMOS = [
      "do art. 49 do Código de Defesa do Consumidor. Basta cancelar pela área de conta dentro do "
      "prazo: o estorno é solicitado automaticamente e aparece em até 10 dias úteis, conforme o "
      "meio de pagamento.</p>"
-     "<p><strong>4.2 — Após o prazo de arrependimento.</strong> O cancelamento do plano Anual "
-     "após o prazo de arrependimento interrompe as cobranças futuras, <strong>NÃO gerando "
-     "reembolso</strong> dos valores já pagos. O acesso permanece ativo até o término do período "
-     "contratado.</p>", True),
+     "<p><strong>4.2 — Após o prazo de arrependimento.</strong> O cancelamento da renovação "
+     "após o prazo de arrependimento <strong>NÃO gera reembolso</strong> dos valores já pagos. "
+     "O acesso permanece ativo até o término do período contratado.</p>", True),
 
     ("Uso do conteúdo",
      "<p>O conteúdo é licenciado para uso pessoal e intransferível do assinante. É vedada a "

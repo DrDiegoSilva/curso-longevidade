@@ -19,7 +19,7 @@ class TestLegal(unittest.TestCase):
         # nota: itens de TERMOS podem ter 2 ou 3 elementos (o 3º é o flag de cláusula
         # restritiva, ver ACHADO 4) -- por isso `secao[1]` em vez de unpacking fixo.
         texto = " ".join(secao[1] for secao in self.legal.TERMOS)
-        self.assertIn("NÃO gerando reembolso", texto)
+        self.assertIn("NÃO gera reembolso", texto)
 
     def test_termos_tem_prazo_de_arrependimento_de_7_dias(self):
         texto = " ".join(secao[1] for secao in self.legal.TERMOS)
@@ -84,7 +84,7 @@ class TestTitulosDasClausulasCompletos(unittest.TestCase):
     TITULOS_TERMOS = [
         "Quem somos e o que é o serviço",
         "Preço, cobrança e renovação",
-        "Cancelamento",
+        "Cancelamento da renovação",
         "Reembolso",
         "Uso do conteúdo",
         "Disponibilidade",
