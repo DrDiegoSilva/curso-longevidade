@@ -156,6 +156,10 @@ def init():
                 data TEXT, slot TEXT, enviado_em TEXT,
                 PRIMARY KEY (data, slot)
             );
+            CREATE TABLE IF NOT EXISTS envios_dia (
+                data TEXT, subscriber_id TEXT, enviado_em TEXT,
+                PRIMARY KEY (data, subscriber_id)
+            );
             CREATE TABLE IF NOT EXISTS senha_tokens (
                 token TEXT PRIMARY KEY,
                 whatsapp TEXT NOT NULL,
@@ -206,7 +210,7 @@ def init():
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
-            "afiliados", "comissoes", "settings", "envios_slot"]
+            "afiliados", "comissoes", "settings", "envios_slot", "envios_dia"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -319,6 +323,33 @@ def registrar_envio_slot(data, slot):
                         "ON CONFLICT (data,slot) DO NOTHING",
                         (data or "", slot or "", datetime.now().isoformat()))
         return cur.rowcount > 0
+
+
+def registrar_envio_assinante(data, sub_id):
+    """True se é a 1ª vez que (data, assinante) é registrado hoje; False se já registrado.
+    Claim atômico do envio do dia por assinante (guarda 2x na troca de slot)."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("INSERT INTO envios_dia (data,subscriber_id,enviado_em) VALUES (?,?,?) "
+                        "ON CONFLICT (data,subscriber_id) DO NOTHING",
+                        (data or "", sub_id or "", datetime.now().isoformat()))
+        return cur.rowcount > 0
+
+
+def ja_enviou_hoje(data, sub_id):
+    """True se o assinante já recebeu o estudo em `data` (leitura, não escreve)."""
+    with _conn() as c:
+        r = c.execute("SELECT 1 FROM envios_dia WHERE data=? AND subscriber_id=?",
+                      (data or "", sub_id or "")).fetchone()
+    return r is not None
+
+
+def slot_ja_enviou(data, slot):
+    """True se o tick daquele slot já rodou em `data` (leitura). Base do gate do catch-up."""
+    with _conn() as c:
+        r = c.execute("SELECT 1 FROM envios_slot WHERE data=? AND slot=?",
+                      (data or "", slot or "")).fetchone()
+    return r is not None
 
 
 def cupom_valido(codigo):

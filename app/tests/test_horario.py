@@ -154,5 +154,37 @@ class TestMeusDadosHorario(unittest.TestCase):
         self.assertIn("07h", h)
 
 
+class TestLedgerDia(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "subscribers"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, subscribers
+        importlib.reload(config); importlib.reload(db); importlib.reload(subscribers)
+        self.cfg, self.db, self.s = config, db, subscribers
+        self.s._migrado = False
+        db.init()
+
+    def test_registrar_envio_assinante_idempotente(self):
+        self.assertTrue(self.db.registrar_envio_assinante("2026-07-24", "sub_1"))    # 1ª vez
+        self.assertFalse(self.db.registrar_envio_assinante("2026-07-24", "sub_1"))   # repetido
+        self.assertTrue(self.db.registrar_envio_assinante("2026-07-24", "sub_2"))    # outro sub
+        self.assertTrue(self.db.registrar_envio_assinante("2026-07-25", "sub_1"))    # outro dia
+
+    def test_ja_enviou_hoje(self):
+        self.assertFalse(self.db.ja_enviou_hoje("2026-07-24", "sub_1"))
+        self.db.registrar_envio_assinante("2026-07-24", "sub_1")
+        self.assertTrue(self.db.ja_enviou_hoje("2026-07-24", "sub_1"))
+
+    def test_slot_ja_enviou(self):
+        self.assertFalse(self.db.slot_ja_enviou("2026-07-24", "08h"))
+        self.db.registrar_envio_slot("2026-07-24", "08h")
+        self.assertTrue(self.db.slot_ja_enviou("2026-07-24", "08h"))
+        self.assertFalse(self.db.slot_ja_enviou("2026-07-24", "12h"))
+
+
 if __name__ == "__main__":
     unittest.main()
