@@ -727,7 +727,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._executar_cancelamento(sub, motivo)
 
     def _executar_cancelamento(self, sub, motivo):
-        import site_web, subscribers, asaas, email_send
+        """Guarda o fluxo INTEIRO do cancelamento (estorno + acesso_ate + e-mail)
+        atrás de um claim atômico por assinante — não só o estorno.
+
+        Duplo clique em /cancelar/confirmar (servidor ThreadingMixIn) ou um
+        re-submit sequencial (a sessão continua válida após cancelar; nada aqui
+        impede reentrar no formulário) chamam este método mais de uma vez para o
+        mesmo assinante. Sem o claim aqui na frente, a 2ª chamada recalcularia
+        acesso_ate do zero e, se a 1ª já tiver estornado (acesso_ate=None), a 2ª
+        gravaria uma data futura por cima — devolvendo o acesso de quem acabou de
+        ser reembolsado integralmente, além de mandar um 2º e-mail contraditório.
+        """
+        import site_web, subscribers, asaas, email_send, db
+        try:
+            venceu_claim = db.claim_cancelamento(sub["id"])
+        except Exception as e:
+            # Falha de infra no claim (banco travado, timeout) NUNCA pode travar o
+            # cancelamento — é a mesma regra global do estorno. Trata como claim
+            # vencido e segue o fluxo normal (na pior hipótese processa 2x, o que é
+            # preferível a travar o cliente do lado de fora).
+            print(f"[cancelar] claim_cancelamento falhou, seguindo como vencido: {e}", flush=True)
+            venceu_claim = True
+        if not venceu_claim:
+            # Corrida perdida: outra chamada concorrente já processou este
+            # cancelamento (estornou ou não, gravou acesso_ate, mandou e-mail).
+            # Não repete nada disso — só mostra a página com o que já está
+            # persistido, relendo o assinante do banco.
+            atual = subscribers.por_id(sub["id"]) or sub
+            return self._html(site_web.pagina_cancelado(atual.get("acesso_ate")))
         sid = sub.get("asaas_subscription_id")
         try:
             if sid:
@@ -826,9 +853,15 @@ def estornar_arrependimento(sub):
     """Estorno INTEGRAL quando o cancelamento cai dentro dos 7 dias (CDC art. 49).
 
     Devolve o valor estornado, ou None quando não havia direito, não havia cobrança
-    (cortesia por cupom), a corrida de cancelamento foi perdida (claim) ou o estorno
-    no Asaas falhou. Falha aqui NUNCA bloqueia o cancelamento: o assinante não pode
-    ficar preso por um problema nosso — vira alerta pro admin.
+    (cortesia por cupom) ou o estorno no Asaas falhou. Falha aqui NUNCA bloqueia o
+    cancelamento: o assinante não pode ficar preso por um problema nosso — vira
+    alerta pro admin.
+
+    NÃO faz claim de corrida (duplo clique / retry concorrente). Isso é
+    responsabilidade de quem chama — _executar_cancelamento precisa guardar o
+    fluxo INTEIRO (estorno + registrar_cancelamento + e-mail), não só o estorno;
+    um claim aqui dentro protegeria só a chamada ao Asaas e deixaria o resto do
+    fluxo (em especial a gravação de acesso_ate) exposto à mesma corrida.
 
     O estorno no Asaas e a baixa da comissão do afiliado rodam em try/except
     SEPARADOS de propósito: é o estorno no Asaas que decide o retorno da função,
@@ -845,12 +878,13 @@ def estornar_arrependimento(sub):
     pid = sub.get("asaas_payment_id")
     if not pid:                       # cortesia por cupom: não houve cobrança pra estornar
         return None
-    if not db.claim_cancelamento(sub["id"]):
-        # Corrida: duplo clique ou retry de rede já cancelou este assinante em outra
-        # chamada concorrente. Não é falha — não alerta — só evita estornar 2x no Asaas.
-        return None
     try:
         pagamento = asaas.obter_pagamento(pid)
+        # valor fica DENTRO do try, antes de mover dinheiro (Achado 3): se "value"
+        # vier não-numérico, falha aqui — sem ter chamado o Asaas ainda — em vez de
+        # explodir depois do estorno já ter saído (o que travaria o cancelamento
+        # inteiro com o dinheiro já fora e o cliente ainda ATIVO).
+        valor = float(pagamento.get("value") or 0)
         tipo, alvo = refunds.alvo_estorno(pagamento)
         if tipo == "installment":
             asaas.estornar_parcelamento(alvo)
@@ -863,7 +897,6 @@ def estornar_arrependimento(sub):
             f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
             f"({e}) — estorne manualmente no painel do Asaas")
         return None
-    valor = float(pagamento.get("value") or 0)
     try:
         db.estornar_comissao(sub["id"])
     except Exception as e:
