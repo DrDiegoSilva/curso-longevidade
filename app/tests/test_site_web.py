@@ -25,15 +25,14 @@ class TestRender(unittest.TestCase):
         subscribers.ativos = lambda: []                 # 0 ativos -> founder
         try:
             h = self.s.landing()
-            self.assertIn("de 20 vagas", h)             # selo de lançamento
-            self.assertIn("R$ 997", h)
+            self.assertIn("R$ 997", h)                  # preço founder do anual
+            self.assertNotIn("Preço de lançamento", h)  # contador de vagas removido (Diego 2026-07-24)
         finally:
             subscribers.ativos = orig
         subscribers.ativos = lambda: [{}] * 20          # 20 ativos -> pós-founder
         try:
             h = self.s.landing()
             self.assertIn("R$ 1.497", h)
-            self.assertNotIn("de 20 vagas", h)
         finally:
             subscribers.ativos = orig
         self.assertIn("Quero assinar", h)

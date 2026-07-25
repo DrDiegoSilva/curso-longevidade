@@ -360,14 +360,14 @@ def landing():
              ("🦵", "Lipedema"), ("🏃", "Performance"), ("🧬", "Longevidade")]
     themes = "".join(
         f'<div class="theme"><div class="e">{_esc(e)}</div>'
-        f'<div class="t">{_esc(t)}</div><div class="n">estudo do dia</div></div>'
+        f'<div class="t">{_esc(t)}</div></div>'
         for e, t in temas)
     valores = [
-        ("01 · curadoria", "Curadoria + revisão médica", "Uma IA tria a literatura da semana; o Dr. Diego revisa antes de sair. Você recebe o que importa, sem ruído.", "card big c-a"),
+        ("01 · curadoria", "Curadoria + revisão médica", "Curadoria criteriosa da literatura da semana; o Dr. Diego revisa antes de sair — você recebe o que importa, sem ruído.", "card big c-a"),
         ("02 · cadência", "1 estudo por dia útil", "De segunda a sexta, um artigo relevante — resumo clínico direto ao ponto, no seu WhatsApp.", "card c-b"),
         ("03 · áudio", "Áudio-resumo", "Prefere ouvir? Cada edição vem com um áudio narrado de ~2 minutos — perfeito pro trânsito ou entre atendimentos.", "card c-c"),
-        ("04 · redes", "Pronto para as redes", "Cada edição traz um gancho para levar o tema aos seus pacientes.", "card c-d"),
-        ("05 · pdf", "PDF elegante", "Um documento assinado, com gráfico e fonte — pronto para guardar ou compartilhar.", "card c-e"),
+        ("04 · redes", "Você nas redes sociais", "Cada edição traz um gancho forte, já pronto, para levar o tema aos seus seguidores. Sem perder tempo pensando 'o que postar hoje?'.", "card c-d"),
+        ("05 · pdf", "PDF Objetivo", "Um PDF objetivo e visual, com gráficos e tabelas, organizado para facilitar a leitura, o entendimento e a organização das ideias.", "card c-e"),
         ("06 · arquivo", "Arquivo consultável", "Tudo por tema e data, sempre à mão neste portal.", "card c-f"),
     ]
     bento = "".join(
@@ -380,19 +380,16 @@ def landing():
         + ('<div class="badge">melhor preço</div>' if p["slug"] == "anual" else "")
         + f'<div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(pricing.preco_str_vigente(p, n_ativos)) if p.get("preco") else "sob consulta"}</div>'
-        f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
+        f'<div class="pe">{_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(pricing.nota_str_vigente(p, n_ativos))}</div>' if pricing.nota_str_vigente(p, n_ativos) else "")
         + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS if not p.get("oculto"))
-    vagas = pricing.vagas_founder(n_ativos)
-    vagas_html = (f'<p class="sub" style="color:var(--gold2);font-weight:700">Preço de lançamento — '
-                  f'restam {vagas} de {config.FOUNDER_LIMITE} vagas</p>' if vagas > 0 else "")
     corpo = f"""
     <div class="wrap">
       <section class="hero">
         <div>
           <div class="eyebrow">{_esc(PRODUTO)}</div>
-          <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — todo dia útil.</h1>
-          <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, <em>áudio-resumo</em> pra ouvir no trânsito, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
+          <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — na palma da mão.</h1>
+          <p class="lead">Um estudo relevante por dia, no formato que você preferir: resumo clínico em texto, <em>áudio-resumo</em> pra ouvir no trânsito ou PDF objetivo. E de bônus, um gancho forte para falar do assunto nas suas redes sociais. Revisado e aprovado por médico.</p>
           <div class="ctas">
             <a class="btn solid" href="{_cta()}">Quero assinar</a>
             <a class="btn ghost" href="/entrar">Já sou assinante</a>
@@ -421,22 +418,21 @@ def landing():
 
       <section class="sec">
         <h2 class="disp">O que chega até você</h2>
-        <p class="sub">A fila varia os temas para você não receber dois dias seguidos do mesmo assunto — e tudo fica guardado no seu arquivo.</p>
+        <p class="sub">Os temas são variados para você não receber dois dias seguidos do mesmo assunto — e tudo fica guardado no seu arquivo.</p>
         <div class="bento">{bento}</div>
       </section>
 
       <section class="sec" id="planos">
         <h2 class="disp">Planos</h2>
         <p class="sub">Escolha a recorrência que faz sentido. Renova automaticamente até você cancelar.</p>
-        {vagas_html}
         <div class="plans">{planos}</div>
-        <div style="margin-top:28px"><a class="btn solid" href="{_cta()}">Quero assinar</a>
+        <div style="margin-top:28px;text-align:center"><a class="btn solid" href="{_cta()}">Quero assinar</a>
         <a class="btn ghost" href="/entrar" style="margin-left:10px">Já sou assinante</a></div>
       </section>
 
       <section class="sec">
         <div class="auth">
-          <div class="big">"Leio a literatura para que você não precise abrir <em>vinte abas</em> — e chego com o que muda a conduta."</div>
+          <div class="big">"Filtro os artigos relevantes para que você não perca tempo abrindo <em>vinte abas</em> — e chego com o que atualiza a sua conduta."</div>
           <div class="sig">curadoria e revisão<b>{_esc(MARCA)}</b>{_esc(CRM)}</div>
         </div>
       </section>
