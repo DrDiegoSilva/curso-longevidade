@@ -2,7 +2,9 @@
 
 Só CONTEÚDO — o layout fica no site_web. Cada documento é uma lista de
 (título da cláusula, HTML do corpo), pra facilitar renderizar numerado e testar cláusula
-a cláusula.
+a cláusula. Opcionalmente um 3º elemento `True` marca a cláusula como RESTRITIVA (dá
+destaque visual obrigatório no render — art. 54 §4 do CDC — sem casar por índice nem
+por texto do título: quem decide é o próprio dado, aqui).
 
 VERSAO é a chave do aceite: mudou o texto de forma relevante, sobe a VERSAO e todo mundo
 re-aceita no próximo login. Nunca reaproveitar uma versão antiga com texto novo.
@@ -59,7 +61,7 @@ TERMOS = [
      "<p><strong>4.2 — Após o prazo de arrependimento.</strong> O cancelamento do plano Anual "
      "após o prazo de arrependimento interrompe as cobranças futuras, <strong>NÃO gerando "
      "reembolso</strong> dos valores já pagos. O acesso permanece ativo até o término do período "
-     "contratado.</p>"),
+     "contratado.</p>", True),
 
     ("Uso do conteúdo",
      "<p>O conteúdo é licenciado para uso pessoal e intransferível do assinante. É vedada a "
