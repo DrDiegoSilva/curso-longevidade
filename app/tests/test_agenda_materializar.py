@@ -135,26 +135,41 @@ class TestPoolPiramide(unittest.TestCase):
         self.assertEqual(self.db.agenda_slot("2026-07-27")["tipo"], "classico")
 
     def test_remateralizar_nao_double_booka_nem_sobrescreve_candidato(self):
-        # materializa um candidato num dia; chamar materializar_agenda de novo (job
-        # diário rolante) não pode nem sobrescrever o slot nem re-agendar o mesmo
-        # candidato num segundo slot.
+        # Condição de falha parcial (consume meio-falho): um slot já aponta pro
+        # candidato, mas o candidato ainda está 'novo' (marcar_candidato_agendado
+        # nunca rodou) -- então ele continua aparecendo no pool. Um 2o dia tem
+        # outra fonte no pool (reserva do MESMO tema, não-fresca) pra garantir que
+        # o candidato "vazado" seria o preferido do ranking se não fosse excluído
+        # (fresh-first desempata a favor dele quando tema/variedade empatam).
         self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": "Fresco", "chave": "k1",
                                     "score": 6, "tipo": "varredura",
                                     "data": self.daily._hoje_iso()}])
-        self.daily.materializar_agenda(datas=["2026-07-27"])
-        slot_antes = self.db.agenda_slot("2026-07-27")
-        self.assertEqual(slot_antes["tipo"], "candidato")
-        ref_id_antes = slot_antes["ref_id"]
+        cand_id = self.db.listar_candidatos(tipo="varredura")[0]["id"]
 
-        self.daily.materializar_agenda(datas=["2026-07-27"])   # re-materializa o mesmo dia
+        dateA, dateB = "2026-07-27", "2026-07-28"
+        # pré-planta o slot de dateA apontando pro candidato SEM marcá-lo agendado
+        # (é exatamente a condição de falha parcial que os guards defendem).
+        self.db.agenda_upsert(dateA, tipo="candidato", ref_id=cand_id,
+                               tema="Obesidade", titulo="Fresco")
+        self.assertEqual(self.db.listar_candidatos(status="novo")[0]["id"], cand_id)
 
-        slot_depois = self.db.agenda_slot("2026-07-27")
+        # outra fonte no pool p/ dateB: reserva do MESMO tema, mas antiga (não-fresca)
+        # -- se o candidato "vazado" não for excluído do pool (Fix 1), o fresh-first
+        # o escolhe sobre essa reserva quando tema/variedade empatam.
+        rid_reserva = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Reserva B",
+                                              "resumo": "r", "gancho": "", "grafico": "",
+                                              "doi": "", "fonte": "NEJM", "url": "",
+                                              "data": "2020-01-01"})
+
+        self.daily.materializar_agenda(datas=[dateA, dateB])
+
+        slot_depois = self.db.agenda_slot(dateA)
         self.assertEqual(slot_depois["tipo"], "candidato")
-        self.assertEqual(slot_depois["ref_id"], ref_id_antes)   # slot preservado, não sobrescrito
+        self.assertEqual(slot_depois["ref_id"], cand_id)   # slot de dateA preservado, não sobrescrito
 
         # não existe um segundo slot referenciando o mesmo candidato (double-book)
-        datas = ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"]
-        n_ref = sum(1 for d in datas if (self.db.agenda_slot(d) or {}).get("ref_id") == ref_id_antes)
+        datas = [dateA, dateB]
+        n_ref = sum(1 for d in datas if (self.db.agenda_slot(d) or {}).get("ref_id") == cand_id)
         self.assertEqual(n_ref, 1)
 
 
