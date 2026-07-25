@@ -19,6 +19,29 @@ class TestRender(unittest.TestCase):
         self.assertIn("melhor preço", h)   # badge do anual (D1)
         self.assertNotIn("20% OFF", h)     # badge antiga removida
 
+    def test_foot_linka_termos_e_privacidade(self):
+        # antes só dava pra chegar em /termos e /privacidade pelo checkbox do
+        # checkout ou pela tela de re-aceite — documento de consumidor precisa
+        # estar acessível a qualquer momento, inclusive antes da compra
+        h = self.s._foot()
+        self.assertIn('href="/termos"', h)
+        self.assertIn('href="/privacidade"', h)
+
+    def test_landing_tem_links_legais_no_rodape(self):
+        # a landing é a página pública por excelência, alcançável sem login e
+        # antes de qualquer compra — o rodapé dela precisa linkar os termos
+        h = self.s.landing()
+        self.assertIn('href="/termos"', h)
+        self.assertIn('href="/privacidade"', h)
+
+    def test_paginas_legais_tambem_exibem_o_rodape_com_os_links(self):
+        # site_legal.pagina_termos/pagina_privacidade reaproveitam _pagina (que
+        # chama _foot) — confirma que o rodapé com os links chega até lá também
+        import site_legal
+        for html in (site_legal.pagina_termos(), site_legal.pagina_privacidade()):
+            self.assertIn('href="/termos"', html)
+            self.assertIn('href="/privacidade"', html)
+
     def test_landing_founder_vagas(self):
         import subscribers
         orig = subscribers.ativos

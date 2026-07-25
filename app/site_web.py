@@ -223,6 +223,9 @@ button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:non
 .social .post{font-size:17px;color:#3a2f10;font-style:italic;line-height:1.6}
 .docbtn{display:inline-block;margin-top:6px;font-family:system-ui,sans-serif;font-size:14px;color:var(--ouro2);text-decoration:none;border:1px solid rgba(201,162,39,.5);border-radius:100px;padding:10px 20px}
 .foot{padding:40px 0 60px;border-top:1px solid rgba(233,225,198,.1);color:var(--suave);font-family:system-ui,sans-serif;font-size:13px;margin-top:20px}
+.foot .flinks{margin-top:10px;font-size:12px}
+.foot .flinks a{color:var(--suave);text-decoration:underline;text-underline-offset:2px}
+.foot .flinks a:hover{color:var(--ouro2)}
 .foot .cfm{max-width:640px;margin-top:8px;font-size:12px;opacity:.8}
 /* assinar */
 .pick{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:26px 0}
@@ -349,6 +352,8 @@ def _topbar(logado=False, atual=""):
 def _foot():
     return (f'<div class="wrap"><div class="foot">'
             f'{_esc(MARCA)} · {_esc(CRM)} · {_esc(PRODUTO)}'
+            f'<div class="flinks"><a href="/termos">Termos de assinatura</a> · '
+            f'<a href="/privacidade">Política de privacidade</a></div>'
             f'<div class="cfm">Conteúdo de caráter científico-educacional, destinado a médicos. '
             f'Não substitui o julgamento clínico individual nem constitui recomendação de conduta.</div>'
             f'</div></div>')
