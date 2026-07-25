@@ -29,6 +29,36 @@ def proximo_disparo(now, horarios):
     return min(candidatos, key=lambda x: x[0])
 
 
+def _destino_seguro(destino):
+    """Valida o `destino` do form de /aceitar-termos antes de usá-lo num redirect.
+
+    Só aceita caminho relativo ao próprio site (começa com "/" e não sai dele). Cai
+    no padrão "/minha" quando `destino`:
+    - não começa com "/";
+    - começa com "//" ou "/\\" — o navegador trata "\\" como "/" na resolução de URL,
+      então "/\\evil.com" também resolve pro host evil.com (mesma família de bug do
+      "//evil.com", só que com barra invertida);
+    - contém "\\r" ou "\\n" — response splitting: `send_header` do `http.server` não
+      valida CRLF no valor do header, então isso injetaria headers/corpo extras na
+      resposta (ex.: um Set-Cookie forjado);
+    - tem caractere fora de latin-1 — `send_header` codifica o valor em latin-1
+      estrito, e um caractere fora dessa faixa derrubava a resposta inteira com
+      UnicodeEncodeError em vez de cair no padrão.
+    """
+    destino = destino or "/minha"
+    if not destino.startswith("/"):
+        return "/minha"
+    if len(destino) > 1 and destino[1] in ("/", "\\"):
+        return "/minha"
+    if "\r" in destino or "\n" in destino:
+        return "/minha"
+    try:
+        destino.encode("latin-1")
+    except UnicodeEncodeError:
+        return "/minha"
+    return destino
+
+
 def agendador():
     """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
@@ -753,17 +783,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not sub:
             return self._redirect("/entrar")
         if g("aceito") != "1":
-            return self._html(site_legal.pagina_aceite_termos(g("destino") or "/minha"))
+            return self._html(site_legal.pagina_aceite_termos(_destino_seguro(g("destino"))))
         ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
               or self.client_address[0])
         subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
-        destino = g("destino") or "/minha"
-        # nunca redireciona pra fora do site: "//evil.com" começa com "/" mas é uma URL
-        # protocolo-relativa (o navegador resolve pro host de evil.com), por isso o "//"
-        # também precisa cair no destino padrão, não só ausência da barra inicial.
-        if not destino.startswith("/") or destino.startswith("//"):
-            destino = "/minha"
-        return self._redirect(destino)
+        return self._redirect(_destino_seguro(g("destino")))
 
     def _cancelar_motivo(self, g):
         """Passo 1 do cancelamento. Exceção deliberada ao gate de aceite dos termos:
