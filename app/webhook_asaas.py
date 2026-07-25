@@ -128,31 +128,65 @@ def _executar(event, pay, pid, enviar_fn):
         prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
         nome = cust.get("name") or (pending or {}).get("nome", "")
         email = cust.get("email") or (pending or {}).get("email", "")
-        reg = subscribers.criar_de_pagamento(
-            {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", ""),
-             "termos_versao": (pending or {}).get("termos_versao", ""),
-             "termos_ip": (pending or {}).get("termos_ip", "")},
-            {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
-        if not sid:
-            # Pix é pagamento DETACHED (avulso), sem assinatura recorrente por trás — não
-            # existe cobrança futura agendada, logo nunca chega um PAYMENT_OVERDUE pra
-            # expirar ninguém. Sem acesso_ate, ATIVO sem acesso_ate = acesso PRA SEMPRE
-            # (subscribers.tem_acesso), então quem pagou uma vez ficaria recebendo os
-            # estudos indefinidamente. Grava o mesmo vencimento já calculado (prox) —
-            # decisão do Diego. No cartão (com subscription/sid) NÃO gravamos: o cartão
-            # renova sozinho e uma data de fim cortaria o acesso na virada do ciclo,
-            # antes da próxima cobrança confirmar.
-            subscribers.marcar_status(reg["id"], "ATIVO", acesso_ate=prox)
+
+        # Guarda contra duplicata: no Asaas, cartão À VISTA cria assinatura recorrente
+        # (subscription preenchido), mas cartão PARCELADO não — cada parcela confirmada
+        # chega com "subscription" vazio, então por_subscription nunca acha o assinante
+        # e cai neste ramo ATIVAR de novo. Sem checar se o CPF/WhatsApp já é assinante,
+        # o anual em 12x criaria até 12 registros duplicados (boas-vindas, e-mail de
+        # "nova venda" e comissão de afiliado repetidos a cada parcela confirmada).
+        cpf_cliente = cust.get("cpfCnpj") or (pending or {}).get("cpf") or ""
+        existente = subscribers.por_cpf(cpf_cliente) or subscribers.por_whatsapp(whatsapp)
+        novo_assinante = existente is None
+
+        if existente and subscribers.tem_acesso(existente):
+            # Parcela do mesmo período já contratado (ou reentrega do mesmo evento
+            # após um retry do Asaas): não cria outro assinante, não repete
+            # boas-vindas nem o e-mail de venda, e não registra comissão de novo — só
+            # atualiza a referência do pagamento mais recente (é nela que o estorno se
+            # baseia). Vencimento/acesso NÃO avançam: a parcela não é um período novo.
+            subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
+            return (200, "parcela-registrada")
+
+        if existente:
+            # Acesso já tinha acabado (ex.: Pix anual vencido) e o cliente comprou de
+            # novo -> recontratação legítima. Reativa o registro existente em vez de
+            # criar outro (mantém o histórico do assinante num id só). acesso_ate
+            # segue a mesma regra de sempre: só grava quando NÃO há subscription (Pix
+            # avulso); no cartão o próprio ciclo recorrente controla o acesso.
+            subscribers.marcar_status(existente["id"], "ATIVO", proximo_vencimento=prox,
+                                      acesso_ate=(prox if not sid else None))
+            reg = existente
+        else:
+            reg = subscribers.criar_de_pagamento(
+                {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", ""),
+                 "termos_versao": (pending or {}).get("termos_versao", ""),
+                 "termos_ip": (pending or {}).get("termos_ip", "")},
+                {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
+            if not sid:
+                # Pix é pagamento DETACHED (avulso), sem assinatura recorrente por trás — não
+                # existe cobrança futura agendada, logo nunca chega um PAYMENT_OVERDUE pra
+                # expirar ninguém. Sem acesso_ate, ATIVO sem acesso_ate = acesso PRA SEMPRE
+                # (subscribers.tem_acesso), então quem pagou uma vez ficaria recebendo os
+                # estudos indefinidamente. Grava o mesmo vencimento já calculado (prox) —
+                # decisão do Diego. No cartão (com subscription/sid) NÃO gravamos: o cartão
+                # renova sozinho e uma data de fim cortaria o acesso na virada do ciclo,
+                # antes da próxima cobrança confirmar.
+                subscribers.marcar_status(reg["id"], "ATIVO", acesso_ate=prox)
+
         _boas_vindas(whatsapp, nome, email, enviar_fn)
         # Afiliado (D3): comissão sobre o valor pago (só na 1ª venda). No cartão o desconto
         # é RECORRENTE (o Asaas não deixa alterar o `value` da assinatura por API) — decisão do
         # Diego: renovação com desconto "da nada". A busca do afiliado é protegida: uma falha
         # transitória aqui NÃO pode derrubar a ativação (senão o Asaas re-tenta e duplica o assinante).
-        try:
-            af = db.afiliado_por_codigo((pending or {}).get("afiliado_codigo") or "")
-        except Exception as e:
-            print(f"[webhook] afiliado_por_codigo falhou: {e}", flush=True)
-            af = None
+        # Recontratação (existente reativado acima) NÃO gera comissão nova — mesma regra "só na 1ª venda".
+        af = None
+        if novo_assinante:
+            try:
+                af = db.afiliado_por_codigo((pending or {}).get("afiliado_codigo") or "")
+            except Exception as e:
+                print(f"[webhook] afiliado_por_codigo falhou: {e}", flush=True)
+                af = None
         valor_comissao = None
         if af:
             import pricing

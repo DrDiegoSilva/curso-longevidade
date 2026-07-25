@@ -222,6 +222,103 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(len(comis), 1)                       # atribuiu via CPF, sem externalReference
         self.assertAlmostEqual(comis[0]["valor_comissao"], 26.92, places=2)
 
+    def test_ativar_parcela_do_anual_mesmo_cpf_nao_duplica(self):
+        # BUG: no Asaas, cartão parcelado NÃO cria assinatura recorrente (subscription
+        # vem vazio em toda parcela confirmada) -> cada parcela do anual em 12x cai
+        # no ramo ATIVAR de novo (por_subscription nunca acha nada). Sem checar se o
+        # CPF já é assinante com acesso vigente, a 2ª parcela criaria um 2º registro,
+        # reenviaria boas-vindas, mandaria "nova venda" de novo e duplicaria comissão.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Parcelado", "whatsapp": "5543999996666", "email": "p@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "cus_1", "payment": "pay_1parc", "proximo_vencimento": "2026-08-19"})
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. Parcelado", "mobilePhone": "5543999996666",
+                                           "email": "p@x.com", "cpfCnpj": "111.444.777-35"}
+        chamadas_comissao = []
+        orig_reg_comissao = self.db.registrar_comissao
+        self.db.registrar_comissao = lambda *a, **k: chamadas_comissao.append((a, k))
+        import email_send
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto))
+        try:
+            st, msg = self.w.processar(self._body(ext="outro_tok", pid="pay_2parc", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            self.db.registrar_comissao = orig_reg_comissao
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "parcela-registrada"))
+        self.assertEqual(len(self.s.listar()), 1)          # não duplicou o assinante
+        self.assertEqual(len(self.enviados), 0)            # não reenviou boas-vindas (WhatsApp)
+        self.assertEqual(emails, [])                        # nem boas-vindas nem "nova venda" por e-mail
+        self.assertEqual(chamadas_comissao, [])              # não registrou comissão de novo
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["asaas_payment_id"], "pay_2parc")   # referência p/ estorno atualizada
+        self.assertEqual(atual["proximo_vencimento"], "2026-08-19")  # não empurrou (mesmo período)
+
+    def test_ativar_parcela_do_anual_casa_por_whatsapp(self):
+        # Mesmo cenário, mas sem CPF disponível no evento (Asaas não devolveu cpfCnpj)
+        # -> a guarda tem que casar pelo WhatsApp como fallback.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. W", "whatsapp": "5543999997777", "email": "w@x.com", "plano": "anual"},
+            {"customer": "cus_2", "payment": "pay_1w", "proximo_vencimento": "2026-08-20"})
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. W", "mobilePhone": "5543999997777",
+                                           "email": "w@x.com", "cpfCnpj": ""}
+        chamadas_comissao = []
+        orig_reg_comissao = self.db.registrar_comissao
+        self.db.registrar_comissao = lambda *a, **k: chamadas_comissao.append((a, k))
+        try:
+            st, msg = self.w.processar(self._body(ext="outro_tok_w", pid="pay_2w", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            self.db.registrar_comissao = orig_reg_comissao
+        self.assertEqual((st, msg), (200, "parcela-registrada"))
+        self.assertEqual(len(self.s.listar()), 1)
+        self.assertEqual(len(self.enviados), 0)
+        self.assertEqual(chamadas_comissao, [])
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["asaas_payment_id"], "pay_2w")
+        self.assertEqual(atual["proximo_vencimento"], "2026-08-20")
+
+    def test_ativar_recontratacao_apos_acesso_expirar_reativa_mesmo_id(self):
+        # Pix anual que venceu (acesso_ate no passado) e o cliente comprou de novo:
+        # recontratação legítima -> reativa o MESMO registro em vez de criar outro,
+        # e manda boas-vindas normalmente (ele tinha perdido o acesso e voltou).
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Expirado", "whatsapp": "5543999998888", "email": "e@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "cus_3", "payment": "pay_velho", "proximo_vencimento": "2025-07-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")
+        self.assertFalse(self.s.tem_acesso(self.s.por_id(reg["id"])))
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. Expirado", "mobilePhone": "5543999998888",
+                                           "email": "e@x.com", "cpfCnpj": "111.444.777-35"}
+        try:
+            st, msg = self.w.processar(self._body(ext="tok_novo", pid="pay_novo", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+        self.assertEqual((st, msg), (200, "ativado"))
+        self.assertEqual(len(self.s.listar()), 1)           # reativou, não duplicou
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["id"], reg["id"])              # mesmo registro
+        self.assertEqual(atual["status"], "ATIVO")
+        self.assertTrue(self.s.tem_acesso(atual, agora=__import__("datetime").datetime(2026, 8, 1)))
+        self.assertEqual(len(self.enviados), 1)               # boas-vindas enviada de novo
+
 
 class TestAvisarVenda(unittest.TestCase):
     def test_avisar_venda_monta_email(self):
