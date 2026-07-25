@@ -444,10 +444,51 @@ def _finalizar_dia(hoje, r, art, conteudo, tmeta):
         print(f"[enviar] avisar_estoque_baixo falhou: {e}", flush=True)
 
 
+def _montar_ctx(hoje, r):
+    """ctx de envio (título/conteúdo/tema + PDF/áudio master cacheados do dia) a partir de um
+    rascunho aprovado r. Puro — assume r válido."""
+    art = r["artigo"]
+    titulo = r.get("titulo_pt") or art.get("titulo", "")
+    conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
+    tmeta = _tema_meta(art.get("tema", ""))
+    return {"r": r, "art": art, "titulo": titulo, "conteudo": conteudo, "tmeta": tmeta,
+            "audio_bytes": _audio_master(hoje, art, conteudo),
+            "master_pdf": _pdf_master(hoje, art, conteudo, tmeta)}
+
+
+def _ctx_do_dia(hoje):
+    """ctx pronto p/ enviar, ou None se não é dia útil de envio OU não há rascunho aprovado.
+    Usado pelo catch-up (que não tem os guards do enviar_slot)."""
+    if not _e_dia_util(datetime.now()):
+        return None
+    r = draft_store.carregar(hoje)
+    if not r or r.get("status") == "SKIPPED":
+        return None
+    return _montar_ctx(hoje, r)
+
+
+def _enviar_estudo_para(whatsapp, nome, ctx):
+    """Envia o estudo do dia (texto + PDF + áudio) a UM assinante. Falha de mídia é logada."""
+    import phone
+    whatsapp = phone.normalizar(whatsapp)
+    link = f"{config.PUBLIC_URL}/entrar"
+    msg = deliver.personalizar_rodape(montar_texto_resumo(ctx["titulo"], ctx["r"]["resumo"], ctx["tmeta"]), nome, link)
+    deliver.enviar_texto(whatsapp, msg)
+    if ctx["master_pdf"]:
+        try:
+            deliver.enviar_pdf(whatsapp, ctx["master_pdf"], caption=ctx["titulo"])
+        except Exception as e:
+            print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
+    if ctx["audio_bytes"]:
+        try:
+            deliver.enviar_audio(whatsapp, ctx["audio_bytes"])
+        except Exception as e:
+            print(f"[enviar] áudio p/ {whatsapp} falhou: {e}", flush=True)
+
+
 def enviar_slot(slot):
-    """Envia o estudo do dia SÓ pros assinantes de `slot` (config.SLOTS). Idempotente por
-    (dia, slot). Áudio/PDF/finalização são 1x/dia. O SENT não bloqueia os outros slots —
-    o guard de reenvio é o envios_slot."""
+    """Envia o estudo do dia SÓ pros assinantes de `slot`. Idempotente por (dia, slot) E por
+    (dia, assinante) — o claim `registrar_envio_assinante` garante 1 envio/dia mesmo com troca."""
     import db
     hoje = _hoje_iso()
     if not db.registrar_envio_slot(hoje, slot):     # slot já processado hoje -> não repete
@@ -459,34 +500,14 @@ def enviar_slot(slot):
         if db.registrar_envio_slot(hoje, "_skip_aviso"):   # avisa o curador 1x/dia
             deliver.enviar_curador(f"⏭️ Nada enviado hoje ({'sem rascunho' if not r else 'vetado'}).")
         return
-    art = r["artigo"]
-    titulo = r.get("titulo_pt") or art.get("titulo", "")
-    conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
-    tmeta = _tema_meta(art.get("tema", ""))
-    audio_bytes = _audio_master(hoje, art, conteudo)
-    master_pdf = _pdf_master(hoje, art, conteudo, tmeta)
-
-    def _envia(whatsapp, nome):
-        import phone
-        whatsapp = phone.normalizar(whatsapp)
-        link = f"{config.PUBLIC_URL}/entrar"
-        msg = deliver.personalizar_rodape(montar_texto_resumo(titulo, r['resumo'], tmeta), nome, link)
-        deliver.enviar_texto(whatsapp, msg)
-        if master_pdf:
-            try:
-                deliver.enviar_pdf(whatsapp, master_pdf, caption=titulo)
-            except Exception as e:
-                print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
-        if audio_bytes:
-            try:
-                deliver.enviar_audio(whatsapp, audio_bytes)
-            except Exception as e:
-                print(f"[enviar] áudio p/ {whatsapp} falhou: {e}", flush=True)
-
-    destinatarios = [s for s in subscribers.ativos() if subscribers.slot_de(s) == slot]
-    res = deliver.distribuir(r, destinatarios, config.SEND_DELAY_SEC, _envia)
-    _finalizar_dia(hoje, r, art, conteudo, tmeta)
+    ctx = _montar_ctx(hoje, r)
+    # claim por assinante: só quem AINDA não recebeu hoje (mata reenvio na troca de slot)
+    destinatarios = [s for s in subscribers.ativos()
+                     if subscribers.slot_de(s) == slot and db.registrar_envio_assinante(hoje, s["id"])]
+    res = deliver.distribuir(r, destinatarios, config.SEND_DELAY_SEC,
+                             lambda w, n: _enviar_estudo_para(w, n, ctx))
+    _finalizar_dia(hoje, r, ctx["art"], ctx["conteudo"], ctx["tmeta"])
     if destinatarios:
-        deliver.enviar_curador(f"✅ Enviado (slot {slot}, {art.get('tema','')}): {res['ok']} assinantes"
+        deliver.enviar_curador(f"✅ Enviado (slot {slot}, {ctx['art'].get('tema','')}): {res['ok']} assinantes"
                                + (f" · {len(res['falhas'])} falhas" if res["falhas"] else "")
-                               + (" · ⚠️ SEM PDF (erro na geração)" if master_pdf is None else ""))
+                               + (" · ⚠️ SEM PDF (erro na geração)" if ctx["master_pdf"] is None else ""))

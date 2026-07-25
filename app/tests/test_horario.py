@@ -138,6 +138,15 @@ class TestEnviarSlot(unittest.TestCase):
             db.registrar_digest = orig
         self.assertEqual(chamadas["digest"], 1)       # finalização rodou 1x só (guardada)
 
+    def test_troca_de_slot_nao_reenvia(self):
+        self.daily.enviar_slot("12h")                 # A (12h) recebe
+        self.assertEqual(len(self.enviados), 1)
+        a_id = self.enviados[0]["id"]
+        self.enviados.clear()
+        self.s.definir_slot(a_id, "20h")              # A troca de horário no meio do dia
+        self.daily.enviar_slot("20h")                 # 20h dispara depois
+        self.assertEqual(self.enviados, [])           # claim já usado -> NÃO reenvia
+
 
 class TestMeusDadosHorario(unittest.TestCase):
     def setUp(self):
