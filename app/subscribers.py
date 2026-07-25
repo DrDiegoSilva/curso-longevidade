@@ -137,6 +137,11 @@ def criar_de_pagamento(pending, dados_asaas=None, status="ATIVO"):
            "metodo": pending.get("metodo", ""), "status": status,
            "asaas_customer_id": a.get("customer"), "asaas_subscription_id": a.get("subscription"),
            "asaas_payment_id": a.get("payment"), "proximo_vencimento": a.get("proximo_vencimento"),
+           # Aceite feito no checkout (Task 7): copiado do pending pro assinante, pra
+           # quem já aceitou lá não cair na tela de re-aceite (subscribers.precisa_aceitar).
+           "termos_versao": pending.get("termos_versao") or "",
+           "termos_aceito_em": datetime.now().isoformat() if pending.get("termos_versao") else "",
+           "termos_ip": pending.get("termos_ip") or "",
            "criado_em": datetime.now().isoformat()}
     _insert(reg)
     return reg

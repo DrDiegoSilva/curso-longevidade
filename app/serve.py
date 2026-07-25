@@ -863,7 +863,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, cpf as cpfval
+        import site_web, config, db, subscribers, pricing, asaas, legal, cpf as cpfval
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
@@ -873,6 +873,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail, WhatsApp e CPF."))
         if not cpfval.valida(dados["cpf"]):
             return self._html(site_web.pagina_assinar(plano["slug"], "CPF inválido — confira os números."))
+        if g("aceito") != "1":
+            # Gate ANTES de qualquer criação (pending ou assinante direto via cupom de
+            # cortesia, logo abaixo) — sem aceite não existe cadastro, em caminho nenhum.
+            return self._html(site_web.pagina_assinar(
+                plano["slug"], "É preciso aceitar os Termos e a Política de Privacidade."))
+        # Mesmo padrão de _aceitar_termos: atrás de proxy, o IP real vem no cabeçalho.
+        ip_cliente = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                      or self.client_address[0])
         dados["cpf"] = cpfval.so_digitos(dados["cpf"])          # guarda só os dígitos
         ja = subscribers.por_cpf(dados["cpf"]) or subscribers.por_whatsapp(dados["whatsapp"])
         if ja and subscribers.tem_acesso(ja):                   # já tem assinatura ativa -> não duplica
@@ -887,7 +895,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Cupom de cortesia: ativa na hora, sem Asaas
         if cupom and db.cupom_valido(cupom):
             info = db.obter_cupom(cupom) or {}
-            reg = subscribers.criar_de_pagamento({**dados, "plano": plano["slug"], "metodo": "CUPOM"}, {}, status="ATIVO")
+            reg = subscribers.criar_de_pagamento(
+                {**dados, "plano": plano["slug"], "metodo": "CUPOM",
+                 "termos_versao": legal.VERSAO, "termos_ip": ip_cliente}, {}, status="ATIVO")
             dias = int(info.get("dias_acesso") or 0)
             if dias > 0:                       # cortesia com prazo -> define o fim do acesso
                 from datetime import datetime, timedelta
@@ -911,7 +921,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         base_final = pricing.base_cobrada(plano, metodo, base_vig, af["pct_desconto"] if af else 0.0)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
-                                  "parcelas": parcelas, "valor": valor, "afiliado_codigo": af_codigo})
+                                  "parcelas": parcelas, "valor": valor, "afiliado_codigo": af_codigo,
+                                  "termos_versao": legal.VERSAO, "termos_ip": ip_cliente})
         try:
             payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_final)
             res = asaas.criar_checkout(payload)

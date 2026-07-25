@@ -265,6 +265,9 @@ textarea:focus{outline:none;border-color:var(--ouro)}
 .btn-pay{width:100%;border:none;cursor:pointer;margin-top:6px;font-family:var(--ui);font-weight:800;font-size:16px;letter-spacing:.02em;color:#1a1300;background:linear-gradient(180deg,var(--gold2),var(--gold));padding:17px 30px;border-radius:100px;box-shadow:0 14px 34px -10px rgba(201,162,39,.6);transition:.18s}
 .btn-pay:hover{transform:translateY(-2px);box-shadow:0 20px 46px -10px rgba(201,162,39,.72)}
 .securow{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:14px;font-family:var(--ui);font-size:12px;color:var(--muted)}
+.check-termos{display:flex;gap:10px;align-items:flex-start;margin:16px 0 8px;font-family:var(--ui);font-size:13px;line-height:1.5;color:var(--muted);cursor:pointer}
+.check-termos input{margin-top:3px;flex:none}
+.check-termos a{color:var(--ouro2);text-decoration:underline}
 @media(max-width:760px){.checkout{grid-template-columns:1fr}.summary{position:static}.paytiles{grid-template-columns:1fr}}
 /* ===== arquivo (redesign: abas por tema + mês/semana + leitura) ===== */
 .back{display:inline-flex;align-items:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--cream);border:1px solid var(--line);border-radius:100px;padding:9px 18px;margin-bottom:22px;transition:.18s}
@@ -1501,6 +1504,11 @@ def pagina_assinar(plano_slug=None, erro=""):
             </div>
             {parcelas_html}
             <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" style="text-transform:uppercase" placeholder="cortesia ou afiliado"></div>
+            <label class="check-termos">
+              <input type="checkbox" name="aceito" value="1" required>
+              <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Assinatura</a>
+                e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
+            </label>
             <button class="btn-pay" type="submit">Continuar para o pagamento →</button>
             <div class="securow">🔒 Ambiente de pagamento seguro</div>
           </form>

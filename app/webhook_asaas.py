@@ -129,7 +129,9 @@ def _executar(event, pay, pid, enviar_fn):
         nome = cust.get("name") or (pending or {}).get("nome", "")
         email = cust.get("email") or (pending or {}).get("email", "")
         reg = subscribers.criar_de_pagamento(
-            {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", "")},
+            {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", ""),
+             "termos_versao": (pending or {}).get("termos_versao", ""),
+             "termos_ip": (pending or {}).get("termos_ip", "")},
             {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
         _boas_vindas(whatsapp, nome, email, enviar_fn)
         # Afiliado (D3): comissão sobre o valor pago (só na 1ª venda). No cartão o desconto
