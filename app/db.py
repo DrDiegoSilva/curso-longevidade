@@ -471,19 +471,25 @@ def registrar_comissao(afiliado_id, subscriber_id, plano, valor_venda, valor_com
     return cid
 
 
-def listar_comissoes(afiliado_id=None, pago=None):
+def listar_comissoes(afiliado_id=None, pago=None, incluir_estornadas=False):
     """`pago=False` é a consulta de "pendente" (usada no painel) — por isso, quando
-    filtramos por não-paga, também excluímos as ESTORNADAS: uma comissão estornada
-    (venda devolvida) não é mais devida, então não pode aparecer como pendente nem
+    filtramos por não-paga, também excluímos as ESTORNADAS por padrão: uma comissão
+    estornada (venda devolvida) não é mais devida, então não pode aparecer como pendente nem
     entrar na fila de pagamento. Sem filtro (`pago=None`) continua trazendo tudo,
-    inclusive estornadas — é o que a tela de histórico/auditoria precisa ver."""
+    inclusive estornadas — é o que a tela de histórico/auditoria precisa ver.
+
+    `incluir_estornadas=True` é o caso da tela /admin/afiliados: ela quer `pago=False`
+    (não trazer o que já foi quitado) mas TAMBÉM quer ver as estornadas — pra exibi-las
+    marcadas na UI, não pra escondê-las de novo. Não muda o default (False): quem chama
+    sem esse parâmetro continua com o comportamento antigo, que é o que protege o
+    agregado `comissao_pendente` (listar_afiliados) e o marcar_comissao_paga."""
     q = "SELECT * FROM comissoes"
     conds, params = [], []
     if afiliado_id is not None:
         conds.append("afiliado_id=?"); params.append(afiliado_id)
     if pago is not None:
         conds.append("pago=?"); params.append(1 if pago else 0)
-        if not pago:
+        if not pago and not incluir_estornadas:
             conds.append("estornada_em IS NULL")
     if conds:
         q += " WHERE " + " AND ".join(conds)

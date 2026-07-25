@@ -175,6 +175,47 @@ class TestRender(unittest.TestCase):
         self.assertIn("marcar_comissao_paga", h)     # botão de baixa
         self.assertIn("26,92", h)                    # comissão formatada BRL
 
+    def test_pagina_admin_afiliados_comissao_estornada(self):
+        """Venda estornada (cancelamento no arrependimento) não pode sumir da tela: aparece
+        marcada como estornada, fora do total pendente e sem o botão de marcar como paga."""
+        afs = [{"id": "a1", "nome": "Dra. Maria", "contato": "maria@x.com", "codigo": "DRAMARIA",
+                "pct_desconto": 10, "pct_comissao": 3, "ativo": 1,
+                "n_vendas": 1, "comissao_total": 26.92, "comissao_pendente": 0}]
+        comis_estornada = [{"id": "c1", "afiliado_id": "a1", "subscriber_id": "s1", "plano": "anual",
+                            "valor_venda": 897.30, "valor_comissao": 26.92, "pago": 0,
+                            "estornada_em": "2026-07-25T10:00:00"}]
+        h = self.s.pagina_admin_afiliados(afs, comis_estornada, token="tk")
+        # (a) aparece na tela, marcada como estornada
+        self.assertIn("ESTORNADA", h)
+        self.assertIn("26,92", h)                      # o valor da comissão estornada continua visível
+        # (b) fora do total devido: a coluna "Pendente" do afiliado mostra R$ 0,00
+        self.assertIn("R$ 0,00", h)
+        # (c) sem o botão de marcar como paga (única comissão passada é a estornada) —
+        # note que o texto "marcar como paga" ainda existe no hint estático da tela,
+        # então o que prova a ausência do BOTÃO é a action do form (com underscore)
+        self.assertNotIn("marcar_comissao_paga", h)
+
+    def test_pagina_admin_afiliados_estornada_convive_com_pendente(self):
+        """Com uma comissão pendente de verdade na lista, ela mantém o botão normalmente —
+        só a estornada fica sem ele."""
+        afs = [{"id": "a1", "nome": "Dra. Maria", "contato": "", "codigo": "DRAMARIA",
+                "pct_desconto": 10, "pct_comissao": 3, "ativo": 1,
+                "n_vendas": 2, "comissao_total": 29.59, "comissao_pendente": 2.67}]
+        comis = [
+            {"id": "c1", "afiliado_id": "a1", "subscriber_id": "s1", "plano": "anual",
+             "valor_venda": 897.30, "valor_comissao": 26.92, "pago": 0,
+             "estornada_em": "2026-07-25T10:00:00"},
+            {"id": "c2", "afiliado_id": "a1", "subscriber_id": "s2", "plano": "mensal",
+             "valor_venda": 89.10, "valor_comissao": 2.67, "pago": 0},
+        ]
+        h = self.s.pagina_admin_afiliados(afs, comis, token="tk")
+        self.assertIn("ESTORNADA", h)
+        self.assertIn("marcar_comissao_paga", h)        # botão continua existindo p/ a pendente real
+        # o botão (com o id no hidden input) só existe p/ a comissão pendente (c2); a
+        # estornada (c1) não gera nenhum form de baixa, então o id dela nunca aparece
+        self.assertNotIn('value="c1"', h)
+        self.assertIn('value="c2"', h)
+
     def test_admin_nav_tem_afiliados(self):
         self.assertIn("/admin/afiliados", self.s._admin_nav("tk", "afiliados"))
 

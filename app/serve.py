@@ -214,8 +214,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             return self._html(site_web.pagina_admin_afiliados(
-                db.listar_afiliados(), db.listar_comissoes(pago=False), config.ADMIN_TOKEN or "",
-                editar_id=q.get("editar", [""])[0] or None), 200)
+                db.listar_afiliados(), db.listar_comissoes(pago=False, incluir_estornadas=True),
+                config.ADMIN_TOKEN or "", editar_id=q.get("editar", [""])[0] or None), 200)
         if path == "/admin/mensagens":
             import config, site_web, auth_web, db, mensagens
             q = up.parse_qs(up.urlparse(self.path).query)

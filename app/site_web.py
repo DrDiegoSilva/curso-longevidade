@@ -618,15 +618,26 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
     nome_af = {a.get("id"): a.get("nome") for a in (afiliados or [])}
 
     def row_com(c):
+        """Comissão estornada (venda devolvida) NÃO some da lista — fica marcada (etiqueta +
+        riscado + esmaecida), sem botão de pagar e sem entrar em nenhum total: o agregado
+        `comissao_pendente` (tabela acima) já vem sem ela direto do db.listar_afiliados."""
+        estornada = bool(c.get("estornada_em"))
+        etiqueta = ('<span style="font-family:system-ui;font-size:10px;font-weight:700;'
+                    'letter-spacing:.06em;padding:3px 9px;border-radius:100px;background:#c0562f22;'
+                    'color:#c0562f;border:1px solid #c0562f66;margin-left:8px">ESTORNADA</span>'
+                    ) if estornada else ""
+        conteudo_style = ' style="text-decoration:line-through;opacity:.55"' if estornada else ""
+        acao = ('' if estornada else
+                '<form method="post" action="/admin/afiliados" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="marcar_comissao_paga">'
+                f'<input type="hidden" name="id" value="{_esc(c.get("id"))}">'
+                '<button class="actbtn" style="padding:6px 13px;font-size:12px">marcar como paga</button></form>')
         return (
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid rgba(233,225,198,.1)">'
-            f'<div><span style="color:var(--creme)">{_esc(nome_af.get(c.get("afiliado_id"), "—"))}</span>'
+            f'<div{conteudo_style}><span style="color:var(--creme)">{_esc(nome_af.get(c.get("afiliado_id"), "—"))}</span>{etiqueta}'
             f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("plano") or "—")} · venda {_esc(pricing.fmt_brl(c.get("valor_venda", 0)))} · '
             f'comissão <b style="color:var(--ouro2)">{_esc(pricing.fmt_brl(c.get("valor_comissao", 0)))}</b></div></div>'
-            f'<form method="post" action="/admin/afiliados" style="margin:0">'
-            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="marcar_comissao_paga">'
-            f'<input type="hidden" name="id" value="{_esc(c.get("id"))}">'
-            f'<button class="actbtn" style="padding:6px 13px;font-size:12px">marcar como paga</button></form></div>')
+            f'{acao}</div>')
 
     comis_lista = "".join(row_com(c) for c in (comissoes or [])) or \
         '<p class="hint" style="margin-top:8px">Nenhuma comissão pendente.</p>'
@@ -686,7 +697,7 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
         </div>
         <div class="panel" style="max-width:none;margin:0;flex:1;min-width:300px">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Comissões pendentes</h3>
-          <p class="hint" style="margin-bottom:6px">Pague por fora e clique em "marcar como paga" pra dar baixa.</p>
+          <p class="hint" style="margin-bottom:6px">Pague por fora e clique em "marcar como paga" pra dar baixa. Vendas estornadas (cancelamento no arrependimento) aparecem aqui só como registro — marcadas, sem entrar em pendente nem poder ser pagas.</p>
           <div style="margin-top:10px">{comis_lista}</div>
         </div>
       </div>
