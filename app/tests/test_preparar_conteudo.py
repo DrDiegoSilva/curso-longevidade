@@ -35,33 +35,38 @@ class _BaseTmpDb(unittest.TestCase):
 
 class TestPrepararClassico(_BaseTmpDb):
     def test_preparar_de_classico_usa_resumo_bancado(self):
-        import daily, db, deliver
+        import daily, db
         cid = db.salvar_classico({"tema": "Obesidade", "titulo_pt": "STEP", "resumo": "resumo-bancado",
                                   "data": "2021-01-01", "citacoes": 4000})
-        deliver.enviar_curador = lambda *a, **k: None       # silencia WhatsApp
-        r = daily._preparar_de_classico(cid)
+        with mock.patch.object(daily.deliver, "enviar_curador"), \
+             mock.patch.object(daily, "enviar_audio_preview"), \
+             mock.patch.object(daily.content, "gerar_conteudo") as m_gc:
+            r = daily._preparar_de_classico(cid)
+            m_gc.assert_not_called()  # prova que usa o resumo bancado, não regenera
         self.assertEqual(r["resumo"], "resumo-bancado")     # NÃO regenerou (usa o banco)
         self.assertEqual(r.get("classico_id"), cid)
 
     def test_preparar_de_classico_none_se_sumiu(self):
-        import daily, deliver
-        deliver.enviar_curador = lambda *a, **k: None
-        self.assertIsNone(daily._preparar_de_classico("id-que-nao-existe"))
+        import daily
+        with mock.patch.object(daily.deliver, "enviar_curador"), \
+             mock.patch.object(daily, "enviar_audio_preview"):
+            self.assertIsNone(daily._preparar_de_classico("id-que-nao-existe"))
 
 
 class TestPrepararCandidato(_BaseTmpDb):
     def test_preparar_de_candidato_gera_resumo_jit(self):
-        import daily, db, deliver
+        import daily, db
         db.salvar_candidatos([{"tema": "Obesidade", "titulo": "Estudo X", "chave": "k1",
                                "fonte": "NEJM", "doi": "10.1/x", "url": "http://x",
                                "data": "2026-01-01", "abstract": "abstract cru do artigo"}])
         cand_id = db.listar_candidatos(status="novo")[0]["id"]
-        deliver.enviar_curador = lambda *a, **k: None       # silencia WhatsApp
-        with mock.patch.object(daily.content, "gerar_conteudo",
+        with mock.patch.object(daily.deliver, "enviar_curador"), \
+             mock.patch.object(daily, "enviar_audio_preview"), \
+             mock.patch.object(daily.content, "gerar_conteudo",
                                return_value={"titulo_pt": "Título PT", "resumo": "resumo-jit",
                                              "gancho": "gancho", "grafico": None}) as m_gc:
             r = daily._preparar_de_candidato(cand_id)
-        m_gc.assert_called_once()
+            m_gc.assert_called_once()
         art_passado = m_gc.call_args[0][0]
         self.assertEqual(art_passado["resumo"], "abstract cru do artigo")  # abstract -> resumo de entrada
         self.assertEqual(r["resumo"], "resumo-jit")          # veio do gerador (JIT), não do banco
@@ -69,7 +74,9 @@ class TestPrepararCandidato(_BaseTmpDb):
 
     def test_preparar_de_candidato_none_se_sumiu(self):
         import daily
-        self.assertIsNone(daily._preparar_de_candidato("id-que-nao-existe"))
+        with mock.patch.object(daily.deliver, "enviar_curador"), \
+             mock.patch.object(daily, "enviar_audio_preview"):
+            self.assertIsNone(daily._preparar_de_candidato("id-que-nao-existe"))
 
 
 class TestFinalizarDiaCandidatoClassico(_BaseTmpDb):
