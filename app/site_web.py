@@ -1445,8 +1445,8 @@ def pagina_assinar(plano_slug=None, erro=""):
                          f'<select name="parcelas">{opts}</select></div>')
     inclui = "".join(f'<li><b>✓</b><span>{v}</span></li>' for v in (
         "1 estudo por dia útil, no seu WhatsApp",
-        "Curadoria por IA + revisão médica",
-        "PDF elegante de cada edição",
+        "Curadoria criteriosa + revisão médica",
+        "PDF Objetivo de cada edição",
         "Arquivo completo no portal do assinante"))
     corpo = f"""
     <div class="wrap">
