@@ -98,13 +98,15 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(self.s.por_subscription("sub_9")["status"], "ATIVO")
 
     def test_renovar_limpa_as_marcas_de_cancelamento(self):
-        # Sem isso, um assinante que cancelou e voltou a pagar ficaria PERMANENTEMENTE
-        # impedido de cancelar: db.claim_cancelamento só grava quando cancelado_em está
-        # vazio, então todo claim dele perderia. E o acesso_ate herdado do cancelamento
-        # (data passada) zeraria o acesso de quem está pagando.
+        # Reativação LEGÍTIMA (sem cancelado_em): ex. estorno/chargeback que reverteu
+        # (SUSPENDER marca CANCELADO sem gravar cancelado_em) e um novo pagamento
+        # confirma. Sem isso, um assinante nesse caso ficaria PERMANENTEMENTE impedido
+        # de cancelar: db.claim_cancelamento só grava quando cancelado_em está vazio,
+        # então todo claim dele perderia. E o acesso_ate herdado (data passada) zeraria
+        # o acesso de quem está pagando.
         reg = self.s.criar_de_pagamento({"nome": "C", "whatsapp": "5543", "plano": "mensal"},
                                          {"subscription": "sub_rc"})
-        self.db.claim_cancelamento(reg["id"], "caro demais", "2026-01-01T00:00:00")
+        self.s.marcar_status(reg["id"], "CANCELADO", acesso_ate="2026-01-01T00:00:00")
         self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p9", sub="sub_rc"),
                          "segredo", enviar_fn=self.envfn)
         atual = self.s.por_subscription("sub_rc")
@@ -115,13 +117,32 @@ class TestProcessar(unittest.TestCase):
         self.assertTrue(self.s.tem_acesso(atual))
         self.assertTrue(self.db.claim_cancelamento(reg["id"], "de novo", None))
 
+    def test_renovar_sobre_cancelado_nao_reativa(self):
+        # CORREÇÃO 2: parcela do anual em 12x confirmada para quem JÁ cancelou a
+        # renovação (cancelado_em preenchido via claim_cancelamento) é só a quitação do
+        # que já estava contratado — não uma reativação. Sem esta trava, o RENOVAR
+        # reabriria a assinatura, apagaria o cancelamento (cancelado_em/cancel_motivo)
+        # e empurraria vencimento/acesso — reativando de graça quem quis sair.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "C", "whatsapp": "5543", "plano": "mensal"},
+            {"subscription": "sub_rc", "proximo_vencimento": "2026-02-01"})
+        self.db.claim_cancelamento(reg["id"], "caro demais", "2026-01-01T00:00:00")
+        antes = self.s.por_subscription("sub_rc")
+        self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p9", sub="sub_rc"),
+                         "segredo", enviar_fn=self.envfn)
+        depois = self.s.por_subscription("sub_rc")
+        self.assertEqual(depois["status"], "CANCELADO")                       # não reativou
+        self.assertEqual(depois["cancelado_em"], antes["cancelado_em"])       # marca intacta
+        self.assertEqual(depois["cancel_motivo"], "caro demais")              # motivo intacto
+        self.assertEqual(depois["acesso_ate"], "2026-01-01T00:00:00")         # não mudou
+        self.assertEqual(depois["proximo_vencimento"], "2026-02-01")          # não empurrou
+
     def test_renovar_sobre_cancelado_alerta_admin(self):
-        # ACHADO 4: o Asaas cobrou (e confirmou) alguém que já tinha cancelado —
-        # cenário real no anual em 12x, em que as parcelas seguem sendo cobradas
-        # mesmo depois do cancelamento no nosso lado. Reativa mesmo assim (quem pagou
-        # tem que ter acesso), mas sem alerta a trilha de auditoria do cancelamento
-        # (cancel_motivo/cancelado_em) sumiria em silêncio e ninguém saberia que uma
-        # cobrança pós-cancelamento aconteceu.
+        # O Asaas cobrou (e confirmou) alguém que já tinha cancelado — cenário real no
+        # anual em 12x, em que as parcelas seguem sendo cobradas mesmo depois do
+        # cancelamento no nosso lado. Pode ser parcela legítima OU o cancelamento da
+        # assinatura no Asaas ter falhado (cliente cobrado indevidamente) — só o Diego
+        # distingue, por isso o alerta é sempre disparado.
         reg = self.s.criar_de_pagamento({"nome": "D", "whatsapp": "5543", "plano": "mensal"},
                                          {"subscription": "sub_rc2"})
         self.db.claim_cancelamento(reg["id"], "caro demais", "2026-01-01T00:00:00")
@@ -133,7 +154,7 @@ class TestProcessar(unittest.TestCase):
                              "segredo", enviar_fn=self.envfn)
         finally:
             self.w._alertar_admin = orig_alert
-        self.assertEqual(self.s.por_subscription("sub_rc2")["status"], "ATIVO")  # reativou mesmo assim
+        self.assertEqual(self.s.por_subscription("sub_rc2")["status"], "CANCELADO")  # não reativou
         self.assertEqual(len(alertas), 1)
         self.assertIn("cancel", alertas[0].lower())
 
