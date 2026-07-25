@@ -150,9 +150,10 @@ def marcar_status(id, status, **campos):
         c.execute(f"UPDATE subscribers SET {sets} WHERE id=?", list(campos.values()) + [id])
 
 
-def registrar_cancelamento(id, motivo, acesso_ate=None):
-    marcar_status(id, "CANCELADO", cancel_motivo=motivo,
-                  cancelado_em=datetime.now().isoformat(), acesso_ate=acesso_ate)
+# registrar_cancelamento foi removida de propósito: gravar o cancelamento agora é
+# db.claim_cancelamento, um UPDATE condicional único que é ao mesmo tempo a gravação e o
+# claim contra corrida. Manter um segundo caminho de escrita (incondicional) só serviria
+# para alguém, um dia, cancelar por fora do claim e reabrir a janela de duplo estorno.
 
 
 def definir_senha(id, senha_hash):

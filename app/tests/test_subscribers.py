@@ -21,6 +21,7 @@ class TestSubs(unittest.TestCase):
         import config, db, subscribers
         importlib.reload(config); importlib.reload(db); importlib.reload(subscribers)
         self.s = subscribers
+        self.db = db
         self.s._migrado = False
         db.init()
 
@@ -61,7 +62,8 @@ class TestSubs(unittest.TestCase):
         self.assertEqual(self.s.por_subscription("sub_1")["email"], "b@x.com")
         self.s.marcar_status(reg["id"], "INADIMPLENTE", carencia_ate=self._fut())
         self.assertTrue(self.s.tem_acesso(self.s.listar()[0]))
-        self.s.registrar_cancelamento(reg["id"], "caro demais", acesso_ate=self._pass())
+        # cancelar é db.claim_cancelamento (único caminho de escrita, atômico)
+        self.db.claim_cancelamento(reg["id"], "caro demais", self._pass())
         self.assertEqual(self.s.ativos(), [])
 
     def test_migra_json(self):

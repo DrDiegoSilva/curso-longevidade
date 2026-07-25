@@ -71,6 +71,24 @@ class TestProcessar(unittest.TestCase):
         self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p3", sub="sub_9"), "segredo", enviar_fn=self.envfn)
         self.assertEqual(self.s.por_subscription("sub_9")["status"], "ATIVO")
 
+    def test_renovar_limpa_as_marcas_de_cancelamento(self):
+        # Sem isso, um assinante que cancelou e voltou a pagar ficaria PERMANENTEMENTE
+        # impedido de cancelar: db.claim_cancelamento só grava quando cancelado_em está
+        # vazio, então todo claim dele perderia. E o acesso_ate herdado do cancelamento
+        # (data passada) zeraria o acesso de quem está pagando.
+        reg = self.s.criar_de_pagamento({"nome": "C", "whatsapp": "5543", "plano": "mensal"},
+                                         {"subscription": "sub_rc"})
+        self.db.claim_cancelamento(reg["id"], "caro demais", "2026-01-01T00:00:00")
+        self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p9", sub="sub_rc"),
+                         "segredo", enviar_fn=self.envfn)
+        atual = self.s.por_subscription("sub_rc")
+        self.assertEqual(atual["status"], "ATIVO")
+        self.assertFalse(atual["cancelado_em"])       # dá pra cancelar de novo
+        self.assertFalse(atual["cancel_motivo"])
+        self.assertIsNone(atual["acesso_ate"])
+        self.assertTrue(self.s.tem_acesso(atual))
+        self.assertTrue(self.db.claim_cancelamento(reg["id"], "de novo", None))
+
     def _body_valor(self, event="PAYMENT_CONFIRMED", ext="tok", pid="pay_af", value=897.30, sub=None):
         return {"event": event, "payment": {"id": pid, "externalReference": ext, "value": value,
                 "customer": "cus_af", "subscription": sub, "dueDate": "2026-07-19"}}

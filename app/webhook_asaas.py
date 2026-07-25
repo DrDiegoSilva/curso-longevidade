@@ -164,8 +164,15 @@ def _executar(event, pay, pid, enviar_fn):
     if acao == "RENOVAR" and sub:
         plano = config.plano_por_slug(sub.get("plano", "")) or {}
         prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
+        # Limpar as marcas de cancelamento faz parte da reativação:
+        # - cancelado_em: db.claim_cancelamento só grava quando ele está vazio. Um
+        #   assinante reativado com a marca antiga ficaria PERMANENTEMENTE impedido de
+        #   cancelar — todo claim perderia e a página diria "já cancelado".
+        # - acesso_ate: em ATIVO, uma data no passado zera o acesso (subscribers.tem_acesso);
+        #   a data herdada do cancelamento anterior deixaria o assinante pagando sem receber.
         subscribers.marcar_status(sub["id"], "ATIVO", carencia_ate=None,
-                                  proximo_vencimento=prox, aviso_renov_em=None)
+                                  proximo_vencimento=prox, aviso_renov_em=None,
+                                  cancelado_em=None, cancel_motivo=None, acesso_ate=None)
         return (200, "renovado")
 
     if acao == "INADIMPLENTE" and sub:

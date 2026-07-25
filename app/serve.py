@@ -727,61 +727,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._executar_cancelamento(sub, motivo)
 
     def _executar_cancelamento(self, sub, motivo):
-        """Guarda o fluxo INTEIRO do cancelamento (estorno + acesso_ate + e-mail)
-        atrás de um claim atômico por assinante — não só o estorno.
+        """Cancela a assinatura. A gravação do cancelamento vem PRIMEIRO e inteira
+        (db.claim_cancelamento), e é ela mesma o claim contra corrida; o estorno é um
+        ajuste posterior.
 
-        Duplo clique em /cancelar/confirmar (servidor ThreadingMixIn) ou um
-        re-submit sequencial (a sessão continua válida após cancelar; nada aqui
-        impede reentrar no formulário) chamam este método mais de uma vez para o
-        mesmo assinante. Sem o claim aqui na frente, a 2ª chamada recalcularia
-        acesso_ate do zero e, se a 1ª já tiver estornado (acesso_ate=None), a 2ª
-        gravaria uma data futura por cima — devolvendo o acesso de quem acabou de
-        ser reembolsado integralmente, além de mandar um 2º e-mail contraditório.
+        PORQUÊ nesta ordem: duplo clique em /cancelar/confirmar (servidor
+        ThreadingMixIn) ou um re-submit sequencial (a sessão continua válida depois de
+        cancelar) chamam este método mais de uma vez para o mesmo assinante. Enquanto
+        o claim era só uma marca prévia e o estado final era gravado no fim, existia
+        uma janela entre "reservei" e "existe": toda falha dentro dela deixava o
+        assinante marcado (logo, incapaz de cancelar de novo) e sem cancelamento
+        registrado. Agora ou o cancelamento está inteiro no banco, ou nada aconteceu.
         """
-        import site_web, subscribers, asaas, email_send, db
-        try:
-            venceu_claim = db.claim_cancelamento(sub["id"])
-        except Exception as e:
-            # Falha de infra no claim (banco travado, timeout) NUNCA pode travar o
-            # cancelamento — é a mesma regra global do estorno. Trata como claim
-            # vencido e segue o fluxo normal (na pior hipótese processa 2x, o que é
-            # preferível a travar o cliente do lado de fora).
-            print(f"[cancelar] claim_cancelamento falhou, seguindo como vencido: {e}", flush=True)
-            venceu_claim = True
-        if not venceu_claim:
-            # Corrida perdida: outra chamada concorrente já processou este
-            # cancelamento (estornou ou não, gravou acesso_ate, mandou e-mail).
-            # Não repete nada disso — só mostra a página com o que já está
-            # persistido, relendo o assinante do banco.
-            atual = subscribers.por_id(sub["id"]) or sub
-            return self._html(site_web.pagina_cancelado(atual.get("acesso_ate")))
+        import site_web, asaas, db
+        acesso_ate = sub.get("proximo_vencimento")   # padrão: acesso até o fim do período pago
+        estado = _gravar_cancelamento(sub, motivo, acesso_ate)
+        if estado == "perdeu":
+            # Outra chamada já cancelou este assinante (e já estornou/emailou, se era o
+            # caso). Nada a repetir: só mostra o que está PERSISTIDO — relendo do banco,
+            # porque o `sub` em memória é anterior ao cancelamento da outra chamada e
+            # traria o acesso_ate errado.
+            return self._html(site_web.pagina_cancelado(_acesso_ate_persistido(sub)))
         sid = sub.get("asaas_subscription_id")
-        try:
-            if sid:
+        if sid:
+            try:
                 asaas.cancelar_assinatura(sid)
-        except Exception as e:
-            print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
-        estornado = estornar_arrependimento(sub)      # None fora dos 7 dias ou se falhou
-        if estornado is not None:                       # arrependimento: acesso cessa agora
-            acesso_ate = None                            # (0.0 é estorno válido, não "sem estorno")
-        else:                                          # regra normal: acesso até o fim do pago
-            acesso_ate = sub.get("proximo_vencimento")
-        subscribers.registrar_cancelamento(sub["id"], motivo, acesso_ate=acesso_ate)
-        if sub.get("email"):
-            if estornado is not None:                    # idem: 0.0 também é estorno válido
-                corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
-                         f"Científica dentro do prazo de arrependimento.</p>"
-                         f"<p>O reembolso integral de <strong>R$ {estornado:.2f}</strong> foi "
-                         f"solicitado e aparece em até 10 dias úteis, conforme o meio de "
-                         f"pagamento utilizado.</p>")
-            else:
-                ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
-                corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
-                         f"Científica. Não haverá novas cobranças.{site_web._esc(ate)}</p>")
-            html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>{corpo}"
-                    f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
-                    f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
-            email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
+            except Exception as e:
+                # Alerta, não só log: a assinatura pode seguir cobrando em silêncio e o
+                # cliente não consegue mais tentar (o cancelamento já está gravado, então
+                # uma nova tentativa dele perderia o claim e não chamaria o Asaas de novo).
+                print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
+                _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} gravado, mas a "
+                              f"assinatura NÃO foi cancelada no Asaas ({e}) — cancele manualmente, "
+                              f"senão ela continua cobrando")
+        # Estorno só quando temos CERTEZA do estado gravado. Em "incerto" (banco falhou e
+        # não deu pra confirmar) o dinheiro não se move — regra global.
+        estornado = estornar_arrependimento(sub) if estado == "venceu" else None
+        if estornado is not None:              # 0.0 é estorno válido, não "sem estorno"
+            acesso_ate = None                   # reembolsou integral -> acesso cessa agora
+            try:
+                db.encerrar_acesso(sub["id"])
+            except Exception as e:
+                # O cancelamento já está gravado e correto; só o ajuste do acesso ficou
+                # pendente. Nunca pode derrubar a resposta — vira alerta.
+                print(f"[cancelar] encerrar_acesso falhou após estorno OK: {e}", flush=True)
+                _alertar(sub, f"estorno de {sub.get('nome') or sub.get('id')} CONCLUÍDO, mas não "
+                              f"consegui encerrar o acesso no cadastro ({e}) — zere o 'acesso até' "
+                              f"manualmente")
+        _email_cancelamento(sub, estornado, acesso_ate)
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
@@ -849,6 +842,121 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+def _alertar(sub, motivo):
+    """Avisa o admin sobre um cancelamento que precisa de mão humana. À prova de
+    exceção: alerta é aviso, nunca pode derrubar o cancelamento de quem está na tela."""
+    try:
+        import webhook_asaas
+        webhook_asaas._alertar_admin(sub.get("asaas_payment_id"), sub.get("asaas_subscription_id"), motivo)
+    except Exception as e:
+        print(f"[cancelar] alerta admin falhou: {e}", flush=True)
+
+
+def _gravar_cancelamento(sub, motivo, acesso_ate):
+    """Grava o cancelamento inteiro (claim atômico) e classifica o resultado:
+
+      "venceu"  -> esta chamada gravou agora; é dona do fluxo (estorno + e-mail).
+      "perdeu"  -> outra chamada já cancelou este assinante; não há nada a repetir.
+      "incerto" -> o banco falhou e não deu pra confirmar o que ficou gravado.
+
+    PORQUÊ existe o "incerto": uma exceção no claim pode ter estourado ANTES ou DEPOIS
+    do commit. Assumir "venceu" estornaria em cima de um cancelamento que talvez já
+    tenha estornado (dinheiro devolvido duas vezes); assumir "perdeu" deixaria o
+    cliente sem cancelamento nenhum. Então relê o banco: se o cancelamento está lá, foi
+    "perdeu"; se não está e o banco responde, tenta gravar de novo (o UPDATE é
+    condicional, repetir é seguro); só quando nem isso resolve é que vira "incerto" —
+    e aí o cancelamento SEGUE (nunca travar o cliente), mas sem mover dinheiro.
+    """
+    import db
+    try:
+        return "venceu" if db.claim_cancelamento(sub["id"], motivo, acesso_ate) else "perdeu"
+    except Exception as e:
+        print(f"[cancelar] claim_cancelamento falhou: {e}", flush=True)
+    try:
+        import subscribers
+        atual = subscribers.por_id(sub["id"]) or {}
+    except Exception as e:
+        print(f"[cancelar] releitura do assinante após falha do claim falhou: {e}", flush=True)
+        _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} seguiu SEM confirmação do "
+                      f"banco ({e}) — confira o cadastro e, se ele estiver dentro dos 7 dias, avalie "
+                      f"o estorno manualmente (não estornei para não devolver em dobro)")
+        return "incerto"
+    if atual.get("cancelado_em") or (atual.get("status") or "") == "CANCELADO":
+        return "perdeu"           # o UPDATE tinha gravado (ou outra chamada ganhou a corrida)
+    try:
+        return "venceu" if db.claim_cancelamento(sub["id"], motivo, acesso_ate) else "perdeu"
+    except Exception as e:
+        print(f"[cancelar] 2ª tentativa do claim falhou: {e}", flush=True)
+        _alertar(sub, f"NÃO consegui gravar o cancelamento de {sub.get('nome') or sub.get('id')} "
+                      f"({e}) — cancele no cadastro manualmente; não estornei porque o estado do "
+                      f"banco não pôde ser confirmado")
+        return "incerto"
+
+
+def _acesso_ate_persistido(sub):
+    """acesso_ate que está GRAVADO no banco (o do vencedor da corrida), não o do `sub`
+    em memória — que é anterior ao cancelamento e mostraria data futura para quem já
+    foi reembolsado. À prova de exceção: no pior caso mostra o que temos em memória."""
+    try:
+        import subscribers
+        return (subscribers.por_id(sub["id"]) or sub).get("acesso_ate")
+    except Exception as e:
+        print(f"[cancelar] releitura p/ a página de cancelado falhou: {e}", flush=True)
+        return sub.get("acesso_ate")
+
+
+def _email_cancelamento(sub, estornado, acesso_ate):
+    """Confirmação por e-mail: versão com reembolso ou versão comum. À prova de exceção
+    — o cancelamento já está gravado, um problema de e-mail não pode virar erro na tela."""
+    if not sub.get("email"):
+        return
+    try:
+        import site_web, email_send
+        if estornado is not None:            # 0.0 é estorno válido, não "sem estorno"
+            corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
+                     f"Científica dentro do prazo de arrependimento.</p>"
+                     f"<p>O reembolso integral de <strong>R$ {estornado:.2f}</strong> foi "
+                     f"solicitado e aparece em até 10 dias úteis, conforme o meio de "
+                     f"pagamento utilizado.</p>")
+        else:
+            ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
+            corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
+                     f"Científica. Não haverá novas cobranças.{site_web._esc(ate)}</p>")
+        html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>{corpo}"
+                f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
+                f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
+        email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
+    except Exception as e:
+        print(f"[cancelar] e-mail de confirmação falhou: {e}", flush=True)
+
+
+# Status do Asaas que significam "o estorno existe" numa re-consulta. PARTIALLY_REFUNDED
+# fica DE FORA de propósito: nosso estorno é sempre integral, então devolução parcial é
+# sinal de que algo diferente aconteceu e precisa de olho humano.
+_STATUS_ESTORNADO = ("REFUNDED", "REFUND_REQUESTED", "REFUND_IN_PROGRESS")
+
+
+def _estorno_confirmado_no_asaas(pid):
+    """Re-consulta o pagamento depois de uma falha AMBÍGUA do estorno.
+
+    PORQUÊ: um timeout de rede pode estourar DEPOIS de o Asaas já ter processado o
+    estorno. Tratar isso como "não estornou" gera o pior par possível — alerta pedindo
+    estorno manual (devolução em dobro) e cliente sem o acesso que já foi pago de volta.
+
+    Devolve o valor estornado quando o Asaas confirma o estorno; None quando ele diz que
+    não houve, ou quando a própria re-consulta falha (sem certeza, não afirmamos que o
+    dinheiro saiu)."""
+    import asaas
+    try:
+        atual = asaas.obter_pagamento(pid) or {}
+        if str(atual.get("status") or "").upper() not in _STATUS_ESTORNADO:
+            return None
+        return float(atual.get("value") or 0)
+    except Exception as e:
+        print(f"[cancelar] re-consulta do pagamento após falha do estorno falhou: {e}", flush=True)
+        return None
+
+
 def estornar_arrependimento(sub):
     """Estorno INTEGRAL quando o cancelamento cai dentro dos 7 dias (CDC art. 49).
 
@@ -858,10 +966,10 @@ def estornar_arrependimento(sub):
     alerta pro admin.
 
     NÃO faz claim de corrida (duplo clique / retry concorrente). Isso é
-    responsabilidade de quem chama — _executar_cancelamento precisa guardar o
-    fluxo INTEIRO (estorno + registrar_cancelamento + e-mail), não só o estorno;
-    um claim aqui dentro protegeria só a chamada ao Asaas e deixaria o resto do
-    fluxo (em especial a gravação de acesso_ate) exposto à mesma corrida.
+    responsabilidade de quem chama: db.claim_cancelamento grava o cancelamento inteiro
+    de forma atômica ANTES daqui, e só o vencedor desse claim chega a esta função — um
+    claim aqui dentro protegeria só a chamada ao Asaas e deixaria o resto do fluxo
+    exposto à mesma corrida.
 
     O estorno no Asaas e a baixa da comissão do afiliado rodam em try/except
     SEPARADOS de propósito: é o estorno no Asaas que decide o retorno da função,
@@ -892,11 +1000,19 @@ def estornar_arrependimento(sub):
             asaas.estornar_pagamento(alvo)
     except Exception as e:
         print(f"[cancelar] estorno de arrependimento falhou: {e}", flush=True)
-        webhook_asaas._alertar_admin(
-            pid, sub.get("asaas_subscription_id"),
-            f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
-            f"({e}) — estorne manualmente no painel do Asaas")
-        return None
+        # Falha AMBÍGUA: o erro pode ter vindo depois de o Asaas já ter estornado
+        # (timeout de rede na resposta). Pergunta ao Asaas antes de concluir que o
+        # dinheiro não saiu — senão pediríamos estorno manual em cima de um estorno já
+        # feito (devolução em dobro) e ainda manteríamos o acesso do reembolsado.
+        valor = _estorno_confirmado_no_asaas(pid)
+        if valor is None:
+            webhook_asaas._alertar_admin(
+                pid, sub.get("asaas_subscription_id"),
+                f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
+                f"({e}) — estorne manualmente no painel do Asaas")
+            return None
+        print(f"[cancelar] apesar do erro ({e}), o Asaas confirma o estorno de {pid} "
+              f"— seguindo como sucesso", flush=True)
     try:
         db.estornar_comissao(sub["id"])
     except Exception as e:

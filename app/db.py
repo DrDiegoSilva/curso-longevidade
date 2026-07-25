@@ -500,18 +500,53 @@ def estornar_comissao(subscriber_id):
         return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 
 
-def claim_cancelamento(subscriber_id):
-    """Claim atômico do cancelamento por assinante (mesmo padrão do guard-slot em
-    registrar_envio_assinante): UPDATE condicional que só uma chamada concorrente
-    vence. Duplo clique ou retry de rede em /cancelar não pode disparar dois
-    estornos no Asaas para o mesmo assinante.
-    True se esta chamada marcou cancelado_em agora (venceu o claim); False se outra
-    chamada concorrente já tinha marcado (perdeu — não é falha, é corrida)."""
+def claim_cancelamento(subscriber_id, motivo, acesso_ate):
+    """Grava o cancelamento INTEIRO (status + cancelado_em + motivo + acesso_ate) num
+    ÚNICO UPDATE condicional atômico, que é ao mesmo tempo o claim contra corrida.
+
+    PORQUÊ o claim é a própria gravação, e não uma marca prévia: enquanto "reservar o
+    cancelamento" e "gravar o cancelamento" eram dois passos, existia uma janela entre
+    eles em que o assinante estava marcado como cancelado mas o estado final (status,
+    motivo, até quando o acesso vale) ainda não tinha sido escrito. Qualquer falha
+    dentro dessa janela — banco, Asaas, processo morto — deixava o cadastro num meio
+    termo: com cancelado_em preenchido (logo, impossível de cancelar de novo, porque o
+    claim sempre perderia) e sem o cancelamento de fato registrado. Fundindo os dois
+    passos, ou o cancelamento está inteiro no banco ou não aconteceu nada.
+
+    O estorno deixa de fazer parte do claim e vira ajuste POSTERIOR (encerrar_acesso):
+    se o reembolso der certo, zera-se o acesso; se falhar, o estado gravado aqui já é o
+    correto (acesso até o fim do período pago) e não há nada a desfazer.
+
+    `WHERE ... AND (cancelado_em IS NULL OR cancelado_em='')` é a condição do claim: um
+    único UPDATE é atômico tanto no SQLite quanto no Postgres (trava a linha), então
+    duplo clique ou retry de rede em /cancelar só entrega o fluxo a UMA chamada.
+
+    Retorna True se esta chamada gravou agora (venceu o claim) e False se outra já
+    tinha cancelado (perdeu — não é falha, é corrida; nada a repetir).
+    """
     from datetime import datetime
     with _conn() as c:
         cur = c.execute(
-            "UPDATE subscribers SET cancelado_em=? WHERE id=? AND (cancelado_em IS NULL OR cancelado_em='')",
-            (datetime.now().isoformat(), subscriber_id))
+            "UPDATE subscribers SET status='CANCELADO', cancelado_em=?, cancel_motivo=?, acesso_ate=? "
+            "WHERE id=? AND (cancelado_em IS NULL OR cancelado_em='')",
+            (datetime.now().isoformat(), motivo or "", acesso_ate, subscriber_id))
+        return cur.rowcount > 0
+
+
+def encerrar_acesso(subscriber_id):
+    """Ajuste posterior ao claim: zera acesso_ate porque o estorno integral saiu (quem
+    foi reembolsado não segue com acesso até o fim do período pago).
+
+    Roda DEPOIS do cancelamento já estar gravado, de propósito: mover dinheiro é a
+    parte que pode falhar de forma ambígua, e o cancelamento não pode depender dela.
+
+    `AND status='CANCELADO'` protege contra tirar o acesso de quem voltou a ser ATIVO
+    entre o claim e este ajuste (ex.: webhook de renovação chegando no meio).
+    Retorna True se zerou.
+    """
+    with _conn() as c:
+        cur = c.execute("UPDATE subscribers SET acesso_ate=NULL WHERE id=? AND status='CANCELADO'",
+                        (subscriber_id,))
         return cur.rowcount > 0
 
 
