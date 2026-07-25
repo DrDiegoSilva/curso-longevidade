@@ -307,6 +307,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             import auth_web
             auth_web.logout(auth_web._parse_cookie(self.headers.get("Cookie", "")).get("sid"))
             return self._redirect("/", clear=True)
+        if path == "/termos":
+            import site_legal
+            return self._html(site_legal.pagina_termos())
+        if path == "/privacidade":
+            import site_legal
+            return self._html(site_legal.pagina_privacidade())
         if path == "/minha":
             sub = self._sessao()
             if not sub:
