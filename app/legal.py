@@ -36,15 +36,18 @@ TERMOS = [
      "<p>O preço vigente é o exibido na página de contratação no momento da compra. A cobrança "
      "é processada pelo Asaas (Asaas Gestão Financeira S.A.), que é quem trata os dados de "
      "pagamento.</p>"
-     "<p><strong>Renovação depende da forma de pagamento escolhida:</strong></p>"
+     "<p><strong>A renovação depende da forma de pagamento escolhida:</strong></p>"
      "<ul>"
-     "<li><strong>Cartão de crédito:</strong> a assinatura é recorrente e <strong>renova "
+     "<li><strong>Cartão de crédito à vista:</strong> a assinatura é recorrente e <strong>renova "
      "automaticamente</strong> ao fim de cada ciclo, <strong>pelo mesmo valor contratado</strong>, "
      "até que o assinante cancele a renovação.</li>"
+     "<li><strong>Cartão de crédito parcelado:</strong> <strong>não há renovação automática</strong>. "
+     "As parcelas correspondem ao período contratado e, ao fim dele, o acesso se encerra, salvo "
+     "nova contratação.</li>"
      "<li><strong>Pix:</strong> o pagamento é avulso e <strong>não renova automaticamente</strong>. "
      "Ao fim do período contratado o acesso se encerra, salvo nova contratação.</li>"
      "</ul>"
-     "<p>Avisamos por e-mail antes do fim de cada ciclo.</p>"),
+     "<p>Avisamos por e-mail antes do fim do período contratado.</p>"),
 
     ("Cancelamento da renovação",
      "<p>O assinante pode cancelar a renovação a qualquer momento, sem multa, pela área de conta "
