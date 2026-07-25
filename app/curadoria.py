@@ -28,7 +28,7 @@ def _chave(a):
     return (a.get("doi") or a.get("url") or a.get("titulo") or "").strip().lower()
 
 
-def _normalizar(a, tema):
+def _normalizar(a, tema, tipo="varredura"):
     return {
         "tema": tema,
         "titulo": (a.get("titulo") or "").strip(),
@@ -38,6 +38,8 @@ def _normalizar(a, tema):
         "url": a.get("url") or "",
         "abstract": (a.get("resumo") or "")[:2500],
         "score": float(a.get("score", 5) or 0),
+        "citacoes": int(a.get("citacoes", 0) or 0),
+        "tipo": tipo,
         "chave": _chave(a),
     }
 
@@ -74,6 +76,48 @@ def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None):
                 continue
             vistos.add(k)
             out.append(_normalizar(a, nome))
+            n += 1
+            if n >= cap:
+                break
+    return out
+
+
+def varrer_classicos(caps=None, buscar_fn=None, triar_fn=None, anos=10):
+    """Estudos-marco por tema: busca numa janela ampla (anos) -> triagem (corta LIXO) ->
+    top(cap) por CITAÇÕES desc, dedup global. Candidatos marcados tipo='classico'.
+    buscar_fn/triar_fn injetáveis (teste sem rede)."""
+    from datetime import timedelta
+    caps = caps or CAPS
+    if buscar_fn is None:
+        import sources
+        buscar_fn = sources.search_all
+    if triar_fn is None:
+        import triage
+        triar_fn = triage.triar
+    cfg = _cfg()
+    desde = (date.today() - timedelta(days=365 * anos)).isoformat()
+    ate = date.today().isoformat()
+    vistos, out = set(), []
+    for nome, meta in cfg["temas"].items():
+        cap = int(caps.get(nome, 6))
+        if cap <= 0:
+            continue
+        try:
+            arts = buscar_fn(meta.get("query", ""), desde, ate)
+            bons = []
+            for k in range(0, len(arts), 20):
+                bons += triar_fn(arts[k:k + 20], nome)
+        except Exception as e:
+            print(f"[classicos] {nome} falhou: {e}", flush=True)
+            continue
+        bons.sort(key=lambda x: x.get("citacoes", 0), reverse=True)
+        n = 0
+        for a in bons:
+            k = _chave(a)
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            out.append(_normalizar(a, nome, tipo="classico"))
             n += 1
             if n >= cap:
                 break
@@ -205,6 +249,17 @@ def rodar_varredura(desde=None, ate=None, caps=None):
     gerar_perguntas(cands)
     n = db.salvar_candidatos(cands)
     print(f"[curadoria] varredura: {len(cands)} candidatos, {n} novos salvos", flush=True)
+    return n
+
+
+def rodar_varredura_classicos(caps=None):
+    """Varre clássicos (por citações) + gera perguntas (Haiku) + salva candidatos tipo='classico'."""
+    import db
+    db.init()
+    cands = varrer_classicos(caps=caps)
+    gerar_perguntas(cands)
+    n = db.salvar_candidatos(cands)
+    print(f"[classicos] varredura: {len(cands)} candidatos, {n} novos salvos", flush=True)
     return n
 
 

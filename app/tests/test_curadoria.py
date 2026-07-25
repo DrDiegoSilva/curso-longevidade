@@ -145,5 +145,24 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
         self.assertEqual(visto["r"], "CONTEUDO-DO-PDF")
 
 
+class TestVarrerClassicos(unittest.TestCase):
+    def test_ordena_por_citacoes_e_marca_tipo(self):
+        def fake_buscar(query, desde, ate):
+            return [
+                {"titulo": "Menos citado", "doi": "d1", "citacoes": 100, "resumo": "x" * 200},
+                {"titulo": "Marco", "doi": "d2", "citacoes": 5000, "resumo": "y" * 200},
+            ]
+        def fake_triar(arts, tema):
+            # tudo ENTRA, score fixo; preserva citacoes
+            return [dict(a, tema=tema, score=7) for a in arts]
+        got = curadoria.varrer_classicos(caps={"Obesidade": 20, "Hormonal": 0, "Performance": 0,
+                                               "Longevidade": 0, "Lipedema": 0},
+                                        buscar_fn=fake_buscar, triar_fn=fake_triar, anos=10)
+        obes = [c for c in got if c["tema"] == "Obesidade"]
+        self.assertEqual(obes[0]["titulo"], "Marco")          # mais citado primeiro
+        self.assertEqual(obes[0]["tipo"], "classico")
+        self.assertEqual(obes[0]["citacoes"], 5000)
+
+
 if __name__ == "__main__":
     unittest.main()
