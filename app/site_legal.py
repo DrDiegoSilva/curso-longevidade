@@ -54,5 +54,8 @@ def pagina_aceite_termos(destino="/minha"):
         </label>
         <button class="cta" type="submit">Continuar</button>
       </form>
+      <p class="hint" style="margin-top:18px">
+        <a href="/cancelar" style="color:var(--suave)">Não concordo — cancelar minha assinatura</a>
+      </p>
     </div></div>"""
     return _pagina(f"Atualizamos nossos termos · {PRODUTO}", corpo, logado=True)

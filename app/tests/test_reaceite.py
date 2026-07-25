@@ -49,6 +49,16 @@ class TestPaginaAceite(unittest.TestCase):
         self.assertIn('href="/privacidade"', html)
         self.assertIn('value="/minha"', html)
 
+    def test_pagina_tem_link_de_cancelar_para_quem_nao_concorda(self):
+        # ACHADO 2: a cláusula 8 diz que quem não concordar "pode cancelar", mas até
+        # aqui a tela de re-aceite não linkava pra /cancelar — só digitando a URL. As
+        # rotas de cancelamento já são isentas do gate (ver TestGateNasRotasDeVerdade),
+        # então só falta o link.
+        import site_legal
+        html = site_legal.pagina_aceite_termos("/minha")
+        self.assertIn('href="/cancelar"', html)
+        self.assertIn("cancelar minha assinatura", html.lower())
+
 
 class _RotaStub:
     """Stub mínimo pro `self` dos métodos de rota (`_site_get`/`_meus_dados_post`):
