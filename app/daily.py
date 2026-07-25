@@ -64,6 +64,19 @@ def _hoje_iso():
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def _e_fresco(data_pub, ref=None):
+    """True se o paper foi publicado nos últimos config.FRESCO_DIAS dias (medido em `ref`,
+    default hoje). Tolera data vazia/parcial/inválida (retorna False). Publicação futura conta."""
+    from datetime import date
+    ref = ref or date.today()
+    try:
+        pub = date.fromisoformat((data_pub or "")[:10])
+    except (ValueError, TypeError):
+        return False
+    idade = (ref - pub).days
+    return idade <= config.FRESCO_DIAS       # idade negativa (futuro) também é fresco
+
+
 def reabastecer():
     """Busca a semana em TODOS os temas, tria por IA e põe os ENTRA na fila.
     Retorna quantos artigos entraram."""

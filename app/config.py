@@ -67,6 +67,9 @@ SLOT_HORA = {"07h": 7, "08h": 8, "12h": 12, "18h": 18, "20h": 20}
 SLOT_DEFAULT = "08h"
 SLOT_TETO_DEFAULT = 100
 
+# ── Máquina de conteúdo ──
+FRESCO_DIAS = int(os.environ.get("DSCURSO_FRESCO_DIAS") or 30)   # ≤ N dias = "Estudo recente"
+
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [
