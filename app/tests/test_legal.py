@@ -74,5 +74,57 @@ class TestPaginasLegais(unittest.TestCase):
         self.assertEqual(html.count('class="infobox" style="margin:26px 0'), 1)
 
 
+class TestTitulosDasClausulasCompletos(unittest.TestCase):
+    """ACHADO 5: título de cada cláusula/seção precisa continuar existindo, na
+    ordem certa (algumas cláusulas se referem à posição de outra por número — ex.:
+    "Alterações destes Termos" cita "cláusula 3" = Cancelamento), e aparecer no HTML
+    renderizado. Sem isto, sumiço ou reordenação acidental num refactor futuro não
+    quebraria teste nenhum, e esse texto virou contrato."""
+
+    TITULOS_TERMOS = [
+        "Quem somos e o que é o serviço",
+        "Preço, cobrança e renovação",
+        "Cancelamento",
+        "Reembolso",
+        "Uso do conteúdo",
+        "Disponibilidade",
+        "Dados pessoais",
+        "Alterações destes Termos",
+        "Foro",
+    ]
+
+    TITULOS_PRIVACIDADE = [
+        "Controlador",
+        "Dados que coletamos",
+        "Finalidade e base legal",
+        "Com quem compartilhamos",
+        "Por quanto tempo guardamos",
+        "Direitos do titular",
+        "Segurança",
+        "Cookies",
+        "Alterações desta Política",
+    ]
+
+    def test_termos_tem_9_clausulas_na_ordem_esperada(self):
+        import legal
+        self.assertEqual([secao[0] for secao in legal.TERMOS], self.TITULOS_TERMOS)
+
+    def test_privacidade_tem_9_secoes_na_ordem_esperada(self):
+        import legal
+        self.assertEqual([secao[0] for secao in legal.PRIVACIDADE], self.TITULOS_PRIVACIDADE)
+
+    def test_todos_os_titulos_de_termos_aparecem_na_pagina_renderizada(self):
+        import site_legal
+        html = site_legal.pagina_termos()
+        for titulo in self.TITULOS_TERMOS:
+            self.assertIn(titulo, html, f"título de cláusula sumiu do render: {titulo!r}")
+
+    def test_todos_os_titulos_de_privacidade_aparecem_na_pagina_renderizada(self):
+        import site_legal
+        html = site_legal.pagina_privacidade()
+        for titulo in self.TITULOS_PRIVACIDADE:
+            self.assertIn(titulo, html, f"título de seção sumiu do render: {titulo!r}")
+
+
 if __name__ == "__main__":
     unittest.main()
