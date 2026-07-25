@@ -96,3 +96,26 @@ def adiar_vencimento(sid, dias=30):
     base = atual.get("nextDueDate") or _hoje()
     novo = (datetime.fromisoformat(base) + timedelta(days=dias)).date().isoformat()
     return _req(f"subscriptions/{sid}", "PUT", {"nextDueDate": novo})
+
+
+_DESC_ESTORNO = "Cancelamento no prazo de arrependimento (CDC art. 49)."
+
+
+def _payload_estorno(valor):
+    p = {"description": _DESC_ESTORNO}
+    if valor is not None:                 # sem `value` o Asaas estorna o total
+        p["value"] = float(valor)
+    return p
+
+
+def estornar_pagamento(pid, valor=None):
+    """POST /payments/{id}/refund. valor=None => estorno total.
+    O saldo sai da conta Asaas; no cartão leva até 10 dias úteis pra aparecer na fatura."""
+    return _req(f"payments/{pid}/refund", "POST", _payload_estorno(valor))
+
+
+def estornar_parcelamento(iid, valor=None):
+    """POST /installments/{id}/refund. valor=None => estorno total do parcelamento.
+    Usado quando o pagamento faz parte de um parcelamento no cartão — estornar só a
+    parcela devolveria uma fração do valor."""
+    return _req(f"installments/{iid}/refund", "POST", _payload_estorno(valor))
