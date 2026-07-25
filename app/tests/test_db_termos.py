@@ -24,6 +24,12 @@ class TestTermosDB(unittest.TestCase):
         for col in ("termos_versao", "termos_aceito_em", "termos_ip"):
             self.assertIn(col, cols)
 
+    def test_colunas_de_termos_em_pending_signups_existem(self):
+        with self.db._conn() as c:
+            cols = [r[1] for r in c.execute("PRAGMA table_info(pending_signups)").fetchall()]
+        for col in ("termos_versao", "termos_ip"):
+            self.assertIn(col, cols)
+
     def test_coluna_estornada_em_existe(self):
         with self.db._conn() as c:
             cols = [r[1] for r in c.execute("PRAGMA table_info(comissoes)").fetchall()]
