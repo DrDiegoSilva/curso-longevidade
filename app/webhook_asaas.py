@@ -32,6 +32,24 @@ def _proximo_venc(cycle, ref=None):
     return (base + timedelta(days=_CICLO_DIAS.get(cycle, 30))).date().isoformat()
 
 
+def _confirmar_renovacao(email, nome, ate_iso):
+    """Confirma por E-MAIL (nunca WhatsApp — esse canal é reservado aos estudos, decisão
+    do Diego) que o pagamento foi recebido e até quando o acesso vale. Um único texto
+    serve tanto pra renovação automática (ramo RENOVAR) quanto pra recontratação (ramo
+    ATIVAR, caso 3 da guarda) — pro assinante os dois casos são só "paguei e meu acesso
+    segue valendo". Nunca pode derrubar a ativação/renovação: por isso o try/except,
+    igual aos outros envios deste arquivo."""
+    if not email:
+        return
+    try:
+        import email_send, mensagens, site_web
+        link = f"{config.ARTIGOS_URL}/entrar"     # conta já existe -> link de ENTRAR, não de criar senha
+        assunto, html = mensagens.email_renovacao(nome, site_web._data_br(ate_iso), link)
+        email_send.enviar(email, assunto, html)
+    except Exception as e:
+        print(f"[webhook] confirmação de renovação e-mail falhou: {e}", flush=True)
+
+
 def _boas_vindas(whatsapp, nome, email, enviar_fn):
     """Confirma a assinatura e manda o link de CRIAR SENHA nos dois canais (WhatsApp + e-mail)."""
     import auth_web, mensagens
@@ -174,7 +192,14 @@ def _executar(event, pay, pid, enviar_fn):
                 # antes da próxima cobrança confirmar.
                 subscribers.marcar_status(reg["id"], "ATIVO", acesso_ate=prox)
 
-        _boas_vindas(whatsapp, nome, email, enviar_fn)
+        if novo_assinante:
+            _boas_vindas(whatsapp, nome, email, enviar_fn)
+        else:
+            # Recontratação (caso 3 da guarda: acesso já tinha expirado e ele comprou de
+            # novo): a conta já existe e já tem senha — mandar as boas-vindas de novo
+            # (com o link de CRIAR senha) seria confuso. Confirmação de renovação em vez
+            # disso, com o link de ENTRAR.
+            _confirmar_renovacao(email, nome, prox)
         # Afiliado (D3): comissão sobre o valor pago (só na 1ª venda). No cartão o desconto
         # é RECORRENTE (o Asaas não deixa alterar o `value` da assinatura por API) — decisão do
         # Diego: renovação com desconto "da nada". A busca do afiliado é protegida: uma falha
@@ -240,6 +265,10 @@ def _executar(event, pay, pid, enviar_fn):
         subscribers.marcar_status(sub["id"], "ATIVO", carencia_ate=None,
                                   proximo_vencimento=prox, aviso_renov_em=None,
                                   cancelado_em=None, cancel_motivo=None, acesso_ate=None)
+        # Renovação automática (cartão à vista cobrando de novo sozinho): sem isso o
+        # cliente é cobrado e não recebe nada — é exatamente o tipo de cobrança muda
+        # que gera "não reconheço essa cobrança" e chargeback.
+        _confirmar_renovacao(sub.get("email"), sub.get("nome"), prox)
         return (200, "renovado")
 
     if acao == "INADIMPLENTE" and sub:

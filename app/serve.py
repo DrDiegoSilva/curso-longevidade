@@ -228,6 +228,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.get_config(mensagens.K_WA, mensagens.WA_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_ASSUNTO, mensagens.EMAIL_ASSUNTO_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_CORPO, mensagens.EMAIL_CORPO_DEFAULT),
+                db.get_config(mensagens.K_EMAIL_RENOV_ASSUNTO, mensagens.EMAIL_RENOV_ASSUNTO_DEFAULT),
+                db.get_config(mensagens.K_EMAIL_RENOV_CORPO, mensagens.EMAIL_RENOV_CORPO_DEFAULT),
                 config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
         if path == "/admin/envio":
             import config, site_web, auth_web, db, daily
@@ -498,6 +500,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.set_config(mensagens.K_WA, g("wa"))
                 db.set_config(mensagens.K_EMAIL_ASSUNTO, g("email_assunto"))
                 db.set_config(mensagens.K_EMAIL_CORPO, g("email_corpo"))
+                db.set_config(mensagens.K_EMAIL_RENOV_ASSUNTO, g("email_renov_assunto"))
+                db.set_config(mensagens.K_EMAIL_RENOV_CORPO, g("email_renov_corpo"))
             return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
                                   if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
         if path == "/admin/envio":

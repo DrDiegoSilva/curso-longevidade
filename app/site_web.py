@@ -741,8 +741,10 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_admin_mensagens(wa, email_assunto, email_corpo, token="", msg=""):
-    """Editor das mensagens de boas-vindas (WhatsApp + e-mail)."""
+def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="",
+                           email_renov_corpo="", token="", msg=""):
+    """Editor das mensagens de boas-vindas (WhatsApp + e-mail) e da confirmação de
+    renovação/recontratação (só e-mail — texto único pros dois casos)."""
     tk = _esc(token)
     aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
              if msg else "")
@@ -764,10 +766,21 @@ def pagina_admin_mensagens(wa, email_assunto, email_corpo, token="", msg=""):
           <textarea name="wa" rows="13" style="{ta}">{_esc(wa)}</textarea>
         </div>
         <div class="panel" style="max-width:none;margin:14px 0">
-          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail</h3>
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail — boas-vindas (cliente novo)</h3>
           <label>Assunto</label><input type="text" name="email_assunto" value="{_esc(email_assunto)}">
           <label style="margin-top:12px">Corpo (o <code>{{link}}</code> vira um botão)</label>
           <textarea name="email_corpo" rows="9" style="{ta}">{_esc(email_corpo)}</textarea>
+        </div>
+        <div class="panel" style="max-width:none;margin:14px 0">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail — confirmação de renovação/recontratação</h3>
+          <p class="hint">Enviado quando um pagamento renova sozinho (cartão à vista) ou quando um assinante cujo
+            acesso já tinha expirado paga de novo — nos dois casos o mesmo texto. <strong>Nunca</strong> vai por
+            WhatsApp. Marcadores: <code>{{nome}}</code> · <code>{{ate}}</code> = data até quando o acesso vale
+            (<strong>obrigatório</strong> — se remover, é re-adicionado sozinho) ·
+            <code>{{link}}</code> = link de entrar na conta (<strong>obrigatório</strong>, também re-adicionado sozinho).</p>
+          <label>Assunto</label><input type="text" name="email_renov_assunto" value="{_esc(email_renov_assunto)}">
+          <label style="margin-top:12px">Corpo (o <code>{{link}}</code> vira um botão)</label>
+          <textarea name="email_renov_corpo" rows="9" style="{ta}">{_esc(email_renov_corpo)}</textarea>
         </div>
         <button class="actbtn" type="submit" style="margin-top:6px">Salvar mensagens</button>
       </form>

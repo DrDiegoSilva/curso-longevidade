@@ -292,32 +292,158 @@ class TestProcessar(unittest.TestCase):
 
     def test_ativar_recontratacao_apos_acesso_expirar_reativa_mesmo_id(self):
         # Pix anual que venceu (acesso_ate no passado) e o cliente comprou de novo:
-        # recontratação legítima -> reativa o MESMO registro em vez de criar outro,
-        # e manda boas-vindas normalmente (ele tinha perdido o acesso e voltou).
+        # recontratação legítima -> reativa o MESMO registro em vez de criar outro.
+        # TESTE 3/4 (spec renovação): a conta já existe e já tem senha, então NÃO manda
+        # as boas-vindas de cliente novo (link de criar senha) — manda a confirmação de
+        # renovação por e-mail (link de entrar), texto único com a de RENOVAR.
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Expirado", "whatsapp": "5543999998888", "email": "e@x.com",
              "cpf": "11144477735", "plano": "anual"},
             {"customer": "cus_3", "payment": "pay_velho", "proximo_vencimento": "2025-07-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")
         self.assertFalse(self.s.tem_acesso(self.s.por_id(reg["id"])))
-        import asaas
+        import asaas, email_send
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. Expirado", "mobilePhone": "5543999998888",
                                            "email": "e@x.com", "cpfCnpj": "111.444.777-35"}
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto, html))
         try:
             st, msg = self.w.processar(self._body(ext="tok_novo", pid="pay_novo", sub=None),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
+            email_send.enviar = orig_email
         self.assertEqual((st, msg), (200, "ativado"))
         self.assertEqual(len(self.s.listar()), 1)           # reativou, não duplicou
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["id"], reg["id"])              # mesmo registro
         self.assertEqual(atual["status"], "ATIVO")
         self.assertTrue(self.s.tem_acesso(atual, agora=__import__("datetime").datetime(2026, 8, 1)))
-        self.assertEqual(len(self.enviados), 1)               # boas-vindas enviada de novo
+        self.assertEqual(len(self.enviados), 0)               # NÃO reenviou boas-vindas (WhatsApp)
+        # emails[*] pode incluir o aviso de "nova venda" pro admin (config.ADMIN_EMAIL);
+        # o que importa aqui é o que o CLIENTE recebeu.
+        do_cliente = [e for e in emails if e[0] == "e@x.com"]
+        self.assertEqual(len(do_cliente), 1)                  # e-mail de renovação, não boas-vindas
+        assunto, html = do_cliente[0][1], do_cliente[0][2]
+        import mensagens
+        self.assertNotEqual(assunto, mensagens.EMAIL_ASSUNTO_DEFAULT)   # não é o de boas-vindas
+        self.assertIn("/entrar", html)                        # link de ENTRAR, não de criar senha
+        self.assertNotIn("Criar minha senha", html)
+
+    def test_renovar_normal_envia_email_de_renovacao_em_pt_br(self):
+        # TESTE 1 (spec renovação): cartão à vista renovando sozinho cobra o cliente
+        # de novo sem avisar nada hoje — cobrança muda é exatamente o que gera "não
+        # reconheço essa cobrança" e chargeback. Data no e-mail em PT-BR (site_web.
+        # _data_br), não ISO. Boas-vindas (cliente novo) não é enviada.
+        self.s.criar_de_pagamento(
+            {"nome": "Dr. Renov", "whatsapp": "5543999990002", "email": "renov@x.com", "plano": "mensal"},
+            {"subscription": "sub_renov1"})
+        import email_send
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto, html))
+        try:
+            st, msg = self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="pr_renov1", sub="sub_renov1"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "renovado"))
+        self.assertEqual(len(emails), 1)
+        to, assunto, html = emails[0]
+        self.assertEqual(to, "renov@x.com")
+        self.assertIn("18 ago 2026", html)      # dueDate 2026-07-19 + 30d (MONTHLY) = 18 ago, em PT-BR
+        self.assertNotIn("2026-08-18", html)    # não é ISO
+        import mensagens
+        self.assertNotEqual(assunto, mensagens.EMAIL_ASSUNTO_DEFAULT)   # não é o de boas-vindas
+        self.assertEqual(len(self.enviados), 0)                          # boas-vindas (WhatsApp) não enviada
+
+    def test_renovar_sobre_cancelado_nao_envia_email_ao_cliente(self):
+        # TESTE 2 (spec renovação): parcela confirmada pra quem já cancelou a
+        # renovação só alerta o admin (o caso é ambíguo — pode ser parcela legítima do
+        # anual em 12x ou cancelamento que falhou no Asaas). O CLIENTE não recebe
+        # nada: ele já sabe que cancelou.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "D2", "whatsapp": "5543", "email": "d2@x.com", "plano": "mensal"},
+            {"subscription": "sub_rc3"})
+        self.db.claim_cancelamento(reg["id"], "caro demais", "2026-01-01T00:00:00")
+        import email_send
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto))
+        try:
+            st, msg = self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="p11", sub="sub_rc3"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            email_send.enviar = orig_email
+        self.assertEqual(msg, "parcela-pos-cancelamento")
+        self.assertEqual(emails, [])     # nenhum e-mail ao CLIENTE
+
+    def test_ativar_primeira_compra_envia_boas_vindas_nao_renovacao(self):
+        # TESTE 4 (spec renovação): cliente novo -> boas-vindas normais (link de criar
+        # senha), NUNCA a confirmação de renovação (o assinante não tem conta ainda).
+        tok = self.db.criar_pending({"nome": "Dr. Novo2", "whatsapp": "5543999990003",
+                                     "email": "novo2@x.com", "plano": "mensal", "metodo": "PIX"})
+        import email_send
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto, html))
+        try:
+            st, msg = self.w.processar(self._body(ext=tok, pid="pay_novo2"), "segredo", enviar_fn=self.envfn)
+        finally:
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "ativado"))
+        self.assertEqual(len(self.enviados), 1)          # boas-vindas por WhatsApp
+        # emails[*] pode incluir o aviso de "nova venda" pro admin; o que importa aqui
+        # é o que o CLIENTE recebeu.
+        do_cliente = [e for e in emails if e[0] == "novo2@x.com"]
+        self.assertEqual(len(do_cliente), 1)
+        to, assunto, html = do_cliente[0]
+        import mensagens
+        self.assertEqual(assunto, mensagens.EMAIL_ASSUNTO_DEFAULT)   # é o de boas-vindas
+        self.assertIn("Criar minha senha", html)
+        self.assertNotIn("Acessar minha conta", html)
+
+    def test_falha_no_email_de_renovacao_nao_derruba_renovacao(self):
+        # TESTE 8a (spec renovação): falha no envio nunca pode derrubar a renovação.
+        self.s.criar_de_pagamento(
+            {"nome": "E1", "whatsapp": "5543", "email": "e1@x.com", "plano": "mensal"},
+            {"subscription": "sub_fail1"})
+        import email_send
+        orig_email = email_send.enviar
+        email_send.enviar = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("smtp down"))
+        try:
+            st, msg = self.w.processar(self._body(event="PAYMENT_RECEIVED", pid="pfail1", sub="sub_fail1"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "renovado"))
+
+    def test_falha_no_email_de_recontratacao_nao_derruba_ativacao(self):
+        # TESTE 8b (spec renovação): idem, no caminho de recontratação (ATIVAR).
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. F", "whatsapp": "5543999990004", "email": "f@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "cus_f", "payment": "pay_f_velho", "proximo_vencimento": "2025-07-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")
+        import asaas, email_send
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. F", "mobilePhone": "5543999990004",
+                                           "email": "f@x.com", "cpfCnpj": "111.444.777-35"}
+        orig_email = email_send.enviar
+        email_send.enviar = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("smtp down"))
+        try:
+            st, msg = self.w.processar(self._body(ext="tok_f", pid="pay_f_novo", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "ativado"))   # não quebrou a ativação
 
 
 class TestAvisarVenda(unittest.TestCase):

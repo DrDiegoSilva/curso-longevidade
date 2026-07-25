@@ -46,6 +46,36 @@ class TestMensagens(unittest.TestCase):
         self.assertNotIn("{link}", html)
         self.assertNotIn("{nome}", html)
 
+    def test_email_renovacao_default_substitui_marcadores(self):
+        assunto, html = self.m.email_renovacao("Ana", "19 jul 2026", "http://entrar")
+        self.assertTrue(assunto)
+        self.assertIn('href="http://entrar"', html)        # link vira botão de entrar
+        self.assertIn("Ana", html)                          # {nome} substituído
+        self.assertIn("19 jul 2026", html)                  # {ate} substituído
+        self.assertNotIn("{link}", html)
+        self.assertNotIn("{nome}", html)
+        self.assertNotIn("{ate}", html)
+
+    def test_email_renovacao_editado_persiste(self):
+        self.db.set_config(self.m.K_EMAIL_RENOV_ASSUNTO, "Assunto custom {nome}")
+        self.db.set_config(self.m.K_EMAIL_RENOV_CORPO, "Oi {nome}, vale até {ate}. {link}")
+        assunto, html = self.m.email_renovacao("Bia", "20 ago 2026", "http://s")
+        self.assertEqual(assunto, "Assunto custom Bia")
+        self.assertIn("Oi Bia, vale até 20 ago 2026.", html)
+        self.assertIn('href="http://s"', html)
+
+    def test_email_renovacao_sem_ate_reanexado(self):
+        # Se o admin apagar {ate} do template, a data (informação essencial) é
+        # re-anexada antes de enviar — senão a confirmação fica vazia.
+        self.db.set_config(self.m.K_EMAIL_RENOV_CORPO, "Oi {nome}, tudo certo. {link}")
+        assunto, html = self.m.email_renovacao("Bia", "20 ago 2026", "http://s")
+        self.assertIn("20 ago 2026", html)
+
+    def test_email_renovacao_sem_link_reanexado(self):
+        self.db.set_config(self.m.K_EMAIL_RENOV_CORPO, "Oi {nome}, vale até {ate}.")
+        assunto, html = self.m.email_renovacao("Bia", "20 ago 2026", "http://LINKSEGURO")
+        self.assertIn("http://LINKSEGURO", html)
+
 
 if __name__ == "__main__":
     unittest.main()

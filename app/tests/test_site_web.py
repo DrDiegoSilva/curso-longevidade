@@ -275,6 +275,15 @@ class TestRender(unittest.TestCase):
         self.assertIn("salvar_mensagens", h)
         self.assertIn("/admin/mensagens", self.s._admin_nav("tk", "mensagens"))
 
+    def test_pagina_admin_mensagens_inclui_confirmacao_de_renovacao(self):
+        h = self.s.pagina_admin_mensagens("WA", "Assunto", "Corpo",
+                                          "Assunto Renov X", "Corpo Renov {ate}", token="tk")
+        self.assertIn("Assunto Renov X", h)
+        self.assertIn("Corpo Renov", h)
+        self.assertIn('name="email_renov_assunto"', h)
+        self.assertIn('name="email_renov_corpo"', h)
+        self.assertIn("{ate}", h)          # marcador documentado pro Diego
+
     def test_assinar_cadastro_padronizado(self):
         h = self.s.pagina_assinar("mensal")
         self.assertIn('name="nome" style="text-transform:uppercase"', h)   # nome visual maiúsculo
