@@ -115,6 +115,7 @@ class TestPoolPiramide(unittest.TestCase):
         import daily as _d; importlib.reload(_d)
         self.db, self.daily = _db, _d
         _db.init()
+        self.daily.reabastecer = lambda: 0   # desliga rede (Europe PMC/OpenAlex/Anthropic) no teste
 
     def tearDown(self):
         import shutil
@@ -132,6 +133,29 @@ class TestPoolPiramide(unittest.TestCase):
                                  "data": "2021-01-01", "citacoes": 4000})
         self.daily.materializar_agenda(datas=["2026-07-27"])
         self.assertEqual(self.db.agenda_slot("2026-07-27")["tipo"], "classico")
+
+    def test_remateralizar_nao_double_booka_nem_sobrescreve_candidato(self):
+        # materializa um candidato num dia; chamar materializar_agenda de novo (job
+        # diário rolante) não pode nem sobrescrever o slot nem re-agendar o mesmo
+        # candidato num segundo slot.
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": "Fresco", "chave": "k1",
+                                    "score": 6, "tipo": "varredura",
+                                    "data": self.daily._hoje_iso()}])
+        self.daily.materializar_agenda(datas=["2026-07-27"])
+        slot_antes = self.db.agenda_slot("2026-07-27")
+        self.assertEqual(slot_antes["tipo"], "candidato")
+        ref_id_antes = slot_antes["ref_id"]
+
+        self.daily.materializar_agenda(datas=["2026-07-27"])   # re-materializa o mesmo dia
+
+        slot_depois = self.db.agenda_slot("2026-07-27")
+        self.assertEqual(slot_depois["tipo"], "candidato")
+        self.assertEqual(slot_depois["ref_id"], ref_id_antes)   # slot preservado, não sobrescrito
+
+        # não existe um segundo slot referenciando o mesmo candidato (double-book)
+        datas = ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"]
+        n_ref = sum(1 for d in datas if (self.db.agenda_slot(d) or {}).get("ref_id") == ref_id_antes)
+        self.assertEqual(n_ref, 1)
 
 
 if __name__ == "__main__":

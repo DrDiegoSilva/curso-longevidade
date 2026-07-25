@@ -150,7 +150,7 @@ def materializar_agenda(n_semanas=4, datas=None):
     ordenados = []
     for d in datas:
         s = slots.get(d)
-        if s and (s.get("fixado") or s.get("tipo") in ("reserva", "fila", "pulado")):
+        if s and (s.get("fixado") or s.get("tipo") in ("reserva", "fila", "pulado", "candidato", "classico")):
             tema = None if s.get("tipo") == "pulado" else s.get("tema")
             ordenados.append((d, tema, True))
         else:
@@ -165,6 +165,8 @@ def materializar_agenda(n_semanas=4, datas=None):
                       "fresco": _e_fresco(r.get("data", "")), "classico": False,
                       "score": float(r.get("prioridade", 0) or 0)})
     for c in db.listar_candidatos(status="novo", tipo="varredura"):
+        if c["id"] in cand_ref_ids:      # já preso a um slot -> não re-agenda
+            continue
         cands.append({"tipo": "candidato", "tema": c.get("tema", ""), "titulo": c.get("titulo", ""),
                       "ref_id": c["id"], "payload": None,
                       "fresco": _e_fresco(c.get("data", "")), "classico": False,
