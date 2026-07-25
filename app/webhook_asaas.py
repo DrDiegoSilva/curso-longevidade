@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import config
 import db
 import subscribers
+import refunds
 
 CARENCIA_DIAS = 3
 _CICLO_DIAS = {"WEEKLY": 7, "BIWEEKLY": 14, "MONTHLY": 30, "BIMONTHLY": 61,
@@ -30,6 +31,16 @@ def _proximo_venc(cycle, ref=None):
     except Exception:
         base = datetime.now()
     return (base + timedelta(days=_CICLO_DIAS.get(cycle, 30))).date().isoformat()
+
+
+def _no_futuro(iso):
+    """True se `iso` (data/hora ISO) ainda não passou. Usado pra decidir se o fim do
+    acesso atual vale como base pra estender (recompra de Pix antes de vencer) ou se
+    já passou e a extensão deve contar a partir de agora."""
+    try:
+        return bool(iso) and datetime.fromisoformat(iso) > datetime.now()
+    except (TypeError, ValueError):
+        return False
 
 
 def _confirmar_renovacao(email, nome, ate_iso):
@@ -158,13 +169,31 @@ def _executar(event, pay, pid, enviar_fn):
         novo_assinante = existente is None
 
         if existente and subscribers.tem_acesso(existente):
-            # Parcela do mesmo período já contratado (ou reentrega do mesmo evento
-            # após um retry do Asaas): não cria outro assinante, não repete
-            # boas-vindas nem o e-mail de venda, e não registra comissão de novo — só
-            # atualiza a referência do pagamento mais recente (é nela que o estorno se
-            # baseia). Vencimento/acesso NÃO avançam: a parcela não é um período novo.
-            subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
-            return (200, "parcela-registrada")
+            # Mesmo critério de refunds.alvo_estorno: `installment` preenchido = parcela
+            # de um cartão parcelado (o Asaas não deixa parcelar Pix). Recompra avulsa
+            # (Pix) NUNCA tem esse campo.
+            tipo_pagamento, _ = refunds.alvo_estorno(pay)
+            if tipo_pagamento == "installment":
+                # Parcela do mesmo período já contratado (ou reentrega do mesmo evento
+                # após um retry do Asaas): não cria outro assinante, não repete
+                # boas-vindas nem o e-mail de venda, e não registra comissão de novo — só
+                # atualiza a referência do pagamento mais recente (é nela que o estorno se
+                # baseia). Vencimento/acesso NÃO avançam: a parcela não é um período novo.
+                subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
+                return (200, "parcela-registrada")
+            # Pix não tem parcelamento — se chegou aqui (CPF/WhatsApp já é assinante com
+            # acesso vigente) é porque ele comprou OUTRO período antes do atual vencer.
+            # Sem tratar isso à parte, o pagamento seria engolido em silêncio: não
+            # estenderia o acesso e o dinheiro simplesmente sumiria. Estende a partir do
+            # FIM do acesso atual (se ainda no futuro) — nunca de hoje, senão o
+            # assinante perderia os dias que já tinha pago e ainda não usou.
+            fim_atual = existente.get("acesso_ate")
+            novo_fim = _proximo_venc(plano.get("cycle", "MONTHLY"),
+                                     fim_atual if _no_futuro(fim_atual) else None)
+            subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
+                                      acesso_ate=novo_fim, proximo_vencimento=novo_fim)
+            _confirmar_renovacao(existente.get("email") or email, existente.get("nome") or nome, novo_fim)
+            return (200, "pix-recomprado-estendido")
 
         if existente:
             # Acesso já tinha acabado (ex.: Pix anual vencido) e o cliente comprou de

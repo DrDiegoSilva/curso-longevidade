@@ -40,9 +40,12 @@ class TestProcessar(unittest.TestCase):
         self.enviados = []
         self.envfn = lambda wpp, msg: self.enviados.append((wpp, msg))
 
-    def _body(self, event="PAYMENT_CONFIRMED", ext="tok", pid="pay_1", sub=None):
-        return {"event": event, "payment": {"id": pid, "externalReference": ext,
-                "customer": "cus_1", "subscription": sub, "dueDate": "2026-07-19"}}
+    def _body(self, event="PAYMENT_CONFIRMED", ext="tok", pid="pay_1", sub=None, installment=None):
+        pay = {"id": pid, "externalReference": ext, "customer": "cus_1",
+               "subscription": sub, "dueDate": "2026-07-19"}
+        if installment:
+            pay["installment"] = installment      # marca de parcela de cartão (Asaas)
+        return {"event": event, "payment": pay}
 
     def test_token_invalido(self):
         st, _ = self.w.processar(self._body(), "errado", enviar_fn=self.envfn)
@@ -245,7 +248,8 @@ class TestProcessar(unittest.TestCase):
         orig_email = email_send.enviar
         email_send.enviar = lambda to, assunto, html: emails.append((to, assunto))
         try:
-            st, msg = self.w.processar(self._body(ext="outro_tok", pid="pay_2parc", sub=None),
+            st, msg = self.w.processar(self._body(ext="outro_tok", pid="pay_2parc", sub=None,
+                                                   installment="inst_anual12x"),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
@@ -260,6 +264,7 @@ class TestProcessar(unittest.TestCase):
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["asaas_payment_id"], "pay_2parc")   # referência p/ estorno atualizada
         self.assertEqual(atual["proximo_vencimento"], "2026-08-19")  # não empurrou (mesmo período)
+        self.assertIsNone(atual["acesso_ate"])              # CORREÇÃO 2: parcela não estende acesso
 
     def test_ativar_parcela_do_anual_casa_por_whatsapp(self):
         # Mesmo cenário, mas sem CPF disponível no evento (Asaas não devolveu cpfCnpj)
@@ -267,7 +272,7 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. W", "whatsapp": "5543999997777", "email": "w@x.com", "plano": "anual"},
             {"customer": "cus_2", "payment": "pay_1w", "proximo_vencimento": "2026-08-20"})
-        import asaas
+        import asaas, email_send
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. W", "mobilePhone": "5543999997777",
@@ -275,20 +280,27 @@ class TestProcessar(unittest.TestCase):
         chamadas_comissao = []
         orig_reg_comissao = self.db.registrar_comissao
         self.db.registrar_comissao = lambda *a, **k: chamadas_comissao.append((a, k))
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto))
         try:
-            st, msg = self.w.processar(self._body(ext="outro_tok_w", pid="pay_2w", sub=None),
+            st, msg = self.w.processar(self._body(ext="outro_tok_w", pid="pay_2w", sub=None,
+                                                   installment="inst_anual12x_w"),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
             self.db.registrar_comissao = orig_reg_comissao
+            email_send.enviar = orig_email
         self.assertEqual((st, msg), (200, "parcela-registrada"))
         self.assertEqual(len(self.s.listar()), 1)
         self.assertEqual(len(self.enviados), 0)
         self.assertEqual(chamadas_comissao, [])
+        self.assertEqual(emails, [])                        # parcela de cartão não manda e-mail
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["asaas_payment_id"], "pay_2w")
         self.assertEqual(atual["proximo_vencimento"], "2026-08-20")
+        self.assertIsNone(atual["acesso_ate"])
 
     def test_ativar_recontratacao_apos_acesso_expirar_reativa_mesmo_id(self):
         # Pix anual que venceu (acesso_ate no passado) e o cliente comprou de novo:
@@ -406,6 +418,71 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(assunto, mensagens.EMAIL_ASSUNTO_DEFAULT)   # é o de boas-vindas
         self.assertIn("Criar minha senha", html)
         self.assertNotIn("Acessar minha conta", html)
+
+    def test_pix_recomprado_com_acesso_vigente_estende_do_fim_atual(self):
+        # TESTE 5 (protege dinheiro): Pix não tem parcelamento — se o mesmo CPF paga
+        # de novo com acesso ainda vigente, NÃO é parcela (como no cartão): é um NOVO
+        # período comprado antes de vencer. Sem isso o pagamento seria engolido em
+        # silêncio. Estende a partir do FIM do acesso ATUAL (não de hoje), senão o
+        # assinante perde os dias que ainda tinha.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Pix5", "whatsapp": "5543999990006", "email": "pix5@x.com",
+             "cpf": "11144477735", "plano": "mensal"},
+            {"customer": "cus_5", "payment": "pay_5_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+        import asaas, email_send
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. Pix5", "mobilePhone": "5543999990006",
+                                           "email": "pix5@x.com", "cpfCnpj": "111.444.777-35"}
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto, html))
+        try:
+            st, msg = self.w.processar(self._body(ext="tok5", pid="pay_5_2", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["acesso_ate"], "2026-08-31")          # 01 ago + 30d, a partir do FIM ATUAL
+        self.assertEqual(atual["proximo_vencimento"], "2026-08-31")
+        self.assertEqual(atual["asaas_payment_id"], "pay_5_2")        # referência atualizada
+        self.assertEqual(len(emails), 1)                              # e-mail de confirmação enviado
+        self.assertEqual(len(self.enviados), 0)                       # sem boas-vindas por WhatsApp
+
+    def test_parcela_cartao_com_acesso_vigente_nao_estende_nem_envia_email(self):
+        # TESTE 6 (protege dinheiro): parcela de um cartão parcelado (`installment`
+        # preenchido) NÃO é um novo período — é a MESMA compra sendo paga aos poucos.
+        # Mesmo que o assinante já tenha uma data de acesso no futuro (edge case),
+        # a parcela não pode estender nem mandar e-mail de renovação.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Parc6", "whatsapp": "5543999990005", "email": "parc6@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "cus_6", "payment": "pay_6_1", "proximo_vencimento": "2026-08-19"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-19")   # data no futuro (edge case)
+        import asaas, email_send
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. Parc6", "mobilePhone": "5543999990005",
+                                           "email": "parc6@x.com", "cpfCnpj": "111.444.777-35"}
+        emails = []
+        orig_email = email_send.enviar
+        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto))
+        try:
+            st, msg = self.w.processar(self._body(ext="tok6", pid="pay_6_2", sub=None, installment="inst_6"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            email_send.enviar = orig_email
+        self.assertEqual((st, msg), (200, "parcela-registrada"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["acesso_ate"], "2026-08-19")     # NÃO estendeu
+        self.assertEqual(atual["asaas_payment_id"], "pay_6_2")   # só a referência do pagamento avançou
+        self.assertEqual(emails, [])                             # nenhum e-mail
 
     def test_falha_no_email_de_renovacao_nao_derruba_renovacao(self):
         # TESTE 8a (spec renovação): falha no envio nunca pode derrubar a renovação.
