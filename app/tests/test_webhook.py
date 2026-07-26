@@ -352,7 +352,15 @@ class TestProcessar(unittest.TestCase):
         destino, texto = wa[0]
         self.assertEqual(destino, "5543999998888")
         self.assertIn("/minha", texto)
-        self.assertNotIn("<p>", texto)                        # texto plano, sem HTML
+        # ACHADO 2 (revisão): `assertNotIn("<p>", texto)` passava mesmo com o HTML cru
+        # inteiro, porque o <p> real sempre vem com atributo (`<p style="...">`) — nunca
+        # a substring exata "<p>". As checagens abaixo provam a conversão de verdade:
+        # nenhuma tag sobrou, nenhuma entidade HTML sobrou, e o título (<h1>) não gruda
+        # no primeiro parágrafo (era exatamente o bug do Achado 1).
+        self.assertNotIn("<", texto)                          # nenhuma tag HTML sobrou
+        self.assertNotIn("&amp;", texto)                       # nenhuma entidade HTML sobrou
+        self.assertTrue(texto.startswith("Pagamento confirmado\n\nOlá, Dr. Expirado!"),
+                         f"título deveria estar separado do corpo por quebra de linha: {texto!r}")
         self.assertNotIn("Criar minha senha", texto)
 
     def test_recontratacao_apos_expirar_atualiza_valor_contratado(self):

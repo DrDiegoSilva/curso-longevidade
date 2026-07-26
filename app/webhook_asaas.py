@@ -52,11 +52,15 @@ def _confirmar_renovacao(sub, vencimento, automatica=True):
     Um único texto (mensagens.email_renovacao) serve pros dois canais — pro assinante
     os casos são só "paguei e meu acesso segue valendo"; pro WhatsApp o HTML vira texto
     plano via site_web._sem_html (WhatsApp não renderiza tags). Nunca pode derrubar a
-    ativação/renovação: por isso o try/except, igual aos outros envios deste arquivo."""
-    import mensagens, site_web
-    link = f"{config.ARTIGOS_URL}/minha"
-    ate = site_web._data_br(vencimento) or ""
+    ativação/renovação: por isso o try/except cobre TUDO que pode levantar aqui dentro
+    (imports, montagem de link/ate e o envio em si) — ACHADO 3 (revisão): antes, os
+    imports e link/ate ficavam fora do try, e uma falha ali subiria até `_executar`,
+    que desfaz a marca de idempotência e devolve 500 pro Asaas (que re-tenta o evento
+    com o status do assinante já gravado)."""
     try:
+        import mensagens, site_web
+        link = f"{config.ARTIGOS_URL}/minha"
+        ate = site_web._data_br(vencimento) or ""
         if automatica:
             if not sub.get("email"):
                 return

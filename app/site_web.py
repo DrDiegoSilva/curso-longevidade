@@ -1640,11 +1640,20 @@ def _data_br(iso):
 def _sem_html(texto):
     """Texto plano a partir do corpo HTML — WhatsApp não renderiza tags (o corpo da
     confirmação de renovação foi escrito para e-mail; mandar HTML cru pro WhatsApp
-    entrega <p>/<strong> na cara do assinante)."""
+    entrega tags cruas na cara do assinante).
+
+    ACHADO 1 (revisão): o fim de QUALQUER elemento de bloco vira quebra de parágrafo
+    — não só `</p>`. O corpo real (mensagens.email_renovacao) começa com um `<h1>`
+    seguido de `<p>`; tratando só `</p>` o título ficava colado no primeiro parágrafo
+    ("Pagamento confirmadoOlá, João!"). `<a>`/`<span>` (inline) não geram quebra —
+    já vêm cercados de `<br>` no template quando precisam de uma."""
     import re
-    t = re.sub(r"<br\s*/?>", "\n", texto or "")
-    t = re.sub(r"</p>", "\n\n", t)
-    return _html.unescape(re.sub(r"<[^>]+>", "", t)).strip()
+    t = re.sub(r"<br\s*/?>", "\n", texto or "", flags=re.IGNORECASE)
+    t = re.sub(r"</(p|div|h[1-6]|li|ul|ol|table|tr|blockquote|section|article|header|footer)\s*>",
+               "\n\n", t, flags=re.IGNORECASE)
+    t = _html.unescape(re.sub(r"<[^>]+>", "", t))
+    t = re.sub(r"\n{3,}", "\n\n", t)   # nunca 3+ quebras seguidas
+    return t.strip()
 
 
 def _mes_nome(m):

@@ -55,6 +55,24 @@ class TestConfirmacaoPorCanal(unittest.TestCase):
         self.assertEqual(len(self.wa), 1)
         self.assertEqual(self.mail, [])
 
+    def test_confirmacao_nao_propaga_erro_mesmo_antes_do_envio(self):
+        # ACHADO 3 (revisão): antes da correção, os imports e a montagem de link/ate
+        # ficavam FORA do try — só o envio em si (email_send/deliver) era protegido.
+        # Prova por mutação: quebra site_web._data_br (a parte que ficava desprotegida)
+        # e chama _confirmar_renovacao direto — não pode propagar em nenhum canal,
+        # senão a exceção sobe até _executar, que desfaz a idempotência e devolve 500
+        # pro Asaas (que re-tenta o evento com o status já gravado).
+        import site_web
+        orig = site_web._data_br
+        site_web._data_br = lambda iso: (_ for _ in ()).throw(RuntimeError("boom"))
+        try:
+            self.w._confirmar_renovacao(self._sub(), "2027-08-01", automatica=True)
+            self.w._confirmar_renovacao(self._sub(), "2027-08-01", automatica=False)
+        finally:
+            site_web._data_br = orig
+        self.assertEqual(self.mail, [])    # quebrou antes de montar o e-mail, mas não propagou
+        self.assertEqual(self.wa, [])      # idem pro WhatsApp
+
 
 if __name__ == "__main__":
     unittest.main()
