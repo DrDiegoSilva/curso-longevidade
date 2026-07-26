@@ -29,8 +29,12 @@ class TestDisparo(unittest.TestCase):
         reg = self.subs.criar_de_pagamento(
             {"nome": "Teste", "whatsapp": "43999990000", "email": "t@e.com", "plano": "anual"},
             {"proximo_vencimento": "2026-08-01"})
-        if kw:
-            self.subs.marcar_status(reg["id"], kw.pop("status", "ATIVO"), **kw)
+        # O público da régua é Pix/cartão parcelado, e para esses o webhook SEMPRE grava
+        # `acesso_ate` (desde o dbb6dde) — é esse campo que controla o acesso deles. Sem ele
+        # no fixture, `tem_acesso` devolve "acesso pra sempre" e os testes de rota abaixo
+        # mediam um estado que não existe em produção.
+        kw.setdefault("acesso_ate", "2026-08-01")
+        self.subs.marcar_status(reg["id"], kw.pop("status", "ATIVO"), **kw)
         return reg
 
     def _disparar(self, hoje):
@@ -157,12 +161,14 @@ class TestDisparo(unittest.TestCase):
         self.assertEqual(n2, 0)
         self.assertEqual(len(self.emails), 1)
 
-    # RENOVAÇÃO (dias <= 0, ainda tem acesso) usa /renovar (exige sessão, quem tem
-    # acesso consegue logar). RECONTRATAÇÃO (dias > 0, acesso já caiu) usa /assinar
-    # (público) — /renovar bloquearia quem perdeu o acesso e a mensagem de resgate
-    # ficaria inacionável.
+    # A rota depende de o assinante CONSEGUIR ENTRAR, não do sinal do offset (B12 da
+    # revisão final #2). /renovar exige sessão e `auth_web` só manda código de login para
+    # quem tem acesso; /assinar é público. Amarrar a escolha ao offset criava um beco sem
+    # saída no dia do vencimento — `acesso_ate` é data pura (meia-noite), então às 08h do
+    # próprio dia 0 o acesso já caiu e o cliente batia no /entrar, que recusa em silêncio.
+    # Era o mesmo bug que o fc65970 corrigiu para +1/+3/+15, faltando um dia.
 
-    def test_link_e_renovar_quando_dias_e_negativo(self):
+    def test_link_e_renovar_para_quem_ainda_tem_acesso(self):
         self._ativar_somente(-7)
         self._criar()
         self._disparar(date(2026, 7, 25))                # vencimento 2026-08-01, offset -7
@@ -170,15 +176,26 @@ class TestDisparo(unittest.TestCase):
         self.assertIn("/renovar", msg)
         self.assertNotIn("/assinar", msg)
 
-    def test_link_e_renovar_quando_dias_e_zero(self):
+    def test_link_e_assinar_no_dia_do_vencimento_quando_o_acesso_ja_caiu(self):
         self._ativar_somente(0)
         self._criar()
         self._disparar(date(2026, 8, 1))                 # vencimento 2026-08-01, offset 0
         msg = self.wa[0][1]
+        self.assertIn("/assinar", msg)
+        self.assertNotIn("/renovar", msg)
+
+    def test_link_e_renovar_no_dia_zero_se_o_acesso_ainda_estiver_de_pe(self):
+        """Espelho do teste acima: mesmo offset 0, mas com acesso ainda vigente (ex.: o
+        assinante ganhou um bônus que empurrou o `acesso_ate` além do vencimento). A rota
+        segue o acesso, então aqui volta a ser /renovar."""
+        self._ativar_somente(0)
+        self._criar(acesso_ate="2026-09-01")
+        self._disparar(date(2026, 8, 1))
+        msg = self.wa[0][1]
         self.assertIn("/renovar", msg)
         self.assertNotIn("/assinar", msg)
 
-    def test_link_e_assinar_quando_dias_e_positivo(self):
+    def test_link_e_assinar_para_quem_ja_perdeu_o_acesso(self):
         self._ativar_somente(15)
         self._criar()
         self._disparar(date(2026, 8, 16))                # vencimento 2026-08-01, offset 15

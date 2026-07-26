@@ -82,6 +82,10 @@ def disparar(hoje=None, enviar_wa=None, enviar_email=None):
         enviar_email = lambda dest, assunto, corpo: email_send.enviar(dest, assunto, corpo)
 
     automacoes = db.listar_automacoes(so_ativas=True)
+    # Referência de tempo do disparo: a MEIA-NOITE de `hoje`. `tem_acesso` usa o relógio real
+    # quando não recebe `agora`, o que faria a rota do link ignorar o `hoje` passado (e, num
+    # disparo às 08h, julgar o acesso por um instante diferente do que o assinante vive).
+    agora_ref = datetime.combine(hoje, datetime.min.time())
     enviadas = 0
     for sub in subscribers.listar():
         plano = config.plano_por_slug(sub.get("plano", "")) or {}
@@ -90,12 +94,17 @@ def disparar(hoje=None, enviar_wa=None, enviar_email=None):
         venc = sub.get("proximo_vencimento")
         off = offset_vencimento(venc, hoje)
         for a in automacoes_do_dia(automacoes, off):
-            # São dois fluxos diferentes: RENOVAÇÃO (dias <= 0) é quem ainda tem acesso
-            # e paga antes de vencer — usa /renovar, que exige sessão, e funciona porque
-            # quem tem acesso consegue logar. RECONTRATAÇÃO (dias > 0) é quem já perdeu
-            # o acesso — /renovar bloquearia esse assinante, então usa /assinar, que é
-            # público (e o webhook reconhece o CPF e reativa com o bônus de resgate).
-            rota = "renovar" if int(a.get("dias") or 0) <= 0 else "assinar"
+            # São dois fluxos diferentes: RENOVAÇÃO é quem ainda tem acesso e paga antes de
+            # vencer — usa /renovar, que exige sessão. RECONTRATAÇÃO é quem já perdeu o
+            # acesso — /renovar bloquearia esse assinante, então usa /assinar, que é público
+            # (e o webhook reconhece o CPF e reativa com o bônus de resgate).
+            #
+            # A escolha segue o ACESSO, não o sinal do `dias`: `auth_web` só manda código de
+            # login para quem tem acesso, e `acesso_ate` é data pura (meia-noite) — então às
+            # 08h do próprio dia do vencimento (offset 0) o acesso já caiu e o /renovar era
+            # um beco sem saída, justamente na mensagem de maior intenção da régua. Amarrar
+            # ao acesso também protege de um offset editado na tela do admin.
+            rota = "renovar" if subscribers.tem_acesso(sub, agora=agora_ref) else "assinar"
             link = f"{config.ARTIGOS_URL}/{rota}"
 
             # Determina o destinatário conforme o canal ANTES de marcar o ledger.

@@ -385,8 +385,10 @@ _AUTOMACOES_SEED = [
                      "daqui a 7 dias. Para não perder nenhum estudo, renove por aqui:\n{link}"),
     (-3, "whatsapp", "{nome}, faltam 3 dias: sua assinatura vence em {ate}. "
                      "A renovação leva 1 minuto:\n{link}"),
-    (0,  "whatsapp", "{nome}, sua assinatura vence hoje. A partir de amanhã os estudos param "
-                     "de chegar. Renove agora:\n{link}"),
+    # "a partir de amanhã" era falso: `acesso_ate` é data pura (meia-noite), então no dia do
+    # vencimento os estudos JÁ pararam. Texto novo não promete um prazo que não existe.
+    (0,  "whatsapp", "{nome}, sua assinatura venceu hoje e os estudos param de chegar. "
+                     "Renove agora para retomar de onde parou:\n{link}"),
     (1,  "whatsapp", "{nome}, sua assinatura venceu ontem e os estudos pararam. Volte agora e "
                      "ganhe *1 mês extra* de acesso:\n{link}"),
     (3,  "whatsapp", "{nome}, seu acesso está parado há 3 dias. Se voltar agora, você ganha "
