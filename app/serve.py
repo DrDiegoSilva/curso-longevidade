@@ -219,7 +219,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.init()
             return self._html(site_web.pagina_admin(
                 subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons(),
-                confirmar_id=q.get("confirmar", [""])[0] or None), 200)
+                confirmar_id=q.get("confirmar", [""])[0] or None,
+                erro=q.get("erro", [""])[0]), 200)
         if path.startswith("/agenda"):
             import config, db, daily, agenda_plan, site_web, auth_web
             from datetime import datetime, timedelta
@@ -464,6 +465,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&confirmar={g('id')}" if token_ok else "/admin")
             elif acao == "remover_confirmar":
                 subscribers.remover(g("id"))
+            elif acao == "editar_numero":
+                novo = phone.montar_e164(g("pais_dial") or "55", g("numero"))
+                outro = subscribers.por_whatsapp(novo)
+                if outro and str(outro["id"]) != str(g("id")):
+                    erro = up.quote("Esse número já é de outro assinante.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                subscribers.atualizar_whatsapp(g("id"), novo)
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
             elif acao == "gerar_cupom":

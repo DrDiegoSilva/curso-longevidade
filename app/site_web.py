@@ -808,11 +808,12 @@ def pagina_whatsapp(info_dict, conn, token=""):
     return _pagina("WhatsApp · Admin", corpo, logado=True, meta_extra=refresh + '<meta name="robots" content="noindex">')
 
 
-def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
+def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro=""):
     """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
     import phone
     tk = _esc(token)
     admins = {phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])}
+    erro_html = f'<div class="erro" style="margin:14px 0">{_esc(erro)}</div>' if erro else ""
     alvo = next((s for s in assinantes if str(s.get("id")) == str(confirmar_id)), None) if confirmar_id else None
     confirm_html = ""
     if alvo:
@@ -847,6 +848,14 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'<input type="hidden" name="on" value="{prox}">'
                 f'<button class="{cls}" style="padding:6px 13px;font-size:12px">{rotulo}</button></form>')
+    def cel_editar_numero(s):
+        return (f'<form method="post" action="/admin" '
+                f'style="display:flex;flex-direction:column;gap:5px;min-width:170px">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="editar_numero">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'{_seletor_pais()}'
+                f'<input type="text" name="numero" placeholder="novo número">'
+                f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px" type="submit">✏️ Salvar número</button></form>')
     linhas = "".join(
         '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
         f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
@@ -856,6 +865,7 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
         f'<td style="padding:13px 10px">{badge(s.get("status"))}</td>'
         f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--suave)">{_esc(s.get("proximo_vencimento") or "—")}</td>'
         f'<td style="padding:13px 10px">{cel_curador(s)}</td>'
+        f'<td style="padding:13px 10px">{cel_editar_numero(s)}</td>'
         f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
         f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
         f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
@@ -879,14 +889,15 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      {erro_html}
       {confirm_html}
       <div class="infobox" style="margin:14px 0"><strong>Curadoria:</strong> quem estiver marcado como <strong>curador</strong> recebe, todo dia útil às <strong>18h</strong>, o resumo do dia com o link para revisar/aprovar antes do envio das 8h. Você (admin) recebe <em>sempre</em>. Marque um médico convidado aqui para ele ajudar na revisão.</div>
       <div style="overflow-x:auto;margin:18px 0">
-        <table style="width:100%;border-collapse:collapse;min-width:820px">
+        <table style="width:100%;border-collapse:collapse;min-width:990px">
           <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
             <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
-            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th></th></tr></thead>
-          <tbody>{linhas or '<tr><td colspan="8" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
+            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th style="padding:8px 10px">Editar número</th><th></th></tr></thead>
+          <tbody>{linhas or '<tr><td colspan="9" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
