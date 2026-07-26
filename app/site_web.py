@@ -742,14 +742,63 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
 
 
 def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="",
-                           email_renov_corpo="", token="", msg=""):
-    """Editor das mensagens de boas-vindas (WhatsApp + e-mail) e da confirmação de
-    renovação/recontratação (só e-mail — texto único pros dois casos)."""
+                           email_renov_corpo="", token="", msg="", automacoes=None):
+    """Editor das mensagens de boas-vindas (WhatsApp + e-mail), da confirmação de
+    renovação/recontratação (só e-mail — texto único pros dois casos) e da régua de
+    renovação (automações por dias-do-vencimento, criadas/editadas/removidas aqui —
+    sem depender de programador)."""
     tk = _esc(token)
     aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
              if msg else "")
     ta = ("width:100%;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.5;"
           "padding:12px;border-radius:10px;box-sizing:border-box")
+
+    # Uma <form> por automação existente (id oculto identifica qual linha o POST atualiza)
+    # mais uma <form> extra de criação (id vazio → db.salvar_automacao gera um id novo).
+    linhas_auto = "".join(
+        f'<form method="post" action="/admin/mensagens" style="border:1px solid #2a4a3c;'
+        f'border-radius:10px;padding:12px;margin:10px 0">'
+        f'<input type="hidden" name="token" value="{tk}">'
+        f'<input type="hidden" name="id" value="{_esc(a["id"])}">'
+        f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+        f'<label>Dias <input type="number" name="dias" value="{int(a["dias"])}" '
+        f'style="width:80px"></label>'
+        f'<label>Canal <select name="canal">'
+        f'<option value="whatsapp"{" selected" if a["canal"] == "whatsapp" else ""}>WhatsApp</option>'
+        f'<option value="email"{" selected" if a["canal"] == "email" else ""}>E-mail</option>'
+        f'</select></label>'
+        f'<label><input type="checkbox" name="ativo" value="1"'
+        f'{" checked" if a["ativo"] else ""}> ativa</label>'
+        f'</div>'
+        f'<textarea name="texto" rows="3" style="width:100%;margin-top:8px">{_esc(a["texto"])}</textarea>'
+        f'<button class="cta" type="submit" name="acao" value="salvar_automacao">Salvar</button> '
+        f'<button type="submit" name="acao" value="remover_automacao" '
+        f'onclick="return confirm(\'Remover esta automação?\')">Remover</button>'
+        f'</form>' for a in (automacoes or []))
+
+    nova_auto = (
+        f'<form method="post" action="/admin/mensagens" style="border:1px dashed #2a4a3c;'
+        f'border-radius:10px;padding:12px;margin:10px 0">'
+        f'<input type="hidden" name="token" value="{tk}">'
+        f'<input type="hidden" name="id" value="">'
+        f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+        f'<label>Dias <input type="number" name="dias" value="-7" style="width:80px"></label>'
+        f'<label>Canal <select name="canal">'
+        f'<option value="whatsapp">WhatsApp</option><option value="email">E-mail</option>'
+        f'</select></label>'
+        f'<label><input type="checkbox" name="ativo" value="1" checked> ativa</label></div>'
+        f'<textarea name="texto" rows="3" style="width:100%;margin-top:8px" '
+        f'placeholder="Texto da mensagem"></textarea>'
+        f'<button class="cta" type="submit" name="acao" value="salvar_automacao">Adicionar</button>'
+        f'</form>')
+
+    secao_auto = (
+        f'<h3 style="color:var(--creme);margin-top:28px">Régua de renovação</h3>'
+        f'<p class="hint">Só alcança o plano anual sem renovação automática (Pix e cartão '
+        f'parcelado). <b>Dias</b>: negativo antes do vencimento (-7 = sete dias antes), '
+        f'0 no dia, positivo depois (+15 = quinze dias depois). '
+        f'Marcadores: <code>{{nome}}</code>, <code>{{ate}}</code>, <code>{{link}}</code>.</p>'
+        f'{linhas_auto}{nova_auto}')
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "mensagens")}
@@ -784,6 +833,7 @@ def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="
         </div>
         <button class="actbtn" type="submit" style="margin-top:6px">Salvar mensagens</button>
       </form>
+      {secao_auto}
     </div>"""
     return _pagina("Mensagens · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 

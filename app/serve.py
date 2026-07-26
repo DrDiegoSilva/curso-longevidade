@@ -230,7 +230,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.get_config(mensagens.K_EMAIL_CORPO, mensagens.EMAIL_CORPO_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_RENOV_ASSUNTO, mensagens.EMAIL_RENOV_ASSUNTO_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_RENOV_CORPO, mensagens.EMAIL_RENOV_CORPO_DEFAULT),
-                config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
+                config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0],
+                automacoes=db.listar_automacoes()), 200)
         if path == "/admin/envio":
             import config, site_web, auth_web, db, daily
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -502,6 +503,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.set_config(mensagens.K_EMAIL_CORPO, g("email_corpo"))
                 db.set_config(mensagens.K_EMAIL_RENOV_ASSUNTO, g("email_renov_assunto"))
                 db.set_config(mensagens.K_EMAIL_RENOV_CORPO, g("email_renov_corpo"))
+            if g("acao") == "salvar_automacao":
+                try:
+                    db.salvar_automacao(g("id"), int(g("dias") or 0), g("canal") or "whatsapp",
+                                        g("texto"), 1 if g("ativo") == "1" else 0)
+                except (TypeError, ValueError):
+                    pass          # dias não numérico: ignora em vez de derrubar a tela
+            if g("acao") == "remover_automacao":
+                db.remover_automacao(g("id"))
             return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
                                   if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
         if path == "/admin/envio":
