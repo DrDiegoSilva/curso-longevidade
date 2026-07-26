@@ -388,6 +388,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
             return self._html(site_web.pagina_meus_dados(
                 sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
+        if path == "/renovar":
+            # Não existia caminho nenhum para o assinante renovar por conta própria — o
+            # checkout de /assinar recusa quem ainda TEM acesso, então os avisos da régua
+            # mandavam o cliente pra uma tela que o bloqueava. Preço é sempre o CONTRATADO
+            # (renovacao.preco_renovacao), nunca o de tabela, e sem campo de cupom: o
+            # desconto de afiliado vale só na 1ª venda.
+            import subscribers as _s, config as _c, renovacao as _r, pricing as _p
+            sub = self._sub_logado()
+            if not sub:
+                return self._redirect("/entrar")
+            plano = _c.plano_por_slug(sub.get("plano", "")) or {}
+            if not plano:
+                return self._redirect("/minha")
+            preco = _r.preco_renovacao(sub, plano)
+            expirado = not _s.tem_acesso(sub)
+            return self._html(site_web.pagina_renovar(
+                sub, plano,
+                _p.base_cobrada(plano, "PIX", preco, 0.0),
+                _p.base_cobrada(plano, "CARTAO", preco, 0.0),
+                sub.get("proximo_vencimento"), bonus=expirado))
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             # /artigos só LÊ conteúdo (não muta dado nenhum do assinante) — o critério
@@ -665,6 +685,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._aceitar_termos(g)
         if path == "/meus-dados":
             return self._meus_dados_post(g)
+        if path == "/renovar":
+            return self._post_renovar(g)
         return self._html("<h3>rota inválida</h3>", 404)
 
     def _meus_dados_post(self, g):
@@ -788,6 +810,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msg = "Falha ao processar o estudo (ver logs)."
         import urllib.parse as _up
         return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
+
+    def _post_renovar(self, g):
+        """Monta o checkout da renovação. Sem cupom: o desconto de afiliado é só na 1ª venda.
+        Preço vem de `renovacao.preco_renovacao` (o CONTRATADO), nunca do preço de tabela."""
+        import site_web, config, db, subscribers, pricing, renovacao, asaas
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        plano = config.plano_por_slug(sub.get("plano", "")) or {}
+        if not plano:
+            return self._redirect("/minha")
+        metodo = "CARTAO" if g("metodo").upper() == "CARTAO" else "PIX"
+        preco = renovacao.preco_renovacao(sub, plano)
+        base_final = pricing.base_cobrada(plano, metodo, preco, 0.0)
+        dados = {"nome": sub.get("nome", ""), "email": sub.get("email", ""),
+                 "cpf": sub.get("cpf", ""), "whatsapp": sub.get("whatsapp", "")}
+        token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
+                                  "parcelas": 1, "valor": base_final, "afiliado_codigo": ""})
+        try:
+            payload = asaas.montar_checkout(plano, metodo, 1, dados, token,
+                                            config.PUBLIC_URL, base=base_final)
+            res = asaas.criar_checkout(payload)
+            if not res.get("url"):
+                raise RuntimeError("checkout sem url")
+            return self._redirect(res["url"])
+        except Exception as e:
+            print(f"[renovar] checkout falhou: {e}", flush=True)
+            expirado = not subscribers.tem_acesso(sub)
+            return self._html(site_web.pagina_renovar(
+                sub, plano, pricing.base_cobrada(plano, "PIX", preco, 0.0),
+                pricing.base_cobrada(plano, "CARTAO", preco, 0.0),
+                sub.get("proximo_vencimento"), bonus=expirado,
+                erro="Não conseguimos iniciar o pagamento agora. Tente novamente em instantes."))
 
     def _aceitar_termos(self, g):
         """Exceção deliberada ao gate: esta rota É o próprio caminho de aceitar os

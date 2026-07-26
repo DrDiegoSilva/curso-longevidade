@@ -1642,6 +1642,36 @@ def _data_br_curto(dt):
     return f"{dt.day:02d} {_MESES[dt.month]} · {_DIAS_ABREV[dt.weekday()]}"
 
 
+def pagina_renovar(sub, plano, preco_pix, preco_cartao, vencimento, bonus=False, erro=""):
+    """Tela de renovação do assinante logado. Sem campo de cupom de propósito: o desconto de
+    afiliado vale só na 1ª venda. O bônus de +1 mês só aparece para quem já perdeu o acesso."""
+    erro_html = f'<div class="erro" style="margin-bottom:16px">{_esc(erro)}</div>' if erro else ""
+    bonus_html = ('<p class="hint" style="color:var(--ouro2)"><strong>Volte agora e ganhe '
+                  '1 mês extra</strong> — 13 meses pelo preço de 12.</p>') if bonus else ""
+    corpo = f"""
+    <div class="wrap"><div class="panel" style="max-width:520px">
+      <h2 class="disp">Renovar assinatura</h2>
+      {erro_html}
+      <p class="hint">Plano <strong>{_esc(plano.get("nome") or "")}</strong> ·
+         {"acesso encerrado em" if bonus else "vence em"}
+         <strong>{_esc(_data_br(vencimento))}</strong></p>
+      {bonus_html}
+      <form method="post" action="/renovar">
+        <label class="section-label">Forma de pagamento</label>
+        <div class="paytiles">
+          <label class="paytile"><input type="radio" name="metodo" value="PIX" checked>
+            <span class="pt-ico">⚡</span><span class="pt-nome">Pix</span>
+            <span class="pt-desc">{_esc(pricing.fmt_brl(preco_pix))}</span></label>
+          <label class="paytile"><input type="radio" name="metodo" value="CARTAO">
+            <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span>
+            <span class="pt-desc">{_esc(pricing.fmt_brl(preco_cartao))}</span></label>
+        </div>
+        <button class="btn-pay" type="submit">Continuar para o pagamento →</button>
+      </form>
+    </div></div>"""
+    return _pagina(f"Renovar · {PRODUTO}", corpo, logado=True)
+
+
 def _semana_label(seg):
     """seg (segunda-feira, date) -> 'Semana 07–11 jul' (ou cruzando o mês)."""
     from datetime import timedelta
