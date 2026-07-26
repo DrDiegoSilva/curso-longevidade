@@ -854,7 +854,7 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro=""):
                 f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="editar_numero">'
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'{_seletor_pais()}'
-                f'<input type="text" name="numero" placeholder="novo número">'
+                f'<input type="text" name="numero" placeholder="novo número" required>'
                 f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px" type="submit">✏️ Salvar número</button></form>')
     linhas = "".join(
         '<tr style="border-top:1px solid rgba(233,225,198,.1)">'

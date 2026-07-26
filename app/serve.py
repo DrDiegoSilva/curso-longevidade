@@ -459,14 +459,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             acao = g("acao")
             if acao == "adicionar":
-                novo = phone.montar_e164(g("pais_dial") or "55", g("whatsapp"))
+                wa_input = g("whatsapp").strip()
+                if not wa_input:
+                    erro = up.quote("Número de WhatsApp é obrigatório.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = phone.montar_e164(g("pais_dial") or "55", wa_input)
                 subscribers.adicionar(g("nome"), novo)
             elif acao == "remover":
                 return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&confirmar={g('id')}" if token_ok else "/admin")
             elif acao == "remover_confirmar":
                 subscribers.remover(g("id"))
             elif acao == "editar_numero":
-                novo = phone.montar_e164(g("pais_dial") or "55", g("numero"))
+                num_input = g("numero").strip()
+                if not num_input:
+                    erro = up.quote("Número é obrigatório.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = phone.montar_e164(g("pais_dial") or "55", num_input)
                 outro = subscribers.por_whatsapp(novo)
                 if outro and str(outro["id"]) != str(g("id")):
                     erro = up.quote("Esse número já é de outro assinante.")
