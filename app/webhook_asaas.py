@@ -151,8 +151,12 @@ def _executar(event, pay, pid, enviar_fn):
                     print(f"[webhook] obter_assinatura falhou: {e}", flush=True)
         # O Asaas não propaga o externalReference do checkout p/ o pagamento -> além de
         # buscar pelo token, casa o pending pelo CPF do cliente Asaas (recupera o afiliado).
+        # IMPORTANT 2 (correção 1): sem ASAAS_API_KEY (ou se a consulta ao Asaas falhar),
+        # `cust` fica vazio -> cpfCnpj vazio -> o pending nunca era achado por CPF, mesmo
+        # existindo. Mesmo atalho usado logo abaixo pro WhatsApp: Pix avulso manda
+        # `cpfCnpj` DIRETO no pagamento, sem precisar da API — tenta esse como fallback.
         pending = (db.obter_pending(pay.get("externalReference"))
-                   or db.obter_pending_por_cpf(cust.get("cpfCnpj")))
+                   or db.obter_pending_por_cpf(cust.get("cpfCnpj") or pay.get("cpfCnpj")))
         # Sem ASAAS_API_KEY (ou se a consulta ao Asaas falhar), `cust` fica vazio e uma
         # recompra/recontratação de quem JÁ é assinante ficaria bloqueada aqui por "falta"
         # de WhatsApp — mesmo já tendo o telefone dele gravado. Acha o assinante pelo CPF
@@ -166,22 +170,43 @@ def _executar(event, pay, pid, enviar_fn):
             print("[webhook] ATIVAR sem whatsapp — pulei", flush=True)
             _alertar_admin(pid, sid, "pagamento confirmado mas SEM WhatsApp p/ ativar — ative manualmente")
             return (200, "sem-whatsapp")
-        plano = (config.plano_por_cycle(sub_obj.get("cycle"))
-                 or config.plano_por_base(pay.get("value"))
-                 or (config.plano_por_slug((pending or {}).get("plano", "")) if pending else None) or {})
-        prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
-        nome = cust.get("name") or (pending or {}).get("nome", "")
-        email = cust.get("email") or (pending or {}).get("email", "")
-
         # Guarda contra duplicata: no Asaas, cartão À VISTA cria assinatura recorrente
         # (subscription preenchido), mas cartão PARCELADO não — cada parcela confirmada
         # chega com "subscription" vazio, então por_subscription nunca acha o assinante
         # e cai neste ramo ATIVAR de novo. Sem checar se o CPF/WhatsApp já é assinante,
         # o anual em 12x criaria até 12 registros duplicados (boas-vindas, e-mail de
         # "nova venda" e comissão de afiliado repetidos a cada parcela confirmada).
+        # Calculado ANTES do plano (abaixo) de propósito: o IMPORTANT 2 (correção 2)
+        # precisa saber se já existe assinante pra preferir o plano DELE em vez de
+        # adivinhar pelo valor pago.
         cpf_cliente = cust.get("cpfCnpj") or (pending or {}).get("cpf") or ""
         existente = subscribers.por_cpf(cpf_cliente) or subscribers.por_whatsapp(whatsapp)
         novo_assinante = existente is None
+
+        # Cascata do plano: 1) ciclo da assinatura recorrente REAL no Asaas (a fonte mais
+        # confiável, quando disponível); 2) se já é assinante conhecido (recompra ou
+        # recontratação), o plano JÁ está no cadastro dele — usa esse, não adivinha; 3)
+        # adivinhar pelo valor pago (preço de tabela) só faz sentido pra CLIENTE NOVO,
+        # sem cadastro prévio; 4) plano do pending, último recurso.
+        # IMPORTANT 2 (correção 2): antes, um assinante existente que pagou com desconto
+        # (Pix, founder) tinha o valor comparado contra o preço de TABELA em
+        # plano_por_base — não casava com nada, e a cascata caía no default MONTHLY (30
+        # dias de acesso pra quem, por exemplo, pagou um ano).
+        plano = (config.plano_por_cycle(sub_obj.get("cycle"))
+                 or (config.plano_por_slug(existente.get("plano", "")) if existente else None)
+                 or config.plano_por_base(pay.get("value"))
+                 or (config.plano_por_slug((pending or {}).get("plano", "")) if pending else None) or {})
+        if not plano:
+            # IMPORTANT 2 (correção 3): a cascata inteira falhou (cliente novo, sem
+            # pending, valor que não bate com nenhum preço de tabela) — dinheiro entrou
+            # e o sistema não sabe o que foi vendido. Segue com o default MONTHLY (linha
+            # abaixo, pra não travar a ativação), mas avisa o Diego em vez de ficar calado.
+            _alertar_admin(pid, sid, "pagamento confirmado mas não consegui identificar o "
+                                     f"plano contratado (valor pago R$ {pay.get('value')}) — "
+                                     "confira e ajuste o acesso manualmente")
+        prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
+        nome = cust.get("name") or (pending or {}).get("nome", "")
+        email = cust.get("email") or (pending or {}).get("email", "")
 
         if existente and subscribers.tem_acesso(existente):
             # Mesmo critério de refunds.alvo_estorno: `installment` preenchido = parcela

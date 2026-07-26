@@ -846,6 +846,80 @@ class TestProcessar(unittest.TestCase):
         # consequência 2: consegue cancelar de novo (claim vence, cancelado_em vazio)
         self.assertTrue(self.db.claim_cancelamento(reg["id"], "de novo", None))
 
+    # ── IMPORTANT 2: plano do assinante existente vem do cadastro, não do valor pago ──
+    def test_pending_encontrado_pelo_cpf_do_proprio_pagamento_sem_cliente_asaas(self):
+        # CORREÇÃO 1: sem ASAAS_API_KEY (ou falha na consulta), `cust` fica vazio ->
+        # cpfCnpj vazio -> antes, obter_pending_por_cpf nunca achava o pending (mesmo
+        # existindo) e o plano acabava adivinhado pelo valor pago. Usar o cpfCnpj do
+        # PRÓPRIO pagamento (Pix manda direto, sem precisar da API) resolve.
+        self.db.criar_pending({"nome": "Dr. SemAPI", "whatsapp": "5543999990130",
+                               "email": "semapi@x.com", "cpf": "88899900012",
+                               "plano": "anual", "metodo": "PIX"})
+        body = {"event": "PAYMENT_CONFIRMED", "payment": {
+            "id": "pay_semapi_1", "externalReference": "token_que_nao_bate",
+            "value": 1044.05,   # valor com desconto Pix — não bate com preço de tabela
+            "customer": "cus_semapi", "subscription": None, "dueDate": "2026-07-19",
+            "cpfCnpj": "888.999.000-12"}}
+        st, msg = self.w.processar(body, "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        reg = self.s.por_whatsapp("5543999990130")
+        self.assertIsNotNone(reg)
+        self.assertEqual(reg["plano"], "anual")             # achou o pending -> plano certo
+        self.assertEqual(reg["acesso_ate"], "2027-07-19")     # 365d (YEARLY), não 30 (MONTHLY)
+
+    def test_existente_recompra_plano_vem_do_cadastro_mesmo_com_valor_fora_de_tabela(self):
+        # CORREÇÃO 2: assinante EXISTENTE (plano anual já no cadastro) recompra com um
+        # valor que não bate com NENHUM preço de tabela (ex.: desconto Pix). Antes,
+        # plano_por_base(1044.05) falhava, a cascata caía no default MONTHLY (30 dias)
+        # em vez de honrar o ano contratado. Agora usa config.plano_por_slug(existente
+        # ["plano"]) antes de adivinhar pelo valor.
+        from datetime import date, timedelta
+        hoje = date.today()
+        acesso_futuro = (hoje + timedelta(days=30)).isoformat()   # ainda vigente
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Anual2", "whatsapp": "5543999990140", "email": "anual2@x.com",
+             "cpf": "99900011126", "plano": "anual"},
+            {"customer": "cus_anual2", "payment": "pay_anual2_1", "proximo_vencimento": acesso_futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=acesso_futuro)
+        body = {"event": "PAYMENT_CONFIRMED", "payment": {
+            "id": "pay_anual2_2", "externalReference": "tok_nao_existe", "value": 1044.05,
+            "customer": "cus_x", "subscription": None, "dueDate": "2026-07-19",
+            "cpfCnpj": "999.000.111-26"}}
+        st, msg = self.w.processar(body, "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
+        atual = self.s.por_id(reg["id"])
+        esperado = (hoje + timedelta(days=30 + 365)).isoformat()   # YEARLY (365d), não MONTHLY
+        self.assertEqual(atual["acesso_ate"], esperado)
+        self.assertEqual(atual["proximo_vencimento"], esperado)
+
+    def test_plano_irresolvivel_alerta_admin(self):
+        # CORREÇÃO 3: cliente novo, sem pending, valor que não bate com nenhum plano de
+        # tabela -> a cascata inteira falha de verdade. Antes, seguia calado com o
+        # default MONTHLY (30 dias pra quem pode ter pago outra coisa). Agora alerta o
+        # Diego — dinheiro entrou e o sistema não sabe o que foi vendido.
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. Misterioso", "mobilePhone": "5543999990150",
+                                           "email": "mist@x.com", "cpfCnpj": "12312312312"}
+        alertas = []
+        orig_alert = self.w._alertar_admin
+        self.w._alertar_admin = lambda pid, sid, motivo: alertas.append(motivo)
+        try:
+            st, msg = self.w.processar(
+                {"event": "PAYMENT_CONFIRMED", "payment": {
+                    "id": "pay_misterio", "externalReference": "tok_nao_existe", "value": 123.45,
+                    "customer": "cus_mist", "subscription": None, "dueDate": "2026-07-19"}},
+                "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            self.w._alertar_admin = orig_alert
+        self.assertEqual((st, msg), (200, "ativado"))          # segue ativando (default MONTHLY)
+        self.assertTrue(any("plano" in m.lower() for m in alertas))
+        reg = self.s.por_whatsapp("5543999990150")
+        self.assertEqual(reg["proximo_vencimento"], "2026-08-18")   # default MONTHLY (30d) do dueDate
+
 
 class TestAvisarVenda(unittest.TestCase):
     def test_avisar_venda_monta_email(self):
