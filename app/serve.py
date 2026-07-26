@@ -896,20 +896,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect("/entrar")
         motivo = g("motivo").strip()
         if g("acao") == "aceitar":
+            if sub.get("oferta_retencao_em"):
+                # B8: a oferta é uma vez por assinante. A checagem existia só em
+                # `_cancelar_motivo`, que decide EXIBIR — um POST repetido empurrava +30 dias
+                # a cada chamada, sem limite (acesso grátis ilimitado no cartão à vista).
+                # Idempotente de propósito: mostra a mesma página, não concede de novo e NÃO
+                # cancela — o cliente clicou justamente para não cancelar.
+                return self._html(site_web.pagina_oferta_aceita())
             sid = sub.get("asaas_subscription_id")
             try:
                 if sid:
                     asaas.adiar_vencimento(sid, 30)
             except Exception as e:
                 print(f"[cancelar] adiar vencimento falhou: {e}", flush=True)
-            base = sub.get("proximo_vencimento")
+            # B11: `acesso_ate` é o campo que controla o acesso de quem NÃO tem assinatura
+            # recorrente (Pix e cartão parcelado, desde o dbb6dde). Gravar só o
+            # `proximo_vencimento` fazia a tela prometer "+30 dias" e entregar ZERO: o
+            # cliente desistia do cancelamento, deixava a janela de arrependimento correr e
+            # perdia o acesso na data original. Com assinatura recorrente é o contrário —
+            # `acesso_ate` fica NULL de propósito e quem manda é o ciclo do Asaas.
+            base = (sub.get("acesso_ate") if not sid else None) or sub.get("proximo_vencimento")
             try:
                 ref = datetime.fromisoformat(base) if base else datetime.now()
             except Exception:
                 ref = datetime.now()
             novo = (ref + timedelta(days=30)).date().isoformat()
+            extra = {} if sid else {"acesso_ate": novo}
             subscribers.marcar_status(sub["id"], "ATIVO",
-                                      oferta_retencao_em=datetime.now().isoformat(), proximo_vencimento=novo)
+                                      oferta_retencao_em=datetime.now().isoformat(),
+                                      proximo_vencimento=novo, **extra)
             return self._html(site_web.pagina_oferta_aceita())
         return self._executar_cancelamento(sub, motivo)
 
