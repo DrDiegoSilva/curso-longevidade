@@ -87,6 +87,69 @@ class TestDisparo(unittest.TestCase):
         n2 = self._disparar(date(2026, 7, 25))
         self.assertEqual(n2, 1)
 
+    def test_email_sem_destinatario_nao_marca_ledger(self):
+        """Automação de email + assinante sem email → nada é enviado, ledger não fica marcado.
+
+        Prova por mutação: se marcarmos o ledger ANTES de verificar o destinatário (bug),
+        este teste falhará na segunda execução (ledger já estará marcado e registrar_aviso
+        devolverá False).
+        """
+        reg = self._criar()
+        # Remove o email do assinante
+        self.subs.marcar_status(reg["id"], "ATIVO", email=None)
+
+        # Muda a automação de -7 para canal email
+        auto = [a for a in self.db.listar_automacoes() if a["dias"] == -7][0]
+        self.db.salvar_automacao(auto["id"], auto["dias"], "email", auto["texto"], 1)
+
+        # Primeira execução: não envia (sem email), ledger não fica marcado
+        n1 = self._disparar(date(2026, 7, 25))
+        self.assertEqual(n1, 0)
+        self.assertEqual(len(self.emails), 0)
+
+        # Segunda execução do mesmo dia: como o ledger não foi marcado, o disparador
+        # tentaria novamente se houvesse um destinatário. Mas como ainda não há email,
+        # continua sem enviar.
+        n2 = self._disparar(date(2026, 7, 25))
+        self.assertEqual(n2, 0)
+        self.assertEqual(len(self.emails), 0)
+
+    def test_whatsapp_sem_destinatario_nao_marca_ledger(self):
+        """Automação de WhatsApp + assinante sem WhatsApp → nada é enviado, ledger não fica marcado."""
+        reg = self._criar()
+        # Remove o WhatsApp do assinante
+        self.subs.marcar_status(reg["id"], "ATIVO", whatsapp=None)
+
+        # Primeira execução: não envia (sem WhatsApp), ledger não fica marcado
+        n1 = self._disparar(date(2026, 7, 25))
+        self.assertEqual(n1, 0)
+        self.assertEqual(len(self.wa), 0)
+
+        # Segunda execução do mesmo dia: como o ledger não foi marcado, o disparador
+        # tentaria novamente. Mas como ainda não há WhatsApp, continua sem enviar.
+        n2 = self._disparar(date(2026, 7, 25))
+        self.assertEqual(n2, 0)
+        self.assertEqual(len(self.wa), 0)
+
+    def test_email_com_destinatario_envia_normalmente(self):
+        """Automação de email + assinante com email → envia normalmente pelo canal email."""
+        reg = self._criar()
+
+        # Muda a automação de -7 para canal email
+        auto = [a for a in self.db.listar_automacoes() if a["dias"] == -7][0]
+        self.db.salvar_automacao(auto["id"], auto["dias"], "email", auto["texto"], 1)
+
+        # Primeira execução: envia por email
+        n1 = self._disparar(date(2026, 7, 25))
+        self.assertEqual(n1, 1)
+        self.assertEqual(len(self.emails), 1)
+        self.assertEqual(self.emails[0][0], "t@e.com")
+
+        # Segunda execução do mesmo dia: ledger já marcado, não envia novamente
+        n2 = self._disparar(date(2026, 7, 25))
+        self.assertEqual(n2, 0)
+        self.assertEqual(len(self.emails), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

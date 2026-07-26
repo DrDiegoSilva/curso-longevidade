@@ -91,15 +91,31 @@ def disparar(hoje=None, enviar_wa=None, enviar_email=None):
         venc = sub.get("proximo_vencimento")
         off = offset_vencimento(venc, hoje)
         for a in automacoes_do_dia(automacoes, off):
+            # Determina o destinatário conforme o canal ANTES de marcar o ledger.
+            # Se não há destinatário, não marca e não envia — registra um log.
+            destinatario = None
+            if a.get("canal") == "email":
+                destinatario = sub.get("email")
+                if not destinatario:
+                    print(f"[regua] pulando assinante {sub.get('id')} automação {a.get('id')}: "
+                          f"sem email cadastrado", flush=True)
+                    continue
+            else:  # WhatsApp ou outro canal padrão
+                destinatario = sub.get("whatsapp")
+                if not destinatario:
+                    print(f"[regua] pulando assinante {sub.get('id')} automação {a.get('id')}: "
+                          f"sem WhatsApp cadastrado", flush=True)
+                    continue
+
+            # Agora que sabemos ter destinatário, marca o ledger.
             if not db.registrar_aviso(sub["id"], a["id"], venc):
                 continue                      # já saiu neste ciclo
             try:
                 msg = _texto(a.get("texto"), sub, venc, link)
                 if a.get("canal") == "email":
-                    if sub.get("email"):
-                        enviar_email(sub["email"], "Sua assinatura — Atualização Científica", msg)
+                    enviar_email(destinatario, "Sua assinatura — Atualização Científica", msg)
                 else:
-                    enviar_wa(sub.get("whatsapp"), msg)
+                    enviar_wa(destinatario, msg)
                 enviadas += 1
             except Exception as e:
                 print(f"[regua] envio falhou p/ {sub.get('id')} ({a.get('id')}): {e}", flush=True)
