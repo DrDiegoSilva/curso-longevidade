@@ -321,6 +321,15 @@ def _esc(s):
     return _html.escape(str(s or ""))
 
 
+def _seletor_pais(selecionado="BR"):
+    """<select name="pais_dial"> com paises.PAISES; opção de `selecionado` marcada."""
+    import paises
+    opts = "".join(
+        f'<option value="{dial}"{" selected" if iso == selecionado else ""}>{bandeira} {nome} (+{dial})</option>'
+        for iso, nome, bandeira, dial in paises.PAISES)
+    return f'<select name="pais_dial">{opts}</select>'
+
+
 def _cta():
     return _esc(config.cta_url())
 
@@ -887,7 +896,8 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
           <form method="post" action="/admin">
             <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
             <label>Nome</label><input type="text" name="nome">
-            <label>WhatsApp (com DDD)</label><input type="text" name="whatsapp" placeholder="(43) 99999-0000">
+            <label>País</label>{_seletor_pais()}
+            <label>WhatsApp</label><input type="text" name="whatsapp" placeholder="número (com DDD, se BR)">
             <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
           </form>
         </div>

@@ -451,14 +451,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg=Dias+salvos"
                                   if token_ok else "/admin/envio?msg=Dias+salvos")
         if path == "/admin":
-            import config, subscribers, auth_web, db
+            import config, subscribers, auth_web, db, phone
             sess = self._sessao()
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             acao = g("acao")
             if acao == "adicionar":
-                subscribers.adicionar(g("nome"), g("whatsapp"))
+                novo = phone.montar_e164(g("pais_dial") or "55", g("whatsapp"))
+                subscribers.adicionar(g("nome"), novo)
             elif acao == "remover":
                 return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&confirmar={g('id')}" if token_ok else "/admin")
             elif acao == "remover_confirmar":
