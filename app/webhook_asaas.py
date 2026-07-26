@@ -43,22 +43,32 @@ def _no_futuro(iso):
         return False
 
 
-def _confirmar_renovacao(email, nome, ate_iso):
-    """Confirma por E-MAIL (nunca WhatsApp — esse canal é reservado aos estudos, decisão
-    do Diego) que o pagamento foi recebido e até quando o acesso vale. Um único texto
-    serve tanto pra renovação automática (ramo RENOVAR) quanto pra recontratação (ramo
-    ATIVAR, caso 3 da guarda) — pro assinante os dois casos são só "paguei e meu acesso
-    segue valendo". Nunca pode derrubar a ativação/renovação: por isso o try/except,
-    igual aos outros envios deste arquivo."""
-    if not email:
-        return
+def _confirmar_renovacao(sub, vencimento, automatica=True):
+    """Confirma a renovação. Canal por tipo (decisão do Diego 2026-07-25):
+    - automática (cartão recorrente, ramo RENOVAR): e-mail, que serve de comprovante
+      de cobrança — o assinante não fez nada, só foi cobrado de novo;
+    - manual (recontratação/recompra: o assinante foi lá e pagou de novo): WhatsApp,
+      canal onde ele já está e já consome o produto.
+    Um único texto (mensagens.email_renovacao) serve pros dois canais — pro assinante
+    os casos são só "paguei e meu acesso segue valendo"; pro WhatsApp o HTML vira texto
+    plano via site_web._sem_html (WhatsApp não renderiza tags). Nunca pode derrubar a
+    ativação/renovação: por isso o try/except, igual aos outros envios deste arquivo."""
+    import mensagens, site_web
+    link = f"{config.ARTIGOS_URL}/minha"
+    ate = site_web._data_br(vencimento) or ""
     try:
-        import email_send, mensagens, site_web
-        link = f"{config.ARTIGOS_URL}/entrar"     # conta já existe -> link de ENTRAR, não de criar senha
-        assunto, html = mensagens.email_renovacao(nome, site_web._data_br(ate_iso), link)
-        email_send.enviar(email, assunto, html)
+        if automatica:
+            if not sub.get("email"):
+                return
+            import email_send
+            assunto, html = mensagens.email_renovacao(sub.get("nome", ""), ate, link)
+            email_send.enviar(sub["email"], assunto, html)
+        else:
+            import deliver
+            _, corpo = mensagens.email_renovacao(sub.get("nome", ""), ate, link)
+            deliver.enviar_texto(sub.get("whatsapp"), site_web._sem_html(corpo))
     except Exception as e:
-        print(f"[webhook] confirmação de renovação e-mail falhou: {e}", flush=True)
+        print(f"[webhook] confirmação de renovação falhou: {e}", flush=True)
 
 
 def _boas_vindas(whatsapp, nome, email, enviar_fn):
@@ -197,7 +207,11 @@ def _executar(event, pay, pid, enviar_fn):
             subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
                                       acesso_ate=novo_fim, proximo_vencimento=novo_fim,
                                       valor_contratado=pay.get("value"))
-            _confirmar_renovacao(existente.get("email") or email, existente.get("nome") or nome, novo_fim)
+            # Recompra é manual (o assinante voltou e pagou de novo) -> WhatsApp.
+            _confirmar_renovacao({"email": existente.get("email") or email,
+                                  "nome": existente.get("nome") or nome,
+                                  "whatsapp": existente.get("whatsapp") or whatsapp},
+                                 novo_fim, automatica=False)
             return (200, "pix-recomprado-estendido")
 
         if existente:
@@ -239,8 +253,8 @@ def _executar(event, pay, pid, enviar_fn):
             # Recontratação (caso 3 da guarda: acesso já tinha expirado e ele comprou de
             # novo): a conta já existe e já tem senha — mandar as boas-vindas de novo
             # (com o link de CRIAR senha) seria confuso. Confirmação de renovação em vez
-            # disso, com o link de ENTRAR.
-            _confirmar_renovacao(email, nome, prox)
+            # disso — recontratação é manual (o assinante voltou e pagou de novo) -> WhatsApp.
+            _confirmar_renovacao({"email": email, "nome": nome, "whatsapp": whatsapp}, prox, automatica=False)
         # Afiliado (D3): comissão sobre o valor pago (só na 1ª venda). No cartão o desconto
         # é RECORRENTE (o Asaas não deixa alterar o `value` da assinatura por API) — decisão do
         # Diego: renovação com desconto "da nada". A busca do afiliado é protegida: uma falha
@@ -308,8 +322,8 @@ def _executar(event, pay, pid, enviar_fn):
                                   cancelado_em=None, cancel_motivo=None, acesso_ate=None)
         # Renovação automática (cartão à vista cobrando de novo sozinho): sem isso o
         # cliente é cobrado e não recebe nada — é exatamente o tipo de cobrança muda
-        # que gera "não reconheço essa cobrança" e chargeback.
-        _confirmar_renovacao(sub.get("email"), sub.get("nome"), prox)
+        # que gera "não reconheço essa cobrança" e chargeback. automatica=True -> e-mail.
+        _confirmar_renovacao(sub, prox, automatica=True)
         return (200, "renovado")
 
     if acao == "INADIMPLENTE" and sub:

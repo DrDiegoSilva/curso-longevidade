@@ -70,7 +70,11 @@ SLOT_TETO_DEFAULT = 100
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [
-    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147"},
+    # aceita_pix=False (2026-07-26): no Asaas cartão à vista recorre e cartão parcelado não —
+    # mensal é sempre 1x (parcelas travado), logo é RECURRENT puro e renova sozinho; já o Pix
+    # mensal nunca renovaria (cobrança mensal manual/WhatsApp todo mês). Tirar o Pix tira o
+    # mensal inteiro da régua. Diego confirmou: não existe assinante mensal pago via Pix hoje.
+    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147", "aceita_pix": False},
     # Trimestral/Semestral OCULTOS da venda (decisão do Diego 2026-07-20: só Mensal e Anual).
     # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
     {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},

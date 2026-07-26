@@ -318,44 +318,42 @@ class TestProcessar(unittest.TestCase):
         # recontratação legítima -> reativa o MESMO registro em vez de criar outro.
         # TESTE 3/4 (spec renovação): a conta já existe e já tem senha, então NÃO manda
         # as boas-vindas de cliente novo (link de criar senha) — manda a confirmação de
-        # renovação por e-mail (link de entrar), texto único com a de RENOVAR.
+        # renovação. Recontratação é manual (decisão do Diego 2026-07-25) -> WhatsApp,
+        # texto único com a de RENOVAR, convertido de HTML pra texto plano.
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Expirado", "whatsapp": "5543999998888", "email": "e@x.com",
              "cpf": "11144477735", "plano": "anual"},
             {"customer": "cus_3", "payment": "pay_velho", "proximo_vencimento": "2025-07-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")
         self.assertFalse(self.s.tem_acesso(self.s.por_id(reg["id"])))
-        import asaas, email_send
+        import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. Expirado", "mobilePhone": "5543999998888",
                                            "email": "e@x.com", "cpfCnpj": "111.444.777-35"}
-        emails = []
-        orig_email = email_send.enviar
-        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto, html))
+        wa = []
+        orig_wa = deliver.enviar_texto
+        deliver.enviar_texto = lambda w, m: wa.append((w, m))
         try:
             st, msg = self.w.processar(self._body(ext="tok_novo", pid="pay_novo", sub=None),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
-            email_send.enviar = orig_email
+            deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "ativado"))
         self.assertEqual(len(self.s.listar()), 1)           # reativou, não duplicou
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["id"], reg["id"])              # mesmo registro
         self.assertEqual(atual["status"], "ATIVO")
         self.assertTrue(self.s.tem_acesso(atual, agora=__import__("datetime").datetime(2026, 8, 1)))
-        self.assertEqual(len(self.enviados), 0)               # NÃO reenviou boas-vindas (WhatsApp)
-        # emails[*] pode incluir o aviso de "nova venda" pro admin (config.ADMIN_EMAIL);
-        # o que importa aqui é o que o CLIENTE recebeu.
-        do_cliente = [e for e in emails if e[0] == "e@x.com"]
-        self.assertEqual(len(do_cliente), 1)                  # e-mail de renovação, não boas-vindas
-        assunto, html = do_cliente[0][1], do_cliente[0][2]
-        import mensagens
-        self.assertNotEqual(assunto, mensagens.EMAIL_ASSUNTO_DEFAULT)   # não é o de boas-vindas
-        self.assertIn("/entrar", html)                        # link de ENTRAR, não de criar senha
-        self.assertNotIn("Criar minha senha", html)
+        self.assertEqual(len(self.enviados), 0)               # NÃO reenviou boas-vindas (link de criar senha)
+        self.assertEqual(len(wa), 1)                          # confirmação de renovação por WhatsApp
+        destino, texto = wa[0]
+        self.assertEqual(destino, "5543999998888")
+        self.assertIn("/minha", texto)
+        self.assertNotIn("<p>", texto)                        # texto plano, sem HTML
+        self.assertNotIn("Criar minha senha", texto)
 
     def test_recontratacao_apos_expirar_atualiza_valor_contratado(self):
         # ACHADO 1 (revisão): recontratação depois do acesso expirar também é
@@ -365,17 +363,22 @@ class TestProcessar(unittest.TestCase):
              "cpf": "11144477735", "plano": "anual", "valor_contratado": 897.30},
             {"customer": "cus_vc3", "payment": "pay_vc3_velho", "proximo_vencimento": "2025-07-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")   # expirado
-        import asaas
+        import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. VC3", "mobilePhone": "5543999990012",
                                            "email": "vc3@x.com", "cpfCnpj": "111.444.777-35"}
+        orig_wa = deliver.enviar_texto
+        # recontratação manda confirmação por WhatsApp (automatica=False) — sem mock
+        # aqui seria uma chamada de rede de verdade (deliver.enviar_texto).
+        deliver.enviar_texto = lambda w, m: None
         try:
             st, msg = self.w.processar(self._body_valor(ext="tokvc3", pid="pay_vc3_novo", value=497.00),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
+            deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "ativado"))
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["valor_contratado"], 497.00)      # atualizado, não ficou 897.30
@@ -464,27 +467,30 @@ class TestProcessar(unittest.TestCase):
              "cpf": "11144477735", "plano": "mensal"},
             {"customer": "cus_5", "payment": "pay_5_1", "proximo_vencimento": "2026-08-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
-        import asaas, email_send
+        import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. Pix5", "mobilePhone": "5543999990006",
                                            "email": "pix5@x.com", "cpfCnpj": "111.444.777-35"}
-        emails = []
-        orig_email = email_send.enviar
-        email_send.enviar = lambda to, assunto, html: emails.append((to, assunto, html))
+        wa = []
+        orig_wa = deliver.enviar_texto
+        deliver.enviar_texto = lambda w, m: wa.append((w, m))
         try:
             st, msg = self.w.processar(self._body(ext="tok5", pid="pay_5_2", sub=None),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
-            email_send.enviar = orig_email
+            deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["acesso_ate"], "2026-08-31")          # 01 ago + 30d, a partir do FIM ATUAL
         self.assertEqual(atual["proximo_vencimento"], "2026-08-31")
         self.assertEqual(atual["asaas_payment_id"], "pay_5_2")        # referência atualizada
-        self.assertEqual(len(emails), 1)                              # e-mail de confirmação enviado
+        # Recompra é manual (o assinante voltou e pagou de novo) -> confirmação por
+        # WhatsApp, não e-mail (decisão do Diego 2026-07-25).
+        self.assertEqual(len(wa), 1)
+        self.assertEqual(wa[0][0], "5543999990006")
         self.assertEqual(len(self.enviados), 0)                       # sem boas-vindas por WhatsApp
 
     def test_pix_recomprado_atualiza_valor_contratado(self):
@@ -496,17 +502,22 @@ class TestProcessar(unittest.TestCase):
              "cpf": "11144477735", "plano": "mensal", "valor_contratado": 97.00},
             {"customer": "cus_vc2", "payment": "pay_vc2_1", "proximo_vencimento": "2026-08-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
-        import asaas
+        import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. VC2", "mobilePhone": "5543999990011",
                                            "email": "vc2@x.com", "cpfCnpj": "111.444.777-35"}
+        orig_wa = deliver.enviar_texto
+        # recompra manda confirmação por WhatsApp (automatica=False) — sem mock aqui
+        # seria uma chamada de rede de verdade (deliver.enviar_texto).
+        deliver.enviar_texto = lambda w, m: None
         try:
             st, msg = self.w.processar(self._body_valor(ext="tokvc2", pid="pay_vc2_2", value=147.00),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
+            deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["valor_contratado"], 147.00)      # atualizado, não ficou 97.00
@@ -557,27 +568,28 @@ class TestProcessar(unittest.TestCase):
             email_send.enviar = orig_email
         self.assertEqual((st, msg), (200, "renovado"))
 
-    def test_falha_no_email_de_recontratacao_nao_derruba_ativacao(self):
-        # TESTE 8b (spec renovação): idem, no caminho de recontratação (ATIVAR).
+    def test_falha_no_whatsapp_de_recontratacao_nao_derruba_ativacao(self):
+        # TESTE 8b (spec renovação): idem, no caminho de recontratação (ATIVAR) — que
+        # agora manda a confirmação por WhatsApp (automatica=False), não e-mail.
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. F", "whatsapp": "5543999990004", "email": "f@x.com",
              "cpf": "11144477735", "plano": "anual"},
             {"customer": "cus_f", "payment": "pay_f_velho", "proximo_vencimento": "2025-07-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")
-        import asaas, email_send
+        import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
         asaas.obter_cliente = lambda cid: {"name": "Dr. F", "mobilePhone": "5543999990004",
                                            "email": "f@x.com", "cpfCnpj": "111.444.777-35"}
-        orig_email = email_send.enviar
-        email_send.enviar = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("smtp down"))
+        orig_wa = deliver.enviar_texto
+        deliver.enviar_texto = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("zapi down"))
         try:
             st, msg = self.w.processar(self._body(ext="tok_f", pid="pay_f_novo", sub=None),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
             self.cfg.ASAAS_API_KEY = None
-            email_send.enviar = orig_email
+            deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "ativado"))   # não quebrou a ativação
 
 

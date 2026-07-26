@@ -1553,6 +1553,14 @@ def pagina_assinar(plano_slug=None, erro=""):
         "Curadoria criteriosa + revisão médica",
         "PDF Objetivo de cada edição",
         "Arquivo completo no portal do assinante"))
+    # mensal saiu do Pix (2026-07-26): sem o tile, o rádio do cartão precisa vir
+    # `checked` — senão o formulário abriria sem forma de pagamento selecionada.
+    sem_pix = plano.get("aceita_pix") is False
+    tile_pix = ("" if sem_pix else
+                f'<label class="paytile"><input type="radio" name="metodo" value="PIX" checked>'
+                f'<span class="pt-ico">⚡</span><span class="pt-nome">Pix</span>'
+                f'<span class="pt-desc">{_esc(pix_desc)}</span></label>')
+    cartao_checked = " checked" if sem_pix else ""
     corpo = f"""
     <div class="wrap">
       <div class="sectag" style="margin-top:8px">Finalizar assinatura</div>
@@ -1576,9 +1584,8 @@ def pagina_assinar(plano_slug=None, erro=""):
               <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
             <label class="section-label">Forma de pagamento</label>
             <div class="paytiles">
-              <label class="paytile"><input type="radio" name="metodo" value="PIX" checked>
-                <span class="pt-ico">⚡</span><span class="pt-nome">Pix</span><span class="pt-desc">{_esc(pix_desc)}</span></label>
-              <label class="paytile"><input type="radio" name="metodo" value="CARTAO">
+              {tile_pix}
+              <label class="paytile"><input type="radio" name="metodo" value="CARTAO"{cartao_checked}>
                 <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
             </div>
             {parcelas_html}
@@ -1628,6 +1635,16 @@ def _data_br(iso):
         return f"{int(dd)} {_MESES[int(m)]} {a}"
     except Exception:
         return iso
+
+
+def _sem_html(texto):
+    """Texto plano a partir do corpo HTML — WhatsApp não renderiza tags (o corpo da
+    confirmação de renovação foi escrito para e-mail; mandar HTML cru pro WhatsApp
+    entrega <p>/<strong> na cara do assinante)."""
+    import re
+    t = re.sub(r"<br\s*/?>", "\n", texto or "")
+    t = re.sub(r"</p>", "\n\n", t)
+    return _html.unescape(re.sub(r"<[^>]+>", "", t)).strip()
 
 
 def _mes_nome(m):

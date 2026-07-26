@@ -98,10 +98,11 @@ class TestRender(unittest.TestCase):
 
     def test_assinar_form_mensal(self):
         h = self.s.pagina_assinar("mensal")
-        # redesign do checkout (fdb4898) separou nome/descrição em tiles: "Pix" +
-        # "R$ 99,00 à vista" (antes era um rótulo único "Pix à vista · ...").
-        self.assertIn('<span class="pt-nome">Pix</span>', h)
-        self.assertIn("à vista", h)
+        # mensal saiu do Pix (2026-07-26, aceita_pix=False): só cartão no checkout —
+        # sem o tile, o rádio do cartão vem `checked` (senão abriria sem forma
+        # de pagamento selecionada).
+        self.assertNotIn('value="PIX"', h)
+        self.assertIn('value="CARTAO" checked', h)
         self.assertIn("/mês · renova", h)                 # cartão mensal recorre (texto encurtado no redesign)
         self.assertIn('name="metodo"', h)
         self.assertIn('name="cupom"', h)
