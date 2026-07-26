@@ -229,6 +229,24 @@ def preparar_primeiro_acesso(whatsapp):
     return _link_senha(db.criar_token_senha(num, validade_horas=FIRST_ACCESS_TTL_H))
 
 
+def reenviar_boas_vindas_wa(assinante, enviar_fn=None):
+    """Reenvia SÓ a boas-vindas do WhatsApp (link novo de criar-senha, 7 dias).
+    Não dispara e-mail. Retorna (ok, detalhe) p/ o admin ver o resultado."""
+    import mensagens
+    whatsapp = (assinante or {}).get("whatsapp", "").strip()
+    if not whatsapp:
+        return (False, "assinante sem WhatsApp")
+    try:
+        link = preparar_primeiro_acesso(whatsapp)
+        texto = mensagens.wa_boas_vindas(link, assinante.get("nome", ""))
+        fn = enviar_fn or _enviar_padrao
+        fn(whatsapp, texto)
+        return (True, "")
+    except Exception as e:
+        print(f"[reenviar] boas-vindas WhatsApp falhou: {e}", flush=True)
+        return (False, str(e))
+
+
 def iniciar_definir_senha(whatsapp, motivo="reset", enviar_fn=None):
     """Cria token e envia o link (e-mail + WhatsApp). SEMPRE neutro p/ o usuário
     (anti-enumeração). Retorna True se havia assinante ativo (uso em teste)."""
