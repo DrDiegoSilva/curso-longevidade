@@ -25,6 +25,17 @@ class TestLegal(unittest.TestCase):
         texto = " ".join(secao[1] for secao in self.legal.TERMOS)
         self.assertIn("7 (sete) dias", texto)
 
+    def test_aviso_de_vencimento_nao_promete_so_email(self):
+        """B13 da revisão final #2: a cláusula dizia "Avisamos por e-mail antes do fim do
+        período". `billing_notices` só avisa quem tem `asaas_subscription_id` (cartão à
+        vista — o método em que nada expira); quem tem prazo para perder (Pix e cartão
+        parcelado) é avisado pela régua, cujas automações são de WhatsApp. Prometer só
+        e-mail era uma promessa que o sistema não cumpre para ninguém que precisa dela."""
+        texto = " ".join(secao[1] for secao in self.legal.TERMOS)
+        self.assertIn("antes do fim do período contratado", texto)
+        self.assertNotIn("Avisamos por e-mail antes do fim", texto)
+        self.assertIn("WhatsApp", texto)
+
     def test_termos_ressalvam_o_foro_do_consumidor(self):
         # eleição pura de foro contra consumidor é nula (CDC art. 51, IV c/c 101, I)
         texto = " ".join(secao[1] for secao in self.legal.TERMOS)

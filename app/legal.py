@@ -47,7 +47,12 @@ TERMOS = [
      "<li><strong>Pix:</strong> o pagamento é avulso e <strong>não renova automaticamente</strong>. "
      "Ao fim do período contratado o acesso se encerra, salvo nova contratação.</li>"
      "</ul>"
-     "<p>Avisamos por e-mail antes do fim do período contratado.</p>"),
+     # B13 da revisão final #2: dizia "por e-mail", que só acontece para cartão à vista
+     # (billing_notices exige asaas_subscription_id) — justamente o método em que nada
+     # expira. Quem tem prazo para perder (Pix e parcelado) é avisado pela régua, cujas
+     # automações são de WhatsApp. A cláusula agora diz o que o sistema de fato faz.
+     "<p>Avisamos antes do fim do período contratado, por e-mail e/ou WhatsApp, nos contatos "
+     "informados no cadastro.</p>"),
 
     ("Cancelamento da renovação",
      "<p>O assinante pode cancelar a renovação a qualquer momento, sem multa, pela área de conta "
