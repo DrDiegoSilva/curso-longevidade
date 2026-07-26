@@ -297,6 +297,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_login())
         if path == "/entrar-codigo":
             return self._html(site_web.pagina_entrar("numero"))
+        if path == "/entrar-cpf":
+            return self._html(site_web.pagina_login(via="cpf"))
+        if path == "/entrar-cpf-codigo":
+            return self._html(site_web.pagina_entrar("numero", via="cpf"))
         if path == "/primeiro-acesso":
             return self._html(site_web.pagina_recuperar("primeiro"))
         if path == "/esqueci":
@@ -598,6 +602,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                   erro="Código inválido ou expirado. Tente novamente."))
             auth_web.iniciar_login(wpp)  # neutro: só envia se for assinante ATIVO
             return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
+        if path == "/entrar-cpf":
+            if not self._rate_ok("login", 15, 300):
+                return
+            import site_web, auth_web
+            doc = g("cpf")
+            status, token = auth_web.login_senha_cpf(doc, g("senha"))
+            if status == "ok":
+                return self._redirect("/artigos", token=token)
+            if status == "sem_senha":
+                return self._html(site_web.pagina_login(sem_senha=True, whatsapp=doc, via="cpf"))
+            return self._html(site_web.pagina_login(erro="CPF ou senha incorretos.", whatsapp=doc, via="cpf"))
+        if path == "/entrar-cpf-codigo":
+            if not self._rate_ok("otp", 5, 600):
+                return
+            import site_web, auth_web
+            doc = g("cpf")
+            if g("etapa") == "codigo":
+                token = auth_web.verificar_cpf(doc, g("codigo"))
+                if token:
+                    return self._redirect("/artigos", token=token)
+                return self._html(site_web.pagina_entrar("codigo", whatsapp=doc, via="cpf",
+                                  erro="Código inválido ou expirado. Tente novamente."))
+            auth_web.iniciar_login_cpf(doc)  # neutro: só envia se achar assinante ativo
+            return self._html(site_web.pagina_entrar("codigo", whatsapp=doc, via="cpf"))
         if path in ("/primeiro-acesso", "/esqueci"):
             if not self._rate_ok("recover", 5, 600):   # 5 pedidos / 10 min por IP
                 return
