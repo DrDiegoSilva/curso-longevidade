@@ -44,6 +44,19 @@ class TestPaginaAutomacoes(unittest.TestCase):
                                                automacoes=[], token="t")
         self.assertIn("salvar_automacao", html)
 
+    def test_pagina_mostra_o_bonus_de_resgate_atual(self):
+        # Campo numérico do bônus de resgate, na seção "Régua de renovação", com o
+        # valor atual (o que está salvo, ou o default 30) e a explicação da regra.
+        import site_web
+        html = site_web.pagina_admin_mensagens(
+            "wa", "a", "c", "ra", "rc", automacoes=self.db.listar_automacoes(),
+            token="t", bonus_resgate_dias=15)
+        self.assertIn("salvar_bonus_resgate", html)
+        self.assertIn('name="bonus_resgate_dias"', html)
+        self.assertIn('value="15"', html)
+        self.assertIn("perdido o acesso", html)     # explica a regra pro Diego
+        self.assertIn("Régua de renovação", html)
+
     def test_escape_de_payload_xss_no_texto_da_automacao(self):
         """Verifica que payloads de script no campo texto são escapados.
 

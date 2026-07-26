@@ -391,6 +391,95 @@ class TestProcessar(unittest.TestCase):
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["valor_contratado"], 497.00)      # atualizado, não ficou 897.30
 
+    # ── Bônus de resgate configurável (Diego edita em /admin/mensagens) ──
+    def test_bonus_resgate_configurado_em_15_aplica_a_quem_perdeu_acesso(self):
+        # Diego salvou 15 na tela -> quem paga depois de já ter perdido o acesso
+        # ganha 15 dias de bônus somados ao ciclo (mensal = 30), não mais o 30 fixo.
+        import mensagens
+        self.db.set_config(mensagens.K_BONUS_RESGATE_DIAS, "15")
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. B15", "whatsapp": "5543999990030", "email": "b15@x.com",
+             "cpf": "11144477735", "plano": "mensal"},
+            {"customer": "cus_b15", "payment": "pay_b15_1", "proximo_vencimento": "2025-07-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")   # expirado
+        import asaas, deliver
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. B15", "mobilePhone": "5543999990030",
+                                           "email": "b15@x.com", "cpfCnpj": "111.444.777-35"}
+        orig_wa = deliver.enviar_texto
+        deliver.enviar_texto = lambda w, m: None
+        try:
+            st, msg = self.w.processar(self._body(ext="tokb15", pid="pay_b15_2", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            deliver.enviar_texto = orig_wa
+        self.assertEqual((st, msg), (200, "ativado"))
+        atual = self.s.por_id(reg["id"])
+        from datetime import date, timedelta
+        esperado = (date.today() + timedelta(days=30 + 15)).isoformat()   # ciclo (30) + bônus (15)
+        self.assertEqual(atual["acesso_ate"], esperado)
+
+    def test_bonus_resgate_configurado_em_zero_nao_da_bonus_a_ninguem(self):
+        # Diego salvou 0 -> desligou o bônus; quem perdeu o acesso recebe só o ciclo.
+        import mensagens
+        self.db.set_config(mensagens.K_BONUS_RESGATE_DIAS, "0")
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. B0", "whatsapp": "5543999990031", "email": "b0@x.com",
+             "cpf": "11144477735", "plano": "mensal"},
+            {"customer": "cus_b0", "payment": "pay_b0_1", "proximo_vencimento": "2025-07-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")   # expirado
+        import asaas, deliver
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. B0", "mobilePhone": "5543999990031",
+                                           "email": "b0@x.com", "cpfCnpj": "111.444.777-35"}
+        orig_wa = deliver.enviar_texto
+        deliver.enviar_texto = lambda w, m: None
+        try:
+            st, msg = self.w.processar(self._body(ext="tokb0", pid="pay_b0_2", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            deliver.enviar_texto = orig_wa
+        self.assertEqual((st, msg), (200, "ativado"))
+        atual = self.s.por_id(reg["id"])
+        from datetime import date, timedelta
+        esperado = (date.today() + timedelta(days=30)).isoformat()   # só o ciclo, sem bônus
+        self.assertEqual(atual["acesso_ate"], esperado)
+
+    def test_bonus_resgate_configurado_nao_afeta_quem_renova_em_dia(self):
+        # Mesmo com um bônus grande configurado, quem recompra com acesso AINDA
+        # vigente não ganha nada — a regra de "só quem perdeu o acesso" continua
+        # dentro de renovacao.novo_vencimento, e não muda com o valor configurado.
+        import mensagens
+        self.db.set_config(mensagens.K_BONUS_RESGATE_DIAS, "999")
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. EmDia", "whatsapp": "5543999990032", "email": "emdia@x.com",
+             "cpf": "11144477735", "plano": "mensal"},
+            {"customer": "cus_ed", "payment": "pay_ed_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+        import asaas, deliver
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. EmDia", "mobilePhone": "5543999990032",
+                                           "email": "emdia@x.com", "cpfCnpj": "111.444.777-35"}
+        orig_wa = deliver.enviar_texto
+        deliver.enviar_texto = lambda w, m: None
+        try:
+            st, msg = self.w.processar(self._body(ext="toked", pid="pay_ed_2", sub=None),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+            deliver.enviar_texto = orig_wa
+        self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["acesso_ate"], "2026-08-31")   # 01 ago + 30d, SEM o bônus de 999
+
     def test_renovar_normal_envia_email_de_renovacao_em_pt_br(self):
         # TESTE 1 (spec renovação): cartão à vista renovando sozinho cobra o cliente
         # de novo sem avisar nada hoje — cobrança muda é exatamente o que gera "não

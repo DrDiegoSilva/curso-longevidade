@@ -76,6 +76,27 @@ class TestMensagens(unittest.TestCase):
         assunto, html = self.m.email_renovacao("Bia", "20 ago 2026", "http://LINKSEGURO")
         self.assertIn("http://LINKSEGURO", html)
 
+    # ── Bônus de resgate (Task 8/Projeto F) — configurável na tela de mensagens ──
+    def test_bonus_resgate_default_e_30_sem_nada_salvo(self):
+        self.assertEqual(self.m.bonus_resgate_dias(), 30)
+
+    def test_bonus_resgate_le_valor_salvo(self):
+        self.db.set_config(self.m.K_BONUS_RESGATE_DIAS, "15")
+        self.assertEqual(self.m.bonus_resgate_dias(), 15)
+
+    def test_bonus_resgate_zero_e_aceito_como_desligado(self):
+        # 0 é um valor legítimo (Diego quer desligar o bônus) — não pode cair no default.
+        self.db.set_config(self.m.K_BONUS_RESGATE_DIAS, "0")
+        self.assertEqual(self.m.bonus_resgate_dias(), 0)
+
+    def test_bonus_resgate_texto_invalido_cai_no_default(self):
+        self.db.set_config(self.m.K_BONUS_RESGATE_DIAS, "abc")
+        self.assertEqual(self.m.bonus_resgate_dias(), 30)
+
+    def test_bonus_resgate_negativo_cai_no_default(self):
+        self.db.set_config(self.m.K_BONUS_RESGATE_DIAS, "-5")
+        self.assertEqual(self.m.bonus_resgate_dias(), 30)
+
 
 if __name__ == "__main__":
     unittest.main()

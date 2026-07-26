@@ -231,7 +231,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.get_config(mensagens.K_EMAIL_RENOV_ASSUNTO, mensagens.EMAIL_RENOV_ASSUNTO_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_RENOV_CORPO, mensagens.EMAIL_RENOV_CORPO_DEFAULT),
                 config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0],
-                automacoes=db.listar_automacoes()), 200)
+                automacoes=db.listar_automacoes(),
+                bonus_resgate_dias=mensagens.bonus_resgate_dias()), 200)
         if path == "/admin/envio":
             import config, site_web, auth_web, db, daily
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -531,6 +532,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     pass          # dias não numérico: ignora em vez de derrubar a tela
             if g("acao") == "remover_automacao":
                 db.remover_automacao(g("id"))
+            if g("acao") == "salvar_bonus_resgate":
+                try:
+                    dias = int(g("bonus_resgate_dias") or 0)
+                    if dias >= 0:
+                        db.set_config(mensagens.K_BONUS_RESGATE_DIAS, str(dias))
+                except (TypeError, ValueError):
+                    pass          # valor não numérico: ignora, mantém o que já estava salvo
             return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
                                   if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
         if path == "/admin/envio":

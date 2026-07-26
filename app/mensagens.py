@@ -17,6 +17,7 @@ K_EMAIL_ASSUNTO = "email_boas_vindas_assunto"
 K_EMAIL_CORPO = "email_boas_vindas_corpo"
 K_EMAIL_RENOV_ASSUNTO = "email_renovacao_assunto"
 K_EMAIL_RENOV_CORPO = "email_renovacao_corpo"
+K_BONUS_RESGATE_DIAS = "bonus_resgate_dias"
 
 WA_DEFAULT = (
     "✅ Assinatura confirmada — bem-vindo(a) à *Atualização Científica*!\n\n"
@@ -45,6 +46,27 @@ EMAIL_RENOV_CORPO_DEFAULT = (
     "Recebemos seu pagamento e sua assinatura da Atualização Científica segue ativa — "
     "seu acesso vale até {ate}.\n\n"
     "Para entrar na sua conta e ver os estudos já enviados, acesse:\n{link}")
+
+# Bônus de resgate (Task 8/Projeto F): dias somados ao ciclo comprado quando quem paga
+# JÁ tinha perdido o acesso — quem renova em dia não ganha nada (a decisão de aplicar
+# ou não continua em renovacao.novo_vencimento). Editável na tela /admin/mensagens,
+# seção "Régua de renovação"; era um literal 30 fixo no webhook antes desta chave existir.
+BONUS_RESGATE_DIAS_DEFAULT = 30
+
+
+def bonus_resgate_dias():
+    """Lê o bônus de resgate configurado (em dias), validando o que veio do banco.
+
+    Zero é um valor legítimo — o Diego pode querer desligar o bônus sem apagar a
+    chave. Já ausente, não numérico ou negativo cai no default de 30: o chamador
+    (webhook_asaas) usa este número direto em renovacao.novo_vencimento, então ele
+    nunca pode chegar lá como lixo (isso furaria o cálculo de vencimento)."""
+    bruto = db.get_config(K_BONUS_RESGATE_DIAS, BONUS_RESGATE_DIAS_DEFAULT)
+    try:
+        dias = int(str(bruto).strip())
+    except (TypeError, ValueError):
+        return BONUS_RESGATE_DIAS_DEFAULT
+    return dias if dias >= 0 else BONUS_RESGATE_DIAS_DEFAULT
 
 
 def _garante_link(texto):

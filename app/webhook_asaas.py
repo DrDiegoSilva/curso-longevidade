@@ -130,6 +130,7 @@ def _executar(event, pay, pid, enviar_fn):
     """Aplica a ação do evento. Pode levantar exceção — o chamador (`processar`)
     desfaz a idempotência e alerta o admin nesse caso, p/ o Asaas re-tentar."""
     import phone
+    import mensagens
     sid = pay.get("subscription")
     sub = subscribers.por_subscription(sid)
     acao = decidir(event, sub is not None)
@@ -200,11 +201,12 @@ def _executar(event, pay, pid, enviar_fn):
             # Sem tratar isso à parte, o pagamento seria engolido em silêncio: não
             # estenderia o acesso e o dinheiro simplesmente sumiria. `novo_vencimento`
             # decide sozinho a regra (Task 8): acesso ainda vigente -> estende a partir do
-            # FIM ATUAL, SEM bônus (renovar em dia não ganha o mês de resgate — só quem já
-            # perdeu o acesso). bonus_dias=30 sempre: é a função quem decide se aplica.
+            # FIM ATUAL, SEM bônus (renovar em dia não ganha o resgate — só quem já perdeu
+            # o acesso). Passa sempre o valor configurado (editável em /admin/mensagens,
+            # default 30) — é a função quem decide se aplica, não o chamador.
             dias_ciclo = _CICLO_DIAS.get(plano.get("cycle", "MONTHLY"), 30)
             novo_fim = novo_vencimento(existente.get("acesso_ate"), date.today(),
-                                       dias_ciclo, bonus_dias=30).isoformat()
+                                       dias_ciclo, bonus_dias=mensagens.bonus_resgate_dias()).isoformat()
             # valor_contratado atualizado pro valor deste pagamento: renovacao.preco_renovacao
             # usa esse campo pra cobrar o preço que o assinante de fato contratou (ex.:
             # founder) em vez do preço de tabela — sem regravar aqui, uma recompra em outro
@@ -223,14 +225,15 @@ def _executar(event, pay, pid, enviar_fn):
             # Acesso já tinha acabado (ex.: Pix anual vencido) e o cliente comprou de
             # novo -> recontratação legítima. Reativa o registro existente em vez de
             # criar outro (mantém o histórico do assinante num id só). `novo_vencimento`
-            # conta de HOJE (o acesso não está mais vigente) e aplica os 30 dias de bônus
-            # de resgate (Task 8) — é exatamente o caso que ele existe pra cobrir.
+            # conta de HOJE (o acesso não está mais vigente) e aplica o bônus de resgate
+            # (Task 8) — é exatamente o caso que ele existe pra cobrir. O número de dias
+            # é o configurado em /admin/mensagens (default 30 quando ausente/inválido).
             # acesso_ate segue a mesma regra de sempre: só grava quando NÃO há
             # subscription (Pix avulso); no cartão o próprio ciclo recorrente controla
             # o acesso.
             dias_ciclo = _CICLO_DIAS.get(plano.get("cycle", "MONTHLY"), 30)
             prox = novo_vencimento(existente.get("acesso_ate"), date.today(),
-                                  dias_ciclo, bonus_dias=30).isoformat()
+                                  dias_ciclo, bonus_dias=mensagens.bonus_resgate_dias()).isoformat()
             # valor_contratado atualizado pro valor deste pagamento — mesma razão do
             # ramo de recompra acima: sem isso a recontratação meses depois, a um preço
             # diferente, deixaria o campo com o valor antigo (ou nulo) e a renovação

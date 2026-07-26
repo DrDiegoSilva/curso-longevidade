@@ -742,11 +742,12 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
 
 
 def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="",
-                           email_renov_corpo="", token="", msg="", automacoes=None):
+                           email_renov_corpo="", token="", msg="", automacoes=None,
+                           bonus_resgate_dias=30):
     """Editor das mensagens de boas-vindas (WhatsApp + e-mail), da confirmação de
     renovação/recontratação (só e-mail — texto único pros dois casos) e da régua de
     renovação (automações por dias-do-vencimento, criadas/editadas/removidas aqui —
-    sem depender de programador)."""
+    sem depender de programador — e o bônus de resgate em dias)."""
     tk = _esc(token)
     aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
              if msg else "")
@@ -792,12 +793,26 @@ def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="
         f'<button class="cta" type="submit" name="acao" value="salvar_automacao">Adicionar</button>'
         f'</form>')
 
+    secao_bonus = (
+        f'<form method="post" action="/admin/mensagens" style="border:1px solid #2a4a3c;'
+        f'border-radius:10px;padding:12px;margin:10px 0 18px">'
+        f'<input type="hidden" name="token" value="{tk}">'
+        f'<input type="hidden" name="acao" value="salvar_bonus_resgate">'
+        f'<label>🎁 Bônus de resgate <input type="number" min="0" name="bonus_resgate_dias" '
+        f'value="{int(bonus_resgate_dias)}" style="width:90px"> dias</label>'
+        f'<p class="hint" style="margin-top:6px">Só vale pra quem paga <b>depois</b> de já ter '
+        f'perdido o acesso — esses dias são somados ao período comprado. Quem renova em dia '
+        f'não ganha nada.</p>'
+        f'<button class="cta" type="submit">Salvar bônus</button>'
+        f'</form>')
+
     secao_auto = (
         f'<h3 style="color:var(--creme);margin-top:28px">Régua de renovação</h3>'
         f'<p class="hint">Só alcança o plano anual sem renovação automática (Pix e cartão '
         f'parcelado). <b>Dias</b>: negativo antes do vencimento (-7 = sete dias antes), '
         f'0 no dia, positivo depois (+15 = quinze dias depois). '
         f'Marcadores: <code>{{nome}}</code>, <code>{{ate}}</code>, <code>{{link}}</code>.</p>'
+        f'{secao_bonus}'
         f'{linhas_auto}{nova_auto}')
     corpo = f"""
     <div class="wrap">
