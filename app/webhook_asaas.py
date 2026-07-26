@@ -2,15 +2,18 @@
 `decidir` é puro/testável; `processar` orquestra (db + subscribers + WhatsApp).
 """
 import hmac
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import config
 import db
 import subscribers
 import refunds
 
 CARENCIA_DIAS = 3
-# Fonte única do mapa de ciclos (o renovacao.py também usa) — evita as duas cópias divergirem.
-from renovacao import CICLO_DIAS as _CICLO_DIAS
+# Fonte única do mapa de ciclos E da regra do bônus de resgate — ambos vêm do
+# renovacao.py, que é a ÚNICA implementação dessa regra (Task 8: antes havia uma
+# segunda cópia, inline aqui, de "está no futuro?" + _proximo_venc, divergente da
+# de renovacao.novo_vencimento — foi removida).
+from renovacao import CICLO_DIAS as _CICLO_DIAS, novo_vencimento
 
 
 def decidir(event, sub_existe):
@@ -31,16 +34,6 @@ def _proximo_venc(cycle, ref=None):
     except Exception:
         base = datetime.now()
     return (base + timedelta(days=_CICLO_DIAS.get(cycle, 30))).date().isoformat()
-
-
-def _no_futuro(iso):
-    """True se `iso` (data/hora ISO) ainda não passou. Usado pra decidir se o fim do
-    acesso atual vale como base pra estender (recompra de Pix antes de vencer) ou se
-    já passou e a extensão deve contar a partir de agora."""
-    try:
-        return bool(iso) and datetime.fromisoformat(iso) > datetime.now()
-    except (TypeError, ValueError):
-        return False
 
 
 def _confirmar_renovacao(sub, vencimento, automatica=True):
@@ -159,8 +152,15 @@ def _executar(event, pay, pid, enviar_fn):
         # buscar pelo token, casa o pending pelo CPF do cliente Asaas (recupera o afiliado).
         pending = (db.obter_pending(pay.get("externalReference"))
                    or db.obter_pending_por_cpf(cust.get("cpfCnpj")))
+        # Sem ASAAS_API_KEY (ou se a consulta ao Asaas falhar), `cust` fica vazio e uma
+        # recompra/recontratação de quem JÁ é assinante ficaria bloqueada aqui por "falta"
+        # de WhatsApp — mesmo já tendo o telefone dele gravado. Acha o assinante pelo CPF
+        # do próprio pagamento (Pix avulso manda `cpfCnpj` nele, sem precisar da API) e usa
+        # o WhatsApp já em arquivo como último fallback.
+        _existente_por_cpf = subscribers.por_cpf(cust.get("cpfCnpj") or pay.get("cpfCnpj") or "")
         whatsapp = phone.normalizar(cust.get("mobilePhone") or cust.get("phone")
-                                    or (pending or {}).get("whatsapp") or "")
+                                    or (pending or {}).get("whatsapp")
+                                    or (_existente_por_cpf or {}).get("whatsapp") or "")
         if not whatsapp:
             print("[webhook] ATIVAR sem whatsapp — pulei", flush=True)
             _alertar_admin(pid, sid, "pagamento confirmado mas SEM WhatsApp p/ ativar — ative manualmente")
@@ -198,12 +198,13 @@ def _executar(event, pay, pid, enviar_fn):
             # Pix não tem parcelamento — se chegou aqui (CPF/WhatsApp já é assinante com
             # acesso vigente) é porque ele comprou OUTRO período antes do atual vencer.
             # Sem tratar isso à parte, o pagamento seria engolido em silêncio: não
-            # estenderia o acesso e o dinheiro simplesmente sumiria. Estende a partir do
-            # FIM do acesso atual (se ainda no futuro) — nunca de hoje, senão o
-            # assinante perderia os dias que já tinha pago e ainda não usou.
-            fim_atual = existente.get("acesso_ate")
-            novo_fim = _proximo_venc(plano.get("cycle", "MONTHLY"),
-                                     fim_atual if _no_futuro(fim_atual) else None)
+            # estenderia o acesso e o dinheiro simplesmente sumiria. `novo_vencimento`
+            # decide sozinho a regra (Task 8): acesso ainda vigente -> estende a partir do
+            # FIM ATUAL, SEM bônus (renovar em dia não ganha o mês de resgate — só quem já
+            # perdeu o acesso). bonus_dias=30 sempre: é a função quem decide se aplica.
+            dias_ciclo = _CICLO_DIAS.get(plano.get("cycle", "MONTHLY"), 30)
+            novo_fim = novo_vencimento(existente.get("acesso_ate"), date.today(),
+                                       dias_ciclo, bonus_dias=30).isoformat()
             # valor_contratado atualizado pro valor deste pagamento: renovacao.preco_renovacao
             # usa esse campo pra cobrar o preço que o assinante de fato contratou (ex.:
             # founder) em vez do preço de tabela — sem regravar aqui, uma recompra em outro
@@ -221,9 +222,15 @@ def _executar(event, pay, pid, enviar_fn):
         if existente:
             # Acesso já tinha acabado (ex.: Pix anual vencido) e o cliente comprou de
             # novo -> recontratação legítima. Reativa o registro existente em vez de
-            # criar outro (mantém o histórico do assinante num id só). acesso_ate
-            # segue a mesma regra de sempre: só grava quando NÃO há subscription (Pix
-            # avulso); no cartão o próprio ciclo recorrente controla o acesso.
+            # criar outro (mantém o histórico do assinante num id só). `novo_vencimento`
+            # conta de HOJE (o acesso não está mais vigente) e aplica os 30 dias de bônus
+            # de resgate (Task 8) — é exatamente o caso que ele existe pra cobrir.
+            # acesso_ate segue a mesma regra de sempre: só grava quando NÃO há
+            # subscription (Pix avulso); no cartão o próprio ciclo recorrente controla
+            # o acesso.
+            dias_ciclo = _CICLO_DIAS.get(plano.get("cycle", "MONTHLY"), 30)
+            prox = novo_vencimento(existente.get("acesso_ate"), date.today(),
+                                  dias_ciclo, bonus_dias=30).isoformat()
             # valor_contratado atualizado pro valor deste pagamento — mesma razão do
             # ramo de recompra acima: sem isso a recontratação meses depois, a um preço
             # diferente, deixaria o campo com o valor antigo (ou nulo) e a renovação
