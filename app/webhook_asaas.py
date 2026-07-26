@@ -9,8 +9,8 @@ import subscribers
 import refunds
 
 CARENCIA_DIAS = 3
-_CICLO_DIAS = {"WEEKLY": 7, "BIWEEKLY": 14, "MONTHLY": 30, "BIMONTHLY": 61,
-               "QUARTERLY": 91, "SEMIANNUALLY": 182, "YEARLY": 365}
+# Fonte única do mapa de ciclos (o renovacao.py também usa) — evita as duas cópias divergirem.
+from renovacao import CICLO_DIAS as _CICLO_DIAS
 
 
 def decidir(event, sub_existe):
