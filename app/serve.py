@@ -965,7 +965,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, legal, cpf as cpfval
+        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
@@ -1016,7 +1016,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect("/obrigado")
         # Pagamento via checkout Asaas
         n_ativos = len(subscribers.ativos())
-        base_vig = pricing.preco_vigente(plano, n_ativos)
+        # `ja` truthy e chegou até aqui = existe, mas SEM acesso vigente (quem tem
+        # acesso já foi bloqueado acima) — é recontratação, não venda nova. Cobra o
+        # valor que o assinante CONTRATOU (renovacao.preco_renovacao), não o de tabela
+        # do momento: é a mesma promessa da cláusula 2 dos termos ("pelo mesmo valor
+        # contratado"), só que pela porta pública em vez da /renovar autenticada.
+        base_vig = renovacao.preco_renovacao(ja, plano) if ja else pricing.preco_vigente(plano, n_ativos)
         # Cupom de afiliado: 10% off na 1ª venda + atribuição (segue pro checkout PAGO)
         af = db.afiliado_por_codigo(cupom) if cupom else None
         af_codigo = af["codigo"] if af else ""
