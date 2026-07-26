@@ -59,6 +59,17 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(len(self.s.ativos()), 1)
         self.assertEqual(len(self.enviados), 1)      # boas-vindas
 
+    def test_ativar_novo_assinante_grava_valor_contratado(self):
+        # ACHADO 1 (revisão): valor_contratado precisa refletir o que o assinante de
+        # fato pagou (não o preço de tabela) — renovacao.preco_renovacao lê esse campo
+        # pra cobrar certo na renovação seguinte. Caminho de assinante 100% novo.
+        tok = self.db.criar_pending({"nome": "Dr. V1", "whatsapp": "5543999990010",
+                                     "email": "v1@x.com", "plano": "anual", "metodo": "PIX"})
+        st, msg = self.w.processar(self._body_valor(ext=tok, value=947.00), "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        reg = self.s.por_whatsapp("5543999990010")
+        self.assertEqual(reg["valor_contratado"], 947.00)
+
     def test_ativar_pix_grava_acesso_ate_no_vencimento(self):
         # CORREÇÃO 1: Pix é pagamento avulso (DETACHED) — não existe assinatura
         # recorrente que gere um PAYMENT_OVERDUE quando o período acabar, e não há
@@ -346,6 +357,29 @@ class TestProcessar(unittest.TestCase):
         self.assertIn("/entrar", html)                        # link de ENTRAR, não de criar senha
         self.assertNotIn("Criar minha senha", html)
 
+    def test_recontratacao_apos_expirar_atualiza_valor_contratado(self):
+        # ACHADO 1 (revisão): recontratação depois do acesso expirar também é
+        # assinante EXISTENTE — mesma razão da recompra de Pix acima.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. VC3", "whatsapp": "5543999990012", "email": "vc3@x.com",
+             "cpf": "11144477735", "plano": "anual", "valor_contratado": 897.30},
+            {"customer": "cus_vc3", "payment": "pay_vc3_velho", "proximo_vencimento": "2025-07-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")   # expirado
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. VC3", "mobilePhone": "5543999990012",
+                                           "email": "vc3@x.com", "cpfCnpj": "111.444.777-35"}
+        try:
+            st, msg = self.w.processar(self._body_valor(ext="tokvc3", pid="pay_vc3_novo", value=497.00),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+        self.assertEqual((st, msg), (200, "ativado"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["valor_contratado"], 497.00)      # atualizado, não ficou 897.30
+
     def test_renovar_normal_envia_email_de_renovacao_em_pt_br(self):
         # TESTE 1 (spec renovação): cartão à vista renovando sozinho cobra o cliente
         # de novo sem avisar nada hoje — cobrança muda é exatamente o que gera "não
@@ -452,6 +486,30 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(atual["asaas_payment_id"], "pay_5_2")        # referência atualizada
         self.assertEqual(len(emails), 1)                              # e-mail de confirmação enviado
         self.assertEqual(len(self.enviados), 0)                       # sem boas-vindas por WhatsApp
+
+    def test_pix_recomprado_atualiza_valor_contratado(self):
+        # ACHADO 1 (revisão): recompra de Pix ANTES de vencer é assinante EXISTENTE —
+        # sem regravar valor_contratado aqui, um assinante que volta pagando um preço
+        # diferente ficaria com o valor antigo, e a renovação seguinte cobraria errado.
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. VC2", "whatsapp": "5543999990011", "email": "vc2@x.com",
+             "cpf": "11144477735", "plano": "mensal", "valor_contratado": 97.00},
+            {"customer": "cus_vc2", "payment": "pay_vc2_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig_cli = asaas.obter_cliente
+        asaas.obter_cliente = lambda cid: {"name": "Dr. VC2", "mobilePhone": "5543999990011",
+                                           "email": "vc2@x.com", "cpfCnpj": "111.444.777-35"}
+        try:
+            st, msg = self.w.processar(self._body_valor(ext="tokvc2", pid="pay_vc2_2", value=147.00),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            asaas.obter_cliente = orig_cli
+            self.cfg.ASAAS_API_KEY = None
+        self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["valor_contratado"], 147.00)      # atualizado, não ficou 97.00
 
     def test_parcela_cartao_com_acesso_vigente_nao_estende_nem_envia_email(self):
         # TESTE 6 (protege dinheiro): parcela de um cartão parcelado (`installment`

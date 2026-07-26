@@ -190,8 +190,13 @@ def _executar(event, pay, pid, enviar_fn):
             fim_atual = existente.get("acesso_ate")
             novo_fim = _proximo_venc(plano.get("cycle", "MONTHLY"),
                                      fim_atual if _no_futuro(fim_atual) else None)
+            # valor_contratado atualizado pro valor deste pagamento: renovacao.preco_renovacao
+            # usa esse campo pra cobrar o preço que o assinante de fato contratou (ex.:
+            # founder) em vez do preço de tabela — sem regravar aqui, uma recompra em outro
+            # valor deixaria o campo desatualizado e a renovação seguinte cobraria errado.
             subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
-                                      acesso_ate=novo_fim, proximo_vencimento=novo_fim)
+                                      acesso_ate=novo_fim, proximo_vencimento=novo_fim,
+                                      valor_contratado=pay.get("value"))
             _confirmar_renovacao(existente.get("email") or email, existente.get("nome") or nome, novo_fim)
             return (200, "pix-recomprado-estendido")
 
@@ -201,8 +206,13 @@ def _executar(event, pay, pid, enviar_fn):
             # criar outro (mantém o histórico do assinante num id só). acesso_ate
             # segue a mesma regra de sempre: só grava quando NÃO há subscription (Pix
             # avulso); no cartão o próprio ciclo recorrente controla o acesso.
+            # valor_contratado atualizado pro valor deste pagamento — mesma razão do
+            # ramo de recompra acima: sem isso a recontratação meses depois, a um preço
+            # diferente, deixaria o campo com o valor antigo (ou nulo) e a renovação
+            # seguinte cobraria errado.
             subscribers.marcar_status(existente["id"], "ATIVO", proximo_vencimento=prox,
-                                      acesso_ate=(prox if not sid else None))
+                                      acesso_ate=(prox if not sid else None),
+                                      valor_contratado=pay.get("value"))
             reg = existente
         else:
             reg = subscribers.criar_de_pagamento(
