@@ -207,6 +207,14 @@ def _executar(event, pay, pid, enviar_fn):
         prox = _proximo_venc(plano.get("cycle", "MONTHLY"), pay.get("dueDate"))
         nome = cust.get("name") or (pending or {}).get("nome", "")
         email = cust.get("email") or (pending or {}).get("email", "")
+        # B1/B2 da revisão final #2: a base contratada vem do PENDING, nunca de
+        # `pay["value"]`. No cartão parcelado `value` é UMA parcela (o anual em 12x
+        # renovaria por R$ 91,58 em vez de R$ 1.099) e no Pix já vem com os 5% de desconto,
+        # que a renovação reaplica (o preço derretia 5% por ciclo). Quando a base é
+        # desconhecida (pending antigo, ou pending não encontrado), NÃO grava nada: a
+        # renovação cai no preço de tabela, que é o certo, em vez de um valor inventado.
+        base_contratada = (pending or {}).get("valor_base")
+        extra_valor = {"valor_contratado": base_contratada} if base_contratada else {}
 
         if existente and subscribers.tem_acesso(existente):
             # Mesmo critério de refunds.alvo_estorno: `installment` preenchido = parcela
@@ -254,7 +262,7 @@ def _executar(event, pay, pid, enviar_fn):
             extra_sub = {"asaas_subscription_id": sid} if sid else {}
             subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
                                       acesso_ate=(None if sid else novo_fim), proximo_vencimento=novo_fim,
-                                      valor_contratado=pay.get("value"), **extra_sub)
+                                      **extra_valor, **extra_sub)
             # Recompra é manual (o assinante voltou e pagou de novo) -> WhatsApp.
             _confirmar_renovacao({"email": existente.get("email") or email,
                                   "nome": existente.get("nome") or nome,
@@ -296,15 +304,16 @@ def _executar(event, pay, pid, enviar_fn):
             extra_sub = {"asaas_subscription_id": sid} if sid else {}
             subscribers.marcar_status(existente["id"], "ATIVO", proximo_vencimento=prox,
                                       acesso_ate=(prox if not sid else None),
-                                      valor_contratado=pay.get("value"),
-                                      cancelado_em=None, cancel_motivo=None, **extra_sub)
+                                      cancelado_em=None, cancel_motivo=None,
+                                      **extra_valor, **extra_sub)
             reg = existente
         else:
             reg = subscribers.criar_de_pagamento(
                 {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", ""),
+                 "cpf": cpf_cliente,
                  "termos_versao": (pending or {}).get("termos_versao", ""),
                  "termos_ip": (pending or {}).get("termos_ip", ""),
-                 "valor_contratado": pay.get("value")},
+                 "valor_contratado": base_contratada},
                 {"customer": pay.get("customer"), "subscription": sid, "payment": pid,
                  "proximo_vencimento": prox})
             if not sid:
@@ -339,9 +348,15 @@ def _executar(event, pay, pid, enviar_fn):
                 print(f"[webhook] afiliado_por_codigo falhou: {e}", flush=True)
                 af = None
         valor_comissao = None
+        # Valor da VENDA (total pago pelo cliente), não do evento: no cartão parcelado o Asaas
+        # confirma parcela por parcela, e `pay["value"]` é 1/12. Como a comissão sai só na 1ª
+        # venda, o erro nunca se corrigia depois — o afiliado recebia 3% de uma parcela.
+        # `pending["valor"]` é o total já com cupom/desconto de método aplicado, que é
+        # exatamente a base da comissão. Sem pending, resta o valor do evento.
+        valor_venda_total = float((pending or {}).get("valor") or pay.get("value") or 0)
         if af:
             import pricing
-            valor_venda = float(pay.get("value") or 0)
+            valor_venda = valor_venda_total
             try:
                 comissao_calc = pricing.comissao(valor_venda, af["pct_comissao"])
                 db.registrar_comissao(af["id"], reg["id"], plano.get("slug", ""), valor_venda, comissao_calc)
@@ -352,7 +367,7 @@ def _executar(event, pay, pid, enviar_fn):
                                          f"R$ {valor_venda} mas NÃO consegui registrar a comissão — registre manualmente")
         try:
             _avisar_venda(nome, (plano.get("nome") or plano.get("slug") or "—"),
-                          pay.get("value"), email or whatsapp, len(subscribers.ativos()),
+                          valor_venda_total, email or whatsapp, len(subscribers.ativos()),
                           afiliado=(af["nome"] if af else None), comissao=valor_comissao)
         except Exception as e:
             print(f"[webhook] _avisar_venda: {e}", flush=True)

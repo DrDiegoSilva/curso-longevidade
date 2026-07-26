@@ -835,7 +835,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         dados = {"nome": sub.get("nome", ""), "email": sub.get("email", ""),
                  "cpf": sub.get("cpf", ""), "whatsapp": sub.get("whatsapp", "")}
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
-                                  "parcelas": 1, "valor": base_final, "afiliado_codigo": ""})
+                                  "parcelas": 1, "valor": base_final, "valor_base": preco,
+                                  "afiliado_codigo": ""})
         try:
             payload = asaas.montar_checkout(plano, metodo, 1, dados, token,
                                             config.PUBLIC_URL, base=base_final)
@@ -1027,8 +1028,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         af_codigo = af["codigo"] if af else ""
         base_final = pricing.base_cobrada(plano, metodo, base_vig, af["pct_desconto"] if af else 0.0)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
+        # `valor_base` é a BASE contratada (pré-desconto de método, pré-cupom de afiliado):
+        # é ela que o webhook grava em `valor_contratado` e que a renovação usa como preço.
+        # `valor` (o que o cliente paga) não serve: no parcelado o Asaas confirma parcela por
+        # parcela e no Pix já vem com 5% off, que a renovação reaplicaria a cada ciclo.
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
-                                  "parcelas": parcelas, "valor": valor, "afiliado_codigo": af_codigo,
+                                  "parcelas": parcelas, "valor": valor, "valor_base": base_vig,
+                                  "afiliado_codigo": af_codigo,
                                   "termos_versao": legal.VERSAO, "termos_ip": ip_cliente})
         try:
             payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_final)

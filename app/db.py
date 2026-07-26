@@ -129,6 +129,7 @@ def init():
                 token TEXT PRIMARY KEY,
                 nome TEXT, email TEXT, cpf TEXT, whatsapp TEXT,
                 plano TEXT, metodo TEXT, parcelas INTEGER, valor REAL,
+                valor_base REAL,
                 afiliado_codigo TEXT,
                 criado_em TEXT
             );
@@ -256,6 +257,10 @@ def _migrar_colunas():
         _add_coluna(c, "pending_signups", "termos_ip", "TEXT")
         _add_coluna(c, "comissoes", "estornada_em", "TEXT")
         _add_coluna(c, "subscribers", "valor_contratado", "REAL")
+        # B1/B2 da revisão final #2: o webhook precisa da BASE contratada (pré-desconto de
+        # método e pré-cupom). `valor` guarda o que o cliente PAGA, que no parcelado é uma
+        # parcela e no Pix já vem com 5% off — nenhum dos dois serve como preço de renovação.
+        _add_coluna(c, "pending_signups", "valor_base", "REAL")
 
 
 def _habilitar_rls():
@@ -284,11 +289,14 @@ def criar_pending(dados):
     token = secrets.token_hex(16)
     with _conn() as c:
         c.execute(
-            """INSERT INTO pending_signups (token,nome,email,cpf,whatsapp,plano,metodo,parcelas,valor,afiliado_codigo,termos_versao,termos_ip,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO pending_signups (token,nome,email,cpf,whatsapp,plano,metodo,parcelas,valor,valor_base,afiliado_codigo,termos_versao,termos_ip,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (token, dados.get("nome", ""), dados.get("email", ""), dados.get("cpf", ""),
              dados.get("whatsapp", ""), dados.get("plano", ""), dados.get("metodo", ""),
              int(dados.get("parcelas", 1)), float(dados.get("valor", 0)),
+             # None (não 0) quando ausente: o webhook distingue "base desconhecida" de
+             # "base zero" pra não gravar um valor_contratado inventado.
+             (float(dados["valor_base"]) if dados.get("valor_base") else None),
              (dados.get("afiliado_codigo", "") or ""),
              (dados.get("termos_versao", "") or ""), (dados.get("termos_ip", "") or ""),
              datetime.now().isoformat()),

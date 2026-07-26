@@ -13,18 +13,32 @@ CICLO_DIAS = {"WEEKLY": 7, "BIWEEKLY": 14, "MONTHLY": 30, "BIMONTHLY": 61,
 
 
 def preco_renovacao(sub, plano):
-    """Valor a cobrar na renovação: o contratado, ou o base do plano quando não houver.
+    """Valor a cobrar na renovação: a BASE contratada, ou a base de tabela quando não houver.
+
+    `valor_contratado` guarda a BASE do plano no momento da contratação (pré-desconto de
+    método, pré-cupom de afiliado) — nunca o valor pago. Duas razões, as duas de dinheiro:
+    no cartão parcelado o valor pago de cada evento é UMA parcela (gravar isso fazia o anual
+    em 12x renovar por R$ 91,58); e no Pix o valor pago já tem os 5% de desconto, que
+    `pricing.base_cobrada` aplica DE NOVO a cada renovação (o preço derretia por ciclo).
 
     O fallback existe porque `valor_contratado` só passou a ser gravado agora — os assinantes
     anteriores entraram no preço de lançamento, que é justamente o `base` do plano.
+
+    SÓ VALE PARA O MESMO PLANO. As mensagens de resgate mandam quem perdeu o acesso para o
+    `/assinar` público, onde o cliente ESCOLHE o plano: sem esta checagem, um ex-mensal (99)
+    levava o anual por R$ 94,05, e o plano `teste` (R$ 5, oculto mas alcançável por
+    /assinar?plano=teste) virava trava de preço vitalícia em qualquer plano.
 
     Só valor FINITO e POSITIVO é aceito: `float()` converte "inf"/"nan" sem reclamar, e um
     infinito passaria por uma checagem ingênua de `> 0` e viraria preço cobrado. Qualquer coisa
     fora disso (ausente, zero, negativo, texto, infinito) cai no base — errar aqui é dinheiro.
     """
     import math
+    sub = sub or {}
+    if (sub.get("plano") or "") != (plano or {}).get("slug"):
+        return float(plano["base"])
     try:
-        v = float((sub or {}).get("valor_contratado") or 0)
+        v = float(sub.get("valor_contratado") or 0)
     except (TypeError, ValueError):
         v = 0.0
     return v if (math.isfinite(v) and v > 0) else float(plano["base"])

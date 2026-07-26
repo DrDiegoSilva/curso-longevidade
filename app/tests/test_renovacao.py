@@ -14,31 +14,39 @@ class TestPrecoRenovacao(unittest.TestCase):
         import renovacao
         self.r = renovacao
 
+    def _sub(self, valor_contratado=None):
+        """Assinante DO MESMO plano de PLANO — `valor_contratado` só vale para o plano em
+        que foi contratado (B3 da revisão final #2), então sem o `plano` aqui todos os
+        testes abaixo cairiam no preço de tabela por outro motivo e não provariam nada."""
+        return {"plano": PLANO["slug"], "valor_contratado": valor_contratado}
+
     def test_usa_o_valor_contratado_quando_existe(self):
-        # founder que entrou a 1099 renova a 1099, mesmo se a tabela já subiu
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": 1099.0}, PLANO), 1099.0)
+        # founder que entrou a 997 renova a 997, mesmo com a tabela já em 1099.
+        # (valor != base de propósito: com 1099 os dois caminhos dariam o mesmo número
+        # e o teste passaria mesmo se `valor_contratado` fosse ignorado.)
+        self.assertEqual(self.r.preco_renovacao(self._sub(997.0), PLANO), 997.0)
 
     def test_valor_contratado_diferente_do_base_e_respeitado(self):
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": 897.30}, PLANO), 897.30)
+        self.assertEqual(self.r.preco_renovacao(self._sub(897.30), PLANO), 897.30)
 
     def test_sem_valor_contratado_cai_no_base_do_plano(self):
         # base atual de assinantes foi criada antes da coluna existir
-        self.assertEqual(self.r.preco_renovacao({}, PLANO), 1099.0)
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": None}, PLANO), 1099.0)
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": 0}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao({"plano": PLANO["slug"]}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub(None), PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub(0), PLANO), 1099.0)
 
     def test_valor_contratado_invalido_cai_no_base(self):
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": "abc"}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub("abc"), PLANO), 1099.0)
 
     def test_valor_contratado_negativo_cai_no_base(self):
         # trava o `> 0`: um refactor para `!= 0` cobraria valor negativo de verdade
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": -100.0}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub(-100.0), PLANO), 1099.0)
 
     def test_valor_nao_finito_cai_no_base(self):
         # float() aceita "inf"/"nan" caladamente, e infinito passaria por um teste ingênuo de > 0
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": "inf"}, PLANO), 1099.0)
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": float("inf")}, PLANO), 1099.0)
-        self.assertEqual(self.r.preco_renovacao({"valor_contratado": float("nan")}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub("inf"), PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub(float("inf")), PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao(self._sub(float("nan")), PLANO), 1099.0)
 
 
 class TestNovoVencimento(unittest.TestCase):

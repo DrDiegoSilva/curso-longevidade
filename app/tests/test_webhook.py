@@ -59,16 +59,19 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(len(self.s.ativos()), 1)
         self.assertEqual(len(self.enviados), 1)      # boas-vindas
 
-    def test_ativar_novo_assinante_grava_valor_contratado(self):
-        # ACHADO 1 (revisão): valor_contratado precisa refletir o que o assinante de
-        # fato pagou (não o preço de tabela) — renovacao.preco_renovacao lê esse campo
-        # pra cobrar certo na renovação seguinte. Caminho de assinante 100% novo.
+    def test_ativar_novo_assinante_grava_a_base_contratada(self):
+        # ACHADO 1 (revisão): renovacao.preco_renovacao lê valor_contratado pra cobrar certo
+        # na renovação seguinte. REVISÃO FINAL #2 (B1/B2): o campo guarda a BASE CONTRATADA
+        # (do pending), não o valor do evento — no parcelado `value` é 1/12 e no Pix já vem
+        # com 5% off, que a renovação reaplicaria. Caminho de assinante 100% novo.
         tok = self.db.criar_pending({"nome": "Dr. V1", "whatsapp": "5543999990010",
-                                     "email": "v1@x.com", "plano": "anual", "metodo": "PIX"})
+                                     "email": "v1@x.com", "plano": "anual", "metodo": "PIX",
+                                     "valor": 947.00, "valor_base": 997.00})
         st, msg = self.w.processar(self._body_valor(ext=tok, value=947.00), "segredo", enviar_fn=self.envfn)
         self.assertEqual((st, msg), (200, "ativado"))
         reg = self.s.por_whatsapp("5543999990010")
-        self.assertEqual(reg["valor_contratado"], 947.00)
+        self.assertEqual(reg["valor_contratado"], 997.00)
+        self.assertNotEqual(reg["valor_contratado"], 947.00)   # não é o valor do evento
 
     def test_ativar_pix_grava_acesso_ate_no_vencimento(self):
         # CORREÇÃO 1: Pix é pagamento avulso (DETACHED) — não existe assinatura
@@ -371,6 +374,11 @@ class TestProcessar(unittest.TestCase):
              "cpf": "11144477735", "plano": "anual", "valor_contratado": 897.30},
             {"customer": "cus_vc3", "payment": "pay_vc3_velho", "proximo_vencimento": "2025-07-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")   # expirado
+        # REVISÃO FINAL #2 (B1/B2): o valor novo vem da BASE do pending, não do evento.
+        tok_vc3 = self.db.criar_pending({"nome": "Dr. VC3", "whatsapp": "5543999990012",
+                                         "email": "vc3@x.com", "cpf": "11144477735",
+                                         "plano": "anual", "metodo": "PIX",
+                                         "valor": 497.00, "valor_base": 497.00})
         import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -381,7 +389,7 @@ class TestProcessar(unittest.TestCase):
         # aqui seria uma chamada de rede de verdade (deliver.enviar_texto).
         deliver.enviar_texto = lambda w, m: None
         try:
-            st, msg = self.w.processar(self._body_valor(ext="tokvc3", pid="pay_vc3_novo", value=497.00),
+            st, msg = self.w.processar(self._body_valor(ext=tok_vc3, pid="pay_vc3_novo", value=497.00),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
@@ -594,11 +602,16 @@ class TestProcessar(unittest.TestCase):
         # ACHADO 1 (revisão): recompra de Pix ANTES de vencer é assinante EXISTENTE —
         # sem regravar valor_contratado aqui, um assinante que volta pagando um preço
         # diferente ficaria com o valor antigo, e a renovação seguinte cobraria errado.
+        # REVISÃO FINAL #2 (B1/B2): o valor novo vem da BASE do pending, não do evento.
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. VC2", "whatsapp": "5543999990011", "email": "vc2@x.com",
              "cpf": "11144477735", "plano": "mensal", "valor_contratado": 97.00},
             {"customer": "cus_vc2", "payment": "pay_vc2_1", "proximo_vencimento": "2026-08-01"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+        tok_vc2 = self.db.criar_pending({"nome": "Dr. VC2", "whatsapp": "5543999990011",
+                                         "email": "vc2@x.com", "cpf": "11144477735",
+                                         "plano": "mensal", "metodo": "PIX",
+                                         "valor": 147.00, "valor_base": 147.00})
         import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -609,7 +622,7 @@ class TestProcessar(unittest.TestCase):
         # seria uma chamada de rede de verdade (deliver.enviar_texto).
         deliver.enviar_texto = lambda w, m: None
         try:
-            st, msg = self.w.processar(self._body_valor(ext="tokvc2", pid="pay_vc2_2", value=147.00),
+            st, msg = self.w.processar(self._body_valor(ext=tok_vc2, pid="pay_vc2_2", value=147.00),
                                        "segredo", enviar_fn=self.envfn)
         finally:
             asaas.obter_cliente = orig_cli
