@@ -179,9 +179,34 @@ def _executar(event, pay, pid, enviar_fn):
         # Calculado ANTES do plano (abaixo) de propósito: o IMPORTANT 2 (correção 2)
         # precisa saber se já existe assinante pra preferir o plano DELE em vez de
         # adivinhar pelo valor pago.
-        cpf_cliente = cust.get("cpfCnpj") or (pending or {}).get("cpf") or ""
+        # `pay["cpfCnpj"]` entra aqui pelo mesmo motivo do `_existente_por_cpf` acima: sem
+        # ASAAS_API_KEY o `cust` vem vazio, e o CPF do próprio pagamento é o que sobra.
+        cpf_cliente = cust.get("cpfCnpj") or pay.get("cpfCnpj") or (pending or {}).get("cpf") or ""
         existente = subscribers.por_cpf(cpf_cliente) or subscribers.por_whatsapp(whatsapp)
         novo_assinante = existente is None
+
+        if existente:
+            # Duas guardas ANTES de calcular qualquer período (revisão final #2). Ficam aqui,
+            # e não dentro dos ramos, porque o ATIVAR é reentrante por dois caminhos distintos
+            # e os dois desembocavam em "conceder um ciclo novo".
+            tipo_pagamento, _ = refunds.alvo_estorno(pay)
+            if pid and existente.get("asaas_payment_id") == pid:
+                # B5: o Asaas manda PAYMENT_CONFIRMED e PAYMENT_RECEIVED para o MESMO
+                # pagamento, e a idempotência é por (payment_id, event) — os dois passam.
+                # No Pix (sem `subscription`) o 2º achava o assinante com acesso vigente e
+                # caía na RECOMPRA, estendendo um ciclo inteiro: um ano pago virava dois.
+                # A guarda é por identidade do pagamento, então a recompra legítima (outro
+                # pagamento, antes de vencer) continua passando.
+                return (200, "replay")
+            if tipo_pagamento == "installment":
+                # B6/B7: parcela de cartão parcelado. Só atualiza a referência do pagamento
+                # mais recente (é nela que o estorno se baseia). NUNCA concede período novo,
+                # NUNCA reativa e NUNCA limpa o cancelamento: antes, a parcela que chegasse
+                # depois do acesso vencer caía na recontratação e comprava um ciclo anual
+                # inteiro + bônus de resgate por R$ 91,58, ressuscitando quem tinha cancelado
+                # a renovação e apagando o `cancelado_em`.
+                subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
+                return (200, "parcela-registrada")
 
         # Cascata do plano: 1) ciclo da assinatura recorrente REAL no Asaas (a fonte mais
         # confiável, quando disponível); 2) se já é assinante conhecido (recompra ou
@@ -217,18 +242,8 @@ def _executar(event, pay, pid, enviar_fn):
         extra_valor = {"valor_contratado": base_contratada} if base_contratada else {}
 
         if existente and subscribers.tem_acesso(existente):
-            # Mesmo critério de refunds.alvo_estorno: `installment` preenchido = parcela
-            # de um cartão parcelado (o Asaas não deixa parcelar Pix). Recompra avulsa
-            # (Pix) NUNCA tem esse campo.
-            tipo_pagamento, _ = refunds.alvo_estorno(pay)
-            if tipo_pagamento == "installment":
-                # Parcela do mesmo período já contratado (ou reentrega do mesmo evento
-                # após um retry do Asaas): não cria outro assinante, não repete
-                # boas-vindas nem o e-mail de venda, e não registra comissão de novo — só
-                # atualiza a referência do pagamento mais recente (é nela que o estorno se
-                # baseia). Vencimento/acesso NÃO avançam: a parcela não é um período novo.
-                subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
-                return (200, "parcela-registrada")
+            # Parcela e reentrega do mesmo pagamento já saíram nas guardas acima — o que
+            # chega aqui é necessariamente um pagamento NOVO e avulso.
             # Pix não tem parcelamento — se chegou aqui (CPF/WhatsApp já é assinante com
             # acesso vigente) é porque ele comprou OUTRO período antes do atual vencer
             # (Pix sem `subscription`, OU cartão à vista com uma assinatura recorrente
