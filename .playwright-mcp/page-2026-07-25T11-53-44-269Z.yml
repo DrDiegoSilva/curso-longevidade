@@ -1,0 +1,37 @@
+- generic [ref=f19e1]:
+  - generic [ref=f19e3]:
+    - link "Dr. Diego Silva CRM-PR 54310" [ref=f19e4] [cursor=pointer]:
+      - /url: /
+      - generic [ref=f19e5]:
+        - generic [ref=f19e6]: Dr. Diego Silva
+        - generic [ref=f19e7]: CRM-PR 54310
+    - navigation [ref=f19e8]:
+      - link "Planos" [ref=f19e9] [cursor=pointer]:
+        - /url: /#planos
+      - link "Entrar" [ref=f19e10] [cursor=pointer]:
+        - /url: /entrar
+  - generic [ref=f19e12]:
+    - heading "Área do assinante" [level=2] [ref=f19e13]
+    - paragraph [ref=f19e14]: Entre com o WhatsApp da sua assinatura e sua senha.
+    - generic [ref=f19e15]:
+      - generic [ref=f19e16]: WhatsApp (com DDD)
+      - textbox "(43) 99999-0000" [active] [ref=f19e17]
+      - generic [ref=f19e18]: Senha
+      - textbox "sua senha" [ref=f19e19]
+      - button "Entrar" [ref=f19e20] [cursor=pointer]
+    - link "Entrar com código" [ref=f19e21] [cursor=pointer]:
+      - /url: /entrar-codigo
+    - paragraph [ref=f19e22]:
+      - link "Primeiro acesso / criar senha" [ref=f19e23] [cursor=pointer]:
+        - /url: /primeiro-acesso
+      - text: ·
+      - link "Esqueci minha senha" [ref=f19e24] [cursor=pointer]:
+        - /url: /esqueci
+    - paragraph [ref=f19e25]:
+      - text: Ainda não assina?
+      - link "Conheça o plano" [ref=f19e26] [cursor=pointer]:
+        - /url: /
+      - text: .
+  - generic [ref=f19e28]:
+    - text: Dr. Diego Silva · CRM-PR 54310 · Atualização Científica
+    - generic [ref=f19e29]: Conteúdo de caráter científico-educacional, destinado a médicos. Não substitui o julgamento clínico individual nem constitui recomendação de conduta.

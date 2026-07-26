@@ -1,0 +1,149 @@
+- generic [active] [ref=f21e1]:
+  - generic [ref=f21e3]:
+    - link "Dr. Diego Silva CRM-PR 54310" [ref=f21e4] [cursor=pointer]:
+      - /url: /
+      - generic [ref=f21e5]:
+        - generic [ref=f21e6]: Dr. Diego Silva
+        - generic [ref=f21e7]: CRM-PR 54310
+    - navigation [ref=f21e8]:
+      - link "Arquivo" [ref=f21e9] [cursor=pointer]:
+        - /url: /artigos
+      - link "Minha conta" [ref=f21e10] [cursor=pointer]:
+        - /url: /minha
+      - link "Sair" [ref=f21e11] [cursor=pointer]:
+        - /url: /sair
+  - generic [ref=f21e12]:
+    - generic [ref=f21e13]:
+      - link "👥 Assinantes" [ref=f21e14] [cursor=pointer]:
+        - /url: /admin?token=TESTE
+      - link "🔬 Curadoria" [ref=f21e15] [cursor=pointer]:
+        - /url: /curadoria?token=TESTE
+      - link "📅 Agenda" [ref=f21e16] [cursor=pointer]:
+        - /url: /agenda?token=TESTE
+      - link "🗓️ Dias" [ref=f21e17] [cursor=pointer]:
+        - /url: /admin/envio?token=TESTE
+      - link "🤝 Afiliados" [ref=f21e18] [cursor=pointer]:
+        - /url: /admin/afiliados?token=TESTE
+      - link "📝 Mensagens" [ref=f21e19] [cursor=pointer]:
+        - /url: /admin/mensagens?token=TESTE
+      - link "📱 WhatsApp" [ref=f21e20] [cursor=pointer]:
+        - /url: /admin/whatsapp?token=TESTE
+    - heading "Curadoria · Reserva 2026" [level=2] [ref=f21e21]
+    - generic [ref=f21e22]:
+      - paragraph [ref=f21e23]: Candidatos da varredura
+      - paragraph [ref=f21e24]: Estudos que a busca automática achou — ainda sem resumo.
+      - generic [ref=f21e25]:
+        - generic [ref=f21e26]:
+          - generic [ref=f21e27]: "5"
+          - generic [ref=f21e28]: Novos
+          - generic [ref=f21e29]: achados; você ainda não decidiu
+        - generic [ref=f21e30]:
+          - generic [ref=f21e31]: "1"
+          - generic [ref=f21e32]: Selecionados
+          - generic [ref=f21e33]: marcados p/ virar resumo
+        - generic [ref=f21e34]:
+          - generic [ref=f21e35]: "2"
+          - generic [ref=f21e36]: Já resumidos
+          - generic [ref=f21e37]: a IA já transformou em resumo
+    - generic [ref=f21e38]:
+      - paragraph [ref=f21e39]: Estoque de resumos · fila de envio
+      - paragraph [ref=f21e40]: Resumos prontos que vão pros assinantes.
+      - generic [ref=f21e41]:
+        - generic [ref=f21e42]:
+          - generic [ref=f21e43]: "1"
+          - generic [ref=f21e44]: Prontos p/ enviar
+          - generic [ref=f21e45]: esperando a vez na fila
+        - generic [ref=f21e46]:
+          - generic [ref=f21e47]: "0"
+          - generic [ref=f21e48]: Já enviados
+          - generic [ref=f21e49]: entregues aos assinantes
+        - generic [ref=f21e50]:
+          - generic [ref=f21e51]: "1"
+          - generic [ref=f21e52]: Total na reserva
+          - generic [ref=f21e53]: prontos + enviados
+    - generic [ref=f21e54]:
+      - button "🔎 Rodar varredura 2026" [ref=f21e56] [cursor=pointer]
+      - button "✍️ Gerar resumos dos selecionados" [ref=f21e58] [cursor=pointer]
+    - generic [ref=f21e59]:
+      - heading "➕ Adicionar meu estudo" [level=3] [ref=f21e60]
+      - paragraph [ref=f21e61]:
+        - text: Sobe o PDF (ou cola o texto). Gero o resumo e ele entra na
+        - strong [ref=f21e62]: fila, na frente
+        - text: — vai pros assinantes no próximo dia útil (com seu review das 18h).
+      - generic [ref=f21e63]:
+        - generic [ref=f21e64]: PDF do estudo
+        - button "Choose File" [ref=f21e65]
+        - generic [ref=f21e66]: …ou cole o texto/resumo (se não tiver PDF)
+        - textbox "Cole aqui o abstract/texto do estudo…" [ref=f21e67]
+        - textbox "Título do estudo (opcional — se vazio, eu crio a partir do texto)" [ref=f21e68]
+        - generic [ref=f21e69]:
+          - textbox "Revista (opcional)" [ref=f21e70]
+          - textbox "DOI (opcional)" [ref=f21e71]
+        - button "Gerar resumo e adicionar à fila" [ref=f21e72] [cursor=pointer]
+    - paragraph [ref=f21e73]:
+      - text: Leia o
+      - strong [ref=f21e74]: título
+      - text: + a
+      - strong [ref=f21e75]: pergunta
+      - text: e marque os que valem resumir. Nada vai pro arquivo dos assinantes — é sua reserva privada.
+    - generic [ref=f21e76]:
+      - generic [ref=f21e77]: score = importância clínica que a IA dá, de 0 a 10 (só ordena a lista; o assinante não vê)
+      - generic [ref=f21e78]: ★ 8
+      - text: alta
+      - generic [ref=f21e79]: "5"
+      - text: média
+      - generic [ref=f21e80]: "2"
+      - text: baixa
+    - generic [ref=f21e81]:
+      - generic [ref=f21e82]:
+        - generic [ref=f21e83] [cursor=pointer]:
+          - text: ⚖️ Obesidade
+          - generic [ref=f21e84]: "3"
+        - generic [ref=f21e85] [cursor=pointer]:
+          - text: ⚕️ Hormonal
+          - generic [ref=f21e86]: "2"
+        - generic [ref=f21e87] [cursor=pointer]:
+          - text: 🦵 Lipedema
+          - generic [ref=f21e88]: "0"
+        - generic [ref=f21e89] [cursor=pointer]:
+          - text: 🏃 Performance
+          - generic [ref=f21e90]: "0"
+        - generic [ref=f21e91] [cursor=pointer]:
+          - text: 🧬 Longevidade
+          - generic [ref=f21e92]: "1"
+      - generic [ref=f21e94]:
+        - generic [ref=f21e95] [cursor=pointer]:
+          - checkbox "Tirzepatida sustenta perda de peso em 3 anos ★ 9 ❓ Muda a conduta? NEJM · 2026-07 · DOI 10.1/1" [checked] [ref=f21e96]
+          - generic [ref=f21e97]:
+            - generic [ref=f21e98]:
+              - generic [ref=f21e99]: Tirzepatida sustenta perda de peso em 3 anos
+              - generic [ref=f21e100]: ★ 9
+            - generic [ref=f21e101]: ❓ Muda a conduta?
+            - generic [ref=f21e102]: NEJM · 2026-07 · DOI 10.1/1
+        - generic [ref=f21e103] [cursor=pointer]:
+          - checkbox "Retatrutide fase 2 — resultados ★ 8 ❓ Muda a conduta? NEJM · 2026-07 · DOI 10.1/2" [ref=f21e104]
+          - generic [ref=f21e105]:
+            - generic [ref=f21e106]:
+              - generic [ref=f21e107]: Retatrutide fase 2 — resultados
+              - generic [ref=f21e108]: ★ 8
+            - generic [ref=f21e109]: ❓ Muda a conduta?
+            - generic [ref=f21e110]: NEJM · 2026-07 · DOI 10.1/2
+        - generic [ref=f21e111] [cursor=pointer]:
+          - checkbox "Cirurgia bariátrica x GLP-1 6 ❓ Muda a conduta? NEJM · 2026-07 · DOI 10.1/3" [ref=f21e112]
+          - generic [ref=f21e113]:
+            - generic [ref=f21e114]:
+              - generic [ref=f21e115]: Cirurgia bariátrica x GLP-1
+              - generic [ref=f21e116]: "6"
+            - generic [ref=f21e117]: ❓ Muda a conduta?
+            - generic [ref=f21e118]: NEJM · 2026-07 · DOI 10.1/3
+      - button "💾 Salvar seleção" [ref=f21e120] [cursor=pointer]
+    - generic [ref=f21e121]:
+      - heading "Reserva pronta" [level=2] [ref=f21e122]
+      - generic [ref=f21e123]:
+        - generic [ref=f21e124]: Obesidade · pronto
+        - generic [ref=f21e125]: Estudo pronto
+        - group [ref=f21e126]:
+          - generic "✏️ editar / remover" [ref=f21e127] [cursor=pointer]
+  - generic [ref=f21e129]:
+    - text: Dr. Diego Silva · CRM-PR 54310 · Atualização Científica
+    - generic [ref=f21e130]: Conteúdo de caráter científico-educacional, destinado a médicos. Não substitui o julgamento clínico individual nem constitui recomendação de conduta.

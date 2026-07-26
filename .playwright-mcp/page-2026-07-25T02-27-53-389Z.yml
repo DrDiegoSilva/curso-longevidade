@@ -1,0 +1,89 @@
+- generic [active] [ref=f14e1]:
+  - generic [ref=f14e3]:
+    - link "Dr. Diego Silva CRM-PR 54310" [ref=f14e4] [cursor=pointer]:
+      - /url: /
+      - generic [ref=f14e5]:
+        - generic [ref=f14e6]: Dr. Diego Silva
+        - generic [ref=f14e7]: CRM-PR 54310
+    - navigation [ref=f14e8]:
+      - link "Planos" [ref=f14e9] [cursor=pointer]:
+        - /url: /#planos
+      - link "Entrar" [ref=f14e10] [cursor=pointer]:
+        - /url: /entrar
+  - generic [ref=f14e11]:
+    - generic [ref=f14e12]: Finalizar assinatura
+    - heading "Você está quase lá" [level=2] [ref=f14e13]
+    - generic [ref=f14e14]:
+      - complementary [ref=f14e15]:
+        - generic [ref=f14e16]: Atualização Científica
+        - generic [ref=f14e17]: Plano Anual
+        - generic [ref=f14e18]:
+          - text: R$ 1.099
+          - generic [ref=f14e19]: por ano
+        - list [ref=f14e20]:
+          - listitem [ref=f14e21]:
+            - generic [ref=f14e22]: ✓
+            - generic [ref=f14e23]: 1 estudo por dia útil, no seu WhatsApp
+          - listitem [ref=f14e24]:
+            - generic [ref=f14e25]: ✓
+            - generic [ref=f14e26]: Curadoria criteriosa + revisão médica
+          - listitem [ref=f14e27]:
+            - generic [ref=f14e28]: ✓
+            - generic [ref=f14e29]: PDF Objetivo de cada edição
+          - listitem [ref=f14e30]:
+            - generic [ref=f14e31]: ✓
+            - generic [ref=f14e32]: Arquivo completo no portal do assinante
+        - generic [ref=f14e33]: 🔒 Pagamento 100% seguro · seus dados protegidos.Cancele quando quiser, sem multa.
+      - generic [ref=f14e34]:
+        - generic [ref=f14e35]:
+          - generic [ref=f14e36]:
+            - generic [ref=f14e37]: Nome completo
+            - textbox [ref=f14e38]
+          - generic [ref=f14e39]:
+            - generic [ref=f14e40]: E-mail
+            - textbox [ref=f14e41]
+          - generic [ref=f14e42]:
+            - generic [ref=f14e43]: CPF
+            - textbox "000.000.000-00" [ref=f14e44]
+          - generic [ref=f14e45]:
+            - generic [ref=f14e46]: WhatsApp (com DDD) — onde você recebe os estudos e faz login
+            - textbox "(43) 99999-0000" [ref=f14e47]
+          - generic [ref=f14e48]: Forma de pagamento
+          - generic [ref=f14e49]:
+            - generic [ref=f14e50] [cursor=pointer]:
+              - radio "⚡ Pix R$ 1.044,05 à vista ✓" [checked]
+              - generic [ref=f14e51]: ⚡
+              - generic [ref=f14e52]: Pix
+              - generic [ref=f14e53]: R$ 1.044,05 à vista
+              - text: ✓
+            - generic [ref=f14e54] [cursor=pointer]:
+              - radio "💳 Cartão parcelável · renova no fim"
+              - generic [ref=f14e55]: 💳
+              - generic [ref=f14e56]: Cartão
+              - generic [ref=f14e57]: parcelável · renova no fim
+          - generic [ref=f14e58]:
+            - generic [ref=f14e59]: Parcelas (só no cartão)
+            - combobox [ref=f14e60]:
+              - option "1x de R$ 1.099,00 — total R$ 1.099,00" [selected]
+              - option "2x de R$ 549,50 — total R$ 1.099,00"
+              - option "3x de R$ 366,33 — total R$ 1.099,00"
+              - option "4x de R$ 274,75 — total R$ 1.099,00"
+              - option "5x de R$ 219,80 — total R$ 1.099,00"
+              - option "6x de R$ 183,17 — total R$ 1.099,00"
+              - option "7x de R$ 157,00 — total R$ 1.099,00"
+              - option "8x de R$ 137,38 — total R$ 1.099,00"
+              - option "9x de R$ 122,11 — total R$ 1.099,00"
+              - option "10x de R$ 109,90 — total R$ 1.099,00"
+              - option "11x de R$ 99,91 — total R$ 1.099,00"
+              - option "12x de R$ 91,58 — total R$ 1.099,00"
+          - generic [ref=f14e61]:
+            - generic [ref=f14e62]: Cupom (opcional)
+            - textbox "cortesia ou afiliado" [ref=f14e63]
+          - button "Continuar para o pagamento →" [ref=f14e64] [cursor=pointer]
+          - generic [ref=f14e65]: 🔒 Ambiente de pagamento seguro
+        - paragraph [ref=f14e66]:
+          - link "← trocar de plano" [ref=f14e67] [cursor=pointer]:
+            - /url: /assinar
+  - generic [ref=f14e69]:
+    - text: Dr. Diego Silva · CRM-PR 54310 · Atualização Científica
+    - generic [ref=f14e70]: Conteúdo de caráter científico-educacional, destinado a médicos. Não substitui o julgamento clínico individual nem constitui recomendação de conduta.

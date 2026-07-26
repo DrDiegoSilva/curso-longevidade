@@ -1,0 +1,24 @@
+- generic [ref=f18e1]:
+  - generic [ref=f18e3]:
+    - link "Dr. Diego Silva CRM-PR 54310" [ref=f18e4] [cursor=pointer]:
+      - /url: /
+      - generic [ref=f18e5]:
+        - generic [ref=f18e6]: Dr. Diego Silva
+        - generic [ref=f18e7]: CRM-PR 54310
+    - navigation [ref=f18e8]:
+      - link "Planos" [ref=f18e9] [cursor=pointer]:
+        - /url: /#planos
+      - link "Entrar" [ref=f18e10] [cursor=pointer]:
+        - /url: /entrar
+  - generic [ref=f18e12]:
+    - heading "Entrar com código" [level=2] [ref=f18e13]
+    - paragraph [ref=f18e14]: Sem acesso à senha? Informe o WhatsApp da sua assinatura e enviamos um código de acesso.
+    - generic [ref=f18e15]:
+      - generic [ref=f18e16]: WhatsApp (com DDD)
+      - textbox "(43) 99999-0000" [active] [ref=f18e17]
+      - button "Enviar código" [ref=f18e18] [cursor=pointer]
+    - link "Entrar com senha" [ref=f18e19] [cursor=pointer]:
+      - /url: /entrar
+  - generic [ref=f18e21]:
+    - text: Dr. Diego Silva · CRM-PR 54310 · Atualização Científica
+    - generic [ref=f18e22]: Conteúdo de caráter científico-educacional, destinado a médicos. Não substitui o julgamento clínico individual nem constitui recomendação de conduta.

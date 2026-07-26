@@ -768,9 +768,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
+        # Validar número local antes de montar E.164 (evita que "+55" vazio passe)
+        local_whatsapp = g("whatsapp").strip()
         dados = {"nome": g("nome").strip(), "email": g("email").strip(),
                  "cpf": g("cpf").strip(),
-                 "whatsapp": phone.montar_e164(g("pais_dial") or "55", g("whatsapp"))}
+                 "whatsapp": phone.montar_e164(g("pais_dial") or "55", local_whatsapp) if local_whatsapp else ""}
         if not (dados["nome"] and dados["whatsapp"] and dados["email"] and dados["cpf"]):
             return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail, WhatsApp e CPF."))
         if not cpfval.valida(dados["cpf"]):
