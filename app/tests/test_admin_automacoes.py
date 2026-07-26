@@ -44,6 +44,67 @@ class TestPaginaAutomacoes(unittest.TestCase):
                                                automacoes=[], token="t")
         self.assertIn("salvar_automacao", html)
 
+    def test_escape_de_payload_xss_no_texto_da_automacao(self):
+        """Verifica que payloads de script no campo texto são escapados.
+
+        O campo texto das automações é renderizado diretamente no HTML da página
+        /admin/mensagens. Se o escape for removido, XSS armazenado será possível.
+        Este teste trava que _esc() está sendo usado corretamente.
+        """
+        import site_web
+
+        # Automação com payload XSS no campo texto
+        automacao_com_xss = {
+            "id": "auto-1",
+            "dias": -7,
+            "canal": "email",
+            "texto": "<script>alert('XSS')</script>",
+            "ativo": 1
+        }
+
+        html = site_web.pagina_admin_mensagens(
+            "wa", "assunto", "corpo", "renov assunto", "renov corpo",
+            automacoes=[automacao_com_xss], token="t")
+
+        # O payload XSS NÃO deve aparecer como tag crua (sem escape)
+        self.assertNotIn("<script>alert('XSS')</script>", html,
+                        "Payload XSS não deve aparecer desescapado no HTML")
+
+        # O payload DEVE aparecer escapado (com &lt; e &gt;)
+        self.assertIn("&lt;script&gt;alert(&#x27;XSS&#x27;)&lt;/script&gt;", html,
+                     "Payload XSS deve aparecer escapado no HTML")
+
+    def test_escape_de_payload_xss_no_id_da_automacao(self):
+        """Verifica que payloads de script no campo id são escapados.
+
+        O campo id das automações é renderizado em um input hidden do HTML
+        da página /admin/mensagens. Se o escape for removido, XSS armazenado
+        será possível quando o id for renderizado em outros contextos.
+        Este teste trava que _esc() está sendo usado corretamente no campo id.
+        """
+        import site_web
+
+        # Automação com payload XSS no campo id
+        automacao_com_xss_id = {
+            "id": "auto\" onload=\"alert('XSS')",
+            "dias": -3,
+            "canal": "whatsapp",
+            "texto": "Texto normal",
+            "ativo": 1
+        }
+
+        html = site_web.pagina_admin_mensagens(
+            "wa", "assunto", "corpo", "renov assunto", "renov corpo",
+            automacoes=[automacao_com_xss_id], token="t")
+
+        # O payload XSS NO ID não deve aparecer desescapado
+        self.assertNotIn("auto\" onload=\"alert('XSS')", html,
+                        "Payload XSS no id não deve aparecer desescapado")
+
+        # O payload DEVE aparecer escapado (aspas duplas escapadas)
+        self.assertIn("auto&quot; onload=&quot;alert(&#x27;XSS&#x27;)", html,
+                     "Payload XSS no id deve aparecer escapado")
+
 
 if __name__ == "__main__":
     unittest.main()
