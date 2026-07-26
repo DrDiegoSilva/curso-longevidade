@@ -113,6 +113,21 @@ def por_subscription(sid):
     return dict(r) if r else None
 
 
+def por_payment(pid):
+    """Assinante cuja última cobrança em arquivo é este pagamento. None se vazio/sem match.
+
+    Existe para os eventos que NÃO trazem `subscription` (estorno/chargeback/overdue de Pix
+    ou de cartão parcelado): sem isto, `por_subscription` devolvia None e o evento era
+    descartado como "ignorado", deixando acesso ativo depois de um estorno.
+    """
+    if not pid:
+        return None
+    _ensure()
+    with db._conn() as c:
+        r = c.execute("SELECT * FROM subscribers WHERE asaas_payment_id=?", (pid,)).fetchone()
+    return dict(r) if r else None
+
+
 def por_whatsapp(w):
     n = _norm(w)
     return next((s for s in listar() if _norm(s.get("whatsapp", "")) == n), None)

@@ -438,14 +438,41 @@ def _executar(event, pay, pid, enviar_fn):
         _confirmar_renovacao(sub, prox, automatica=True)
         return (200, "renovado")
 
-    if acao == "INADIMPLENTE" and sub:
+    # B10: até aqui o assinante só era procurado por `subscription`, que Pix (DETACHED) e
+    # cartão parcelado NUNCA trazem — os ramos abaixo eram guardados por `and sub` e o
+    # evento caía no "ignorado" genérico. Um estorno feito no painel do Asaas deixava o
+    # acesso ativo e a comissão do afiliado a pagar, sem avisar ninguém.
+    # Ordem: a assinatura (mais específica), o próprio pagamento, e o CPF — este último
+    # cobre o estorno de uma parcela ANTIGA, cujo id já não é o `asaas_payment_id` em arquivo.
+    alvo = sub or subscribers.por_payment(pid) or subscribers.por_cpf(pay.get("cpfCnpj") or "")
+
+    if acao == "INADIMPLENTE" and alvo:
         carencia = (datetime.now() + timedelta(days=CARENCIA_DIAS)).isoformat()
-        subscribers.marcar_status(sub["id"], "INADIMPLENTE", carencia_ate=carencia)
+        subscribers.marcar_status(alvo["id"], "INADIMPLENTE", carencia_ate=carencia)
         return (200, "inadimplente")
 
-    if acao == "SUSPENDER" and sub:
-        subscribers.marcar_status(sub["id"], "CANCELADO", acesso_ate=datetime.now().isoformat())
+    if acao == "SUSPENDER" and alvo:
+        subscribers.marcar_status(alvo["id"], "CANCELADO", acesso_ate=datetime.now().isoformat())
+        # A venda deixou de existir -> a comissão não é mais devida. Sem isto o afiliado
+        # seguia na fila de pagamento por uma venda estornada (o /cancelar já fazia essa
+        # baixa; o estorno vindo pelo painel do Asaas não).
+        try:
+            db.estornar_comissao(alvo["id"])
+        except Exception as e:
+            print(f"[webhook] estornar_comissao falhou: {e}", flush=True)
+            _alertar_admin(pid, sid, f"acesso de {alvo.get('nome') or alvo['id']} cortado pelo "
+                                     "estorno, mas NÃO consegui baixar a comissão do afiliado — "
+                                     "baixe manualmente no painel")
         return (200, "suspenso")
+
+    if acao in ("SUSPENDER", "INADIMPLENTE"):
+        # Nada casou. Não pode virar "ignorado": um estorno perdido é dinheiro devolvido
+        # com acesso ativo, e era indistinguível de um PAYMENT_CREATED que ignoramos de
+        # propósito. Alerta em vez de sumir em silêncio.
+        _alertar_admin(pid, sid, f"evento {event} recebido mas NÃO achei o assinante "
+                                 f"(sem assinatura, sem pagamento em arquivo e sem CPF que "
+                                 f"casasse) — confira manualmente se há acesso a cortar")
+        return (200, "sem-assinante")
 
     return (200, "ignorado")
 
