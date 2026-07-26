@@ -121,6 +121,17 @@ class TestDb(unittest.TestCase):
         self.assertEqual(res[0]["titulo_pt"], "Título")
         self.assertEqual(self.db.contar_candidatos().get("resumido"), 1)
 
+    def test_reserva_guarda_e_ordena_por_nota(self):
+        # a reserva persiste a nota (score da triagem/curadoria) e usa como desempate
+        # depois da prioridade — a mesma nota que soterrava a curadoria antes do fix.
+        rid_baixa = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Nota baixa", "score": 3})
+        rid_alta = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Nota alta", "score": 8})
+        res = self.db.obter_reserva(rid_alta)
+        self.assertEqual(res["score"], 8.0)                             # score persistido
+        self.assertEqual(self.db.obter_reserva(rid_baixa)["score"], 3.0)
+        # mesma prioridade (0) -> nota maior sai primeiro
+        self.assertEqual(self.db.proximo_da_reserva()["id"], rid_alta)
+
     def test_fila_prioridade_e_proximo(self):
         self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "A (varredura)"})
         self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "B (varredura)"})

@@ -183,7 +183,8 @@ def init():
                 tema TEXT, titulo_pt TEXT, resumo TEXT, gancho TEXT, grafico TEXT,
                 doi TEXT, fonte TEXT, url TEXT, data TEXT,
                 status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
-                origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT
+                origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT,
+                score REAL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS daily_drafts (
                 data TEXT PRIMARY KEY,
@@ -245,6 +246,7 @@ def _migrar_colunas():
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
+        _add_coluna(c, "reserva_resumos", "score", "REAL DEFAULT 0")
         _add_coluna(c, "pending_signups", "afiliado_codigo", "TEXT")
         _add_coluna(c, "curadoria_candidatos", "citacoes", "INTEGER DEFAULT 0")
         _add_coluna(c, "curadoria_candidatos", "tipo", "TEXT DEFAULT 'varredura'")
@@ -632,12 +634,13 @@ def salvar_reserva(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO reserva_resumos
-               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?)""",
+               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?)""",
             (rid, reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
              reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
              reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""),
-             int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat()))
+             int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat(),
+             float(reg.get("score", 0) or 0)))
     return rid
 
 
@@ -646,7 +649,7 @@ def listar_reserva(status=None):
     params = []
     if status:
         q += " WHERE status=?"; params.append(status)
-    q += " ORDER BY prioridade DESC, criado_em DESC"
+    q += " ORDER BY prioridade DESC, score DESC, criado_em DESC"
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
 
@@ -659,11 +662,12 @@ def contar_reserva_pronto():
 
 
 def proximo_da_reserva():
-    """Próximo resumo a enviar da fila: prioridade (artigos do Diego) primeiro, depois
-    os mais antigos. Só 'pronto'. Retorna dict ou None (não marca — o envio confirma)."""
+    """Próximo resumo a enviar da fila: prioridade (artigos do Diego) primeiro, depois nota
+    (score) maior, depois os mais antigos. Só 'pronto'. Retorna dict ou None (não marca —
+    o envio confirma)."""
     with _conn() as c:
         r = c.execute("SELECT * FROM reserva_resumos WHERE status='pronto' "
-                      "ORDER BY prioridade DESC, criado_em ASC LIMIT 1").fetchone()
+                      "ORDER BY prioridade DESC, score DESC, criado_em ASC LIMIT 1").fetchone()
     return dict(r) if r else None
 
 

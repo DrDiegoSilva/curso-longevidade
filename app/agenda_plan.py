@@ -2,8 +2,9 @@
 
 Regras: preencher só os dias VAZIOS; variedade (não repetir o tema do dia
 anterior quando houver alternativa) > rotação de tema como guia da vez >
-fresh-first (candidato fresco, ≤30d) > clássico como PISO (só entra quando
-não há melhor) > score. Não consome candidato duas vezes.
+fresh-first (candidato fresco, ≤30d) > TIER de curadoria (curada/reserva >
+crua/candidato-fila > clássico como PISO, só entra quando não há melhor) >
+nota (score, só desempata dentro do mesmo tier). Não consome candidato duas vezes.
 """
 from datetime import datetime, timedelta
 
@@ -40,13 +41,21 @@ def semanas_do_mes(hoje, dias_envio, n_semanas=4):
     return out
 
 
+def _tier(cand):
+    """Camada de curadoria: clássico é o piso; entre o resto, curada (reserva, revisada por
+    humano) bate crua (candidato/fila, direto da varredura, sem revisão)."""
+    if cand.get("classico"):
+        return 0                       # clássico é o piso
+    return 2 if cand.get("tipo") == "reserva" else 1   # curada(reserva)=2 > crua(candidato/fila)=1
+
+
 def _rank(cand, preferido, prev):
     return (
         1 if cand["tema"] != prev else 0,            # variedade (regra forte)
         1 if cand["tema"] == preferido else 0,       # rotação = tema do dia (guia da vez)
         1 if cand.get("fresco") else 0,              # fresh-first (≤30d)
-        0 if cand.get("classico") else 1,            # clássico é PISO (só quando não há melhor)
-        cand.get("score", 0),                        # qualidade puxa pra frente
+        _tier(cand),                                 # curada(2) > crua(1) > clássico(0)
+        cand.get("score", 0),                        # nota (score) só desempata dentro da mesma camada
     )
 
 

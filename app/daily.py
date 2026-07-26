@@ -139,9 +139,14 @@ def materializar_agenda(n_semanas=4, datas=None):
 
     fila_n = queue_store.tamanho()
     reserva_n = db.contar_reserva_pronto()
-    if agenda_plan.precisa_reabastecer(fila_n, reserva_n, horizonte):
+    # Estoque TOTAL (não só reserva+fila) — senão o reabastecer (rede) dispara mesmo com o
+    # pool cheio de candidatos crus/clássicos elegíveis, que também cobrem o horizonte.
+    cand_n = len(db.listar_candidatos(status="novo", tipo="varredura"))
+    classico_n = len(db.listar_classicos(elegiveis=True))
+    estoque_n = reserva_n + cand_n + classico_n
+    if agenda_plan.precisa_reabastecer(fila_n, estoque_n, horizonte):
         try:
-            print(f"[agenda] estoque {fila_n+reserva_n}<{horizonte} — reabastecendo", flush=True)
+            print(f"[agenda] estoque {fila_n+estoque_n}<{horizonte} — reabastecendo", flush=True)
             reabastecer()
         except Exception as e:
             print(f"[agenda] reabastecer falhou (segue): {e}", flush=True)
@@ -163,7 +168,7 @@ def materializar_agenda(n_semanas=4, datas=None):
         cands.append({"tipo": "reserva", "tema": r.get("tema", ""), "titulo": r.get("titulo_pt", ""),
                       "ref_id": r["id"], "payload": None,
                       "fresco": _e_fresco(r.get("data", "")), "classico": False,
-                      "score": float(r.get("prioridade", 0) or 0)})
+                      "score": float(r.get("score", 0) or 0)})
     for c in db.listar_candidatos(status="novo", tipo="varredura"):
         if c["id"] in cand_ref_ids:      # já preso a um slot -> não re-agenda
             continue

@@ -525,7 +525,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     print(f"[classicos] varredura erro: {e}", flush=True); msg = "Falha na varredura de clássicos (ver logs)."
             elif acao == "gerar":
                 try:
-                    msg = f"{curadoria.gerar_selecionados()} resumo(s) gerado(s) para a reserva."
+                    msg = f"Resumos gerados: {curadoria.gerar_selecionados()}."
                 except Exception as e:
                     print(f"[curadoria] gerar erro: {e}", flush=True); msg = "Falha ao gerar resumos (ver logs)."
             elif acao == "editar_reserva":

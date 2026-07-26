@@ -127,6 +127,7 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
     def test_entra_na_fila_com_prioridade(self):
         rid, tit = self.cur.adicionar_meu_estudo(
             "texto integral do estudo em PDF...", titulo="Meu PDF", fonte="NEJM", doi="10.1/meu",
+            triar_fn=lambda arts, tema: [],
             gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
             gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT do meu estudo")
         self.assertEqual(tit, "Título PT do meu estudo")
@@ -139,10 +140,33 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
     def test_abstract_do_texto_vai_pro_gerador(self):
         visto = {}
         self.cur.adicionar_meu_estudo(
-            "CONTEUDO-DO-PDF", titulo="X",
+            "CONTEUDO-DO-PDF", titulo="X", triar_fn=lambda arts, tema: [],
             gerar_resumo=lambda a: visto.setdefault("r", a.get("resumo")) or "ok",
             gerar_gancho=lambda a: "g", gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "t")
         self.assertEqual(visto["r"], "CONTEUDO-DO-PDF")
+
+    def test_triagem_pontua_o_manual(self):
+        # a IA de triagem (mesma da varredura) dá a nota do manual — ele entra na
+        # fila por qualidade, não só furando por prioridade cega.
+        _, tit = self.cur.adicionar_meu_estudo(
+            "texto integral do estudo em PDF...", titulo="Meu PDF", fonte="NEJM", doi="10.1/meu",
+            triar_fn=lambda arts, tema: [{"score": 9}],
+            gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
+            gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT")
+        self.assertEqual(tit, "Título PT")
+        fila = self.db.listar_reserva(status="pronto")
+        self.assertEqual(fila[0]["score"], 9.0)
+
+    def test_triagem_lixo_usa_nota_padrao_7(self):
+        # LIXO (ou triagem que não devolve nada) não pode zerar o manual — o Diego
+        # escolheu 7 como piso padrão pra ele ainda competir na fila.
+        self.cur.adicionar_meu_estudo(
+            "texto integral do estudo em PDF...", titulo="Meu PDF",
+            triar_fn=lambda arts, tema: [],
+            gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
+            gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT")
+        fila = self.db.listar_reserva(status="pronto")
+        self.assertEqual(fila[0]["score"], 7.0)
 
 
 class TestVarrerClassicos(unittest.TestCase):
@@ -167,20 +191,25 @@ class TestVarrerClassicos(unittest.TestCase):
 class TestGerarRoteia(unittest.TestCase):
     def test_classico_vai_pro_banco(self):
         chamados = {"classico": 0, "reserva": 0}
+        regs_reserva = []
         class FakeDB:
             def init(self): pass
             def listar_candidatos(self, status=None):
                 return [{"id": "c1", "tema": "Obesidade", "tipo": "classico", "titulo": "STEP",
                          "abstract": "z" * 300, "citacoes": 4000, "doi": "d", "fonte": "f", "url": "u", "data": "2021-01-01"},
                         {"id": "c2", "tema": "Hormonal", "tipo": "varredura", "titulo": "Novo",
-                         "abstract": "w" * 300, "doi": "d2", "fonte": "f", "url": "u", "data": "2026-07-01"}]
+                         "abstract": "w" * 300, "doi": "d2", "fonte": "f", "url": "u", "data": "2026-07-01",
+                         "score": 8.5}]
             def salvar_classico(self, reg): chamados["classico"] += 1; return "k"
-            def salvar_reserva(self, reg): chamados["reserva"] += 1; return "r"
+            def salvar_reserva(self, reg): chamados["reserva"] += 1; regs_reserva.append(reg); return "r"
             def marcar_candidatos(self, ids, status): pass
         import curadoria
         curadoria.gerar_selecionados(db_mod=FakeDB(),
                                      gerar_resumo_fn=lambda c: {"titulo_pt": "T", "resumo": "R", "gancho": "", "grafico": None})
         self.assertEqual(chamados, {"classico": 1, "reserva": 1})
+        # regressão: a nota (score) do candidato triado precisa chegar na reserva —
+        # sem ela, a fila usava prioridade=0 pra todo mundo e a curadoria ficava soterrada.
+        self.assertEqual(regs_reserva[0]["score"], 8.5)
 
 
 if __name__ == "__main__":

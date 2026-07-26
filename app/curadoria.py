@@ -210,9 +210,12 @@ def extrair_texto_pdf(pdf_bytes):
             pass
 
 
-def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet", **geradores):
+def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet",
+                         triar_fn=None, **geradores):
     """Gera o resumo de um estudo do Diego (texto do PDF ou colado) e coloca na fila
-    COM PRIORIDADE (fura a fila). Retorna (id_reserva, titulo_pt)."""
+    COM PRIORIDADE (fura a fila). A nota (score) vem da MESMA triagem por IA usada na
+    varredura, pra o manual competir na fila por qualidade (não só furar por prioridade).
+    Retorna (id_reserva, titulo_pt). triar_fn injetável p/ teste (sem rede)."""
     import json
     import db
     db.init()
@@ -222,6 +225,12 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
                          "Envie um PDF com texto selecionável ou cole o resumo do estudo.")
     cand = {"titulo": titulo, "fonte": fonte, "doi": doi, "url": url, "data": data,
             "abstract": corpo[:14000]}              # corta p/ caber no prompt
+    if triar_fn is None:
+        import triage
+        triar_fn = triage.triar
+    tema_triagem = "Meus estudos"
+    triados = triar_fn([{"titulo": titulo or "", "resumo": corpo, "fonte": fonte}], tema_triagem)
+    score = triados[0].get("score", 0) if triados else 7   # LIXO/no-return -> default 7 (Diego escolheu)
     # Sem título informado -> gerar o título a partir do TEXTO. Senão a IA de título é
     # instruída a reescrever um "título em inglês" vazio e devolve um recado de erro.
     if not (titulo or "").strip() and "gerar_titulo" not in geradores:
@@ -234,7 +243,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
         "gancho": r.get("gancho", ""),
         "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
         "doi": doi, "fonte": fonte, "url": url, "data": data,
-        "prioridade": 1, "origem": "manual"})
+        "prioridade": 1, "origem": "manual", "score": score})
     return rid, r["titulo_pt"]
 
 
@@ -278,7 +287,7 @@ def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
                    "gancho": r.get("gancho", ""),
                    "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
                    "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
-                   "data": c.get("data", "")}
+                   "data": c.get("data", ""), "score": c.get("score", 0)}
             if c.get("tipo") == "classico":
                 reg["citacoes"] = c.get("citacoes", 0)
                 db_mod.salvar_classico(reg)

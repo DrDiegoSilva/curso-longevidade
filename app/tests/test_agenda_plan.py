@@ -76,13 +76,14 @@ class TestPlanejar(unittest.TestCase):
         # 29 vem depois de bloqueado tema A -> variedade tenta != A, mas só há A -> ainda preenche
         self.assertIn("2026-07-29", plano)
 
-    def test_tipo_nao_decide_mais_score_sim(self):
-        # "reserva > fila" saiu do _rank: com o resto empatado, quem decide é o score
+    def test_tier_decide_antes_do_score(self):
+        # curada (reserva) bate crua (fila) com o resto empatado, mesmo com score menor —
+        # o TIER de curadoria vem antes da nota; score só desempata dentro do mesmo tier.
         dias = self._dias(["2026-07-27"])
         cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}, score=9),
                  _cand("A", tipo="reserva", score=3)]
         plano = ap.planejar_agenda(dias, cands, ["A"], None)
-        self.assertEqual(plano["2026-07-27"]["tipo"], "fila")
+        self.assertEqual(plano["2026-07-27"]["tipo"], "reserva")
 
     def test_estoque_magro_deixa_vazio(self):
         dias = self._dias(["2026-07-27", "2026-07-28"])
@@ -104,7 +105,7 @@ class TestPlanejar(unittest.TestCase):
         self.assertEqual(plano["2026-07-27"]["tema"], "B")
 
     def test_rotacao_vence_quando_tipo_e_score_empatam(self):
-        # tipo não é mais critério de rank: rotação (tema==preferido) decide entre A e B
+        # rotação (tema==preferido) vem antes do TIER: decide entre A e B mesmo com tipos diferentes
         dias = self._dias(["2026-07-27"])
         cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}), _cand("B", tipo="reserva")]
         plano = ap.planejar_agenda(dias, cands, ["A"], "X")
@@ -134,6 +135,16 @@ class TestRankPiramide(unittest.TestCase):
     def test_classificar_slot_novos_tipos(self):
         self.assertEqual(ap.classificar_slot({"tipo": "candidato", "ref_id": "x"}), ("candidato", "x"))
         self.assertEqual(ap.classificar_slot({"tipo": "classico", "ref_id": "y"}), ("classico", "y"))
+
+    def test_curada_vence_crua_mesmo_com_nota_menor(self):
+        # regressão: reserva (curada, revisada por humano) tem que vencer candidato/fila
+        # cru (varredura, sem revisão) do MESMO tema/frescor, mesmo com nota (score) menor.
+        # Se _tier voltar a ser só "não-clássico", este teste falha (score decide e o cru vence).
+        dias = [("2026-07-27", None, False)]
+        cands = [_c("Obesidade", tipo="candidato", fresco=False, score=9, ref_id="crua"),
+                 _c("Obesidade", tipo="reserva", fresco=False, score=3, ref_id="curada")]
+        plano = ap.planejar_agenda(dias, cands, ["Obesidade"], None)
+        self.assertEqual(plano["2026-07-27"]["ref_id"], "curada")
 
 
 class TestClassificarSlot(unittest.TestCase):

@@ -172,6 +172,33 @@ class TestPoolPiramide(unittest.TestCase):
         n_ref = sum(1 for d in datas if (self.db.agenda_slot(d) or {}).get("ref_id") == cand_id)
         self.assertEqual(n_ref, 1)
 
+    def test_reserva_bate_candidato_mesmo_tema_por_nota_real(self):
+        # regressão: reserva (curada, nota=9) vence candidato (cru, nota=5) do MESMO
+        # tema/dia — TIER decide, e a nota usada no pool vem do campo 'score' real da
+        # reserva (não mais 'prioridade', que soterrava a curadoria).
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": "Cru", "chave": "k1",
+                                    "score": 5, "tipo": "varredura", "data": "2020-01-01"}])
+        self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Curada", "resumo": "r",
+                                "gancho": "", "grafico": "", "doi": "", "fonte": "NEJM",
+                                "url": "", "data": "2020-01-01", "score": 9})
+        self.daily.materializar_agenda(datas=["2026-07-27"])
+        slot = self.db.agenda_slot("2026-07-27")
+        self.assertEqual(slot["tipo"], "reserva")
+        self.assertEqual(slot["titulo"], "Curada")
+
+    def test_estoque_cheio_de_candidatos_nao_chama_reabastecer(self):
+        # o reabastecer (rede) só deve rodar se o estoque TOTAL (reserva+candidato+
+        # clássico) não cobre o horizonte — não só reserva+fila.
+        chamadas = []
+        self.daily.reabastecer = lambda: chamadas.append(1)
+        for i in range(10):
+            self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": f"C{i}", "chave": f"k{i}",
+                                        "score": 5, "tipo": "varredura", "data": "2020-01-01"}])
+        import agenda_plan as ap
+        datas = ap.dias_uteis_desde(datetime.now() + timedelta(days=1), 5, self.daily._dias_envio())
+        self.daily.materializar_agenda(datas=datas)
+        self.assertEqual(chamadas, [])   # estoque de candidatos (10) cobre o horizonte (5)
+
 
 if __name__ == "__main__":
     unittest.main()
