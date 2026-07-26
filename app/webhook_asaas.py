@@ -274,9 +274,14 @@ def _executar(event, pay, pid, enviar_fn):
             # gravada, None é o certo (o cartão renova e empurra sozinho, é o RENOVAR mais
             # abaixo quem confirma o próximo ciclo); só sem assinatura (Pix) a data de fim
             # é obrigatória, senão ATIVO sem acesso_ate vira acesso pra sempre.
+            # B9: recompra é um contrato à distância NOVO -> nova janela de arrependimento.
+            # `criado_em` é o marco do art. 49 (é o que refunds.dentro_arrependimento lê, e
+            # seu único leitor); sem regravar, quem voltava e cancelava no 3º dia não
+            # recebia estorno nenhum e ninguém era avisado.
             extra_sub = {"asaas_subscription_id": sid} if sid else {}
             subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
                                       acesso_ate=(None if sid else novo_fim), proximo_vencimento=novo_fim,
+                                      criado_em=datetime.now().isoformat(),
                                       **extra_valor, **extra_sub)
             # Recompra é manual (o assinante voltou e pagou de novo) -> WhatsApp.
             _confirmar_renovacao({"email": existente.get("email") or email,
@@ -317,9 +322,15 @@ def _executar(event, pay, pid, enviar_fn):
             # cancela quem tem cancelado_em VAZIO — com a marca antiga, ele fica
             # PERMANENTEMENTE impedido de cancelar de novo.
             extra_sub = {"asaas_subscription_id": sid} if sid else {}
+            # B9: recontratação também é contrato novo -> nova janela de arrependimento, e o
+            # `asaas_payment_id` PRECISA apontar pro pagamento desta compra: sem isso o
+            # estorno automático miraria a cobrança da compra anterior (a que já foi paga e
+            # consumida), devolvendo o dinheiro errado ou falhando.
             subscribers.marcar_status(existente["id"], "ATIVO", proximo_vencimento=prox,
                                       acesso_ate=(prox if not sid else None),
                                       cancelado_em=None, cancel_motivo=None,
+                                      asaas_payment_id=pid,
+                                      criado_em=datetime.now().isoformat(),
                                       **extra_valor, **extra_sub)
             reg = existente
         else:
