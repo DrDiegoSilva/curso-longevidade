@@ -17,12 +17,17 @@ def preco_renovacao(sub, plano):
 
     O fallback existe porque `valor_contratado` só passou a ser gravado agora — os assinantes
     anteriores entraram no preço de lançamento, que é justamente o `base` do plano.
+
+    Só valor FINITO e POSITIVO é aceito: `float()` converte "inf"/"nan" sem reclamar, e um
+    infinito passaria por uma checagem ingênua de `> 0` e viraria preço cobrado. Qualquer coisa
+    fora disso (ausente, zero, negativo, texto, infinito) cai no base — errar aqui é dinheiro.
     """
+    import math
     try:
         v = float((sub or {}).get("valor_contratado") or 0)
     except (TypeError, ValueError):
         v = 0.0
-    return v if v > 0 else float(plano["base"])
+    return v if (math.isfinite(v) and v > 0) else float(plano["base"])
 
 
 def novo_vencimento(acesso_ate, hoje, dias_ciclo, bonus_dias=0):

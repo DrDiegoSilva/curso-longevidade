@@ -30,6 +30,16 @@ class TestPrecoRenovacao(unittest.TestCase):
     def test_valor_contratado_invalido_cai_no_base(self):
         self.assertEqual(self.r.preco_renovacao({"valor_contratado": "abc"}, PLANO), 1099.0)
 
+    def test_valor_contratado_negativo_cai_no_base(self):
+        # trava o `> 0`: um refactor para `!= 0` cobraria valor negativo de verdade
+        self.assertEqual(self.r.preco_renovacao({"valor_contratado": -100.0}, PLANO), 1099.0)
+
+    def test_valor_nao_finito_cai_no_base(self):
+        # float() aceita "inf"/"nan" caladamente, e infinito passaria por um teste ingênuo de > 0
+        self.assertEqual(self.r.preco_renovacao({"valor_contratado": "inf"}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao({"valor_contratado": float("inf")}, PLANO), 1099.0)
+        self.assertEqual(self.r.preco_renovacao({"valor_contratado": float("nan")}, PLANO), 1099.0)
+
 
 class TestNovoVencimento(unittest.TestCase):
     def setUp(self):
