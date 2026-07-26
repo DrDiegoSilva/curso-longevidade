@@ -1153,11 +1153,10 @@ class TestPaginaRenovar(unittest.TestCase):
                                      "2026-08-01", bonus=True)
         sem = self.sw.pagina_renovar({"nome": "T"}, PLANO, 1044.05, 1099.0,
                                      "2026-08-01", bonus=False)
-        self.assertIn("mês", com.lower().replace("mes", "mês"))
-        self.assertIn("1 mês", com)
-        self.assertNotIn("1 mês", sem)
+        self.assertIn("1 mês extra", com)
+        self.assertNotIn("1 mês extra", sem)
 
-    def test_form_manda_metodo_e_parcelas(self):
+    def test_form_posta_o_metodo_escolhido(self):
         html = self.sw.pagina_renovar({"nome": "T"}, PLANO, 1044.05, 1099.0,
                                       "2026-08-01", bonus=False)
         self.assertIn('action="/renovar"', html)
