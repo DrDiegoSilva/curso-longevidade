@@ -116,9 +116,16 @@ class TestSuspenderSemSubscription(unittest.TestCase):
         self.assertEqual((st, msg), (200, "ignorado"))
         self.assertEqual(self.alertas, [])
 
-    def test_overdue_de_pix_marca_inadimplente(self):
+    def test_overdue_de_pix_nao_encurta_o_acesso_ja_pago(self):
+        """O fallback vale só para SUSPENDER. Em INADIMPLENTE o `tem_acesso` passa a olhar
+        só o `carencia_ate` (3 dias) e IGNORA o `acesso_ate` — marcar um assinante de Pix
+        assim por causa de uma cobrança de renovação não paga truncaria para 3 dias um
+        acesso que ele já pagou até 2027. Pix vencido é assunto da régua."""
         sub = self._assinante_pix()
         st, msg = self.w.processar(self._body("PAYMENT_OVERDUE", "pay_pix_1"),
                                    "segredo", enviar_fn=self.envfn)
-        self.assertEqual((st, msg), (200, "inadimplente"))
-        self.assertEqual(self.s.por_id(sub["id"])["status"], "INADIMPLENTE")
+        self.assertEqual(st, 200)
+        atual = self.s.por_id(sub["id"])
+        self.assertEqual(atual["status"], "ATIVO")
+        self.assertEqual(atual["acesso_ate"], "2027-07-19")
+        self.assertTrue(self.s.tem_acesso(atual))

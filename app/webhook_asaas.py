@@ -444,11 +444,18 @@ def _executar(event, pay, pid, enviar_fn):
     # acesso ativo e a comissão do afiliado a pagar, sem avisar ninguém.
     # Ordem: a assinatura (mais específica), o próprio pagamento, e o CPF — este último
     # cobre o estorno de uma parcela ANTIGA, cujo id já não é o `asaas_payment_id` em arquivo.
+    #
+    # O fallback vale SÓ para SUSPENDER (estorno/chargeback), onde cortar o acesso é o
+    # objetivo. INADIMPLENTE continua exigindo assinatura recorrente de propósito: em
+    # INADIMPLENTE o `tem_acesso` passa a olhar só o `carencia_ate` (3 dias) e IGNORA o
+    # `acesso_ate` — marcar um assinante de Pix assim por causa de uma cobrança de renovação
+    # não paga truncaria para 3 dias um acesso que ele já pagou até muito depois. Pix vencido
+    # é assunto da régua, não da inadimplência.
     alvo = sub or subscribers.por_payment(pid) or subscribers.por_cpf(pay.get("cpfCnpj") or "")
 
-    if acao == "INADIMPLENTE" and alvo:
+    if acao == "INADIMPLENTE" and sub:
         carencia = (datetime.now() + timedelta(days=CARENCIA_DIAS)).isoformat()
-        subscribers.marcar_status(alvo["id"], "INADIMPLENTE", carencia_ate=carencia)
+        subscribers.marcar_status(sub["id"], "INADIMPLENTE", carencia_ate=carencia)
         return (200, "inadimplente")
 
     if acao == "SUSPENDER" and alvo:
@@ -465,7 +472,7 @@ def _executar(event, pay, pid, enviar_fn):
                                      "baixe manualmente no painel")
         return (200, "suspenso")
 
-    if acao in ("SUSPENDER", "INADIMPLENTE"):
+    if acao == "SUSPENDER":
         # Nada casou. Não pode virar "ignorado": um estorno perdido é dinheiro devolvido
         # com acesso ativo, e era indistinguível de um PAYMENT_CREATED que ignoramos de
         # propósito. Alerta em vez de sumir em silêncio.
