@@ -82,7 +82,6 @@ def disparar(hoje=None, enviar_wa=None, enviar_email=None):
         enviar_email = lambda dest, assunto, corpo: email_send.enviar(dest, assunto, corpo)
 
     automacoes = db.listar_automacoes(so_ativas=True)
-    link = f"{config.ARTIGOS_URL}/renovar"
     enviadas = 0
     for sub in subscribers.listar():
         plano = config.plano_por_slug(sub.get("plano", "")) or {}
@@ -91,6 +90,14 @@ def disparar(hoje=None, enviar_wa=None, enviar_email=None):
         venc = sub.get("proximo_vencimento")
         off = offset_vencimento(venc, hoje)
         for a in automacoes_do_dia(automacoes, off):
+            # São dois fluxos diferentes: RENOVAÇÃO (dias <= 0) é quem ainda tem acesso
+            # e paga antes de vencer — usa /renovar, que exige sessão, e funciona porque
+            # quem tem acesso consegue logar. RECONTRATAÇÃO (dias > 0) é quem já perdeu
+            # o acesso — /renovar bloquearia esse assinante, então usa /assinar, que é
+            # público (e o webhook reconhece o CPF e reativa com o bônus de resgate).
+            rota = "renovar" if int(a.get("dias") or 0) <= 0 else "assinar"
+            link = f"{config.ARTIGOS_URL}/{rota}"
+
             # Determina o destinatário conforme o canal ANTES de marcar o ledger.
             # Se não há destinatário, não marca e não envia — registra um log.
             destinatario = None

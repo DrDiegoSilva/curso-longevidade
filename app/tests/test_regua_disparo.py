@@ -38,6 +38,13 @@ class TestDisparo(unittest.TestCase):
                                    enviar_wa=lambda w, m: self.wa.append((w, m)),
                                    enviar_email=lambda e, a, c: self.emails.append((e, a)))
 
+    def _ativar_somente(self, dias):
+        """Ativa só a automação do `dias` pedido e desativa as demais — isola o teste
+        de link (senão outra automação ativa por padrão poderia disparar junto)."""
+        for a in self.db.listar_automacoes():
+            self.db.salvar_automacao(a["id"], a["dias"], a["canal"], a["texto"],
+                                     1 if a["dias"] == dias else 0)
+
     def test_dispara_no_offset_certo(self):
         self._criar()
         n = self._disparar(date(2026, 7, 25))          # -7
@@ -149,6 +156,35 @@ class TestDisparo(unittest.TestCase):
         n2 = self._disparar(date(2026, 7, 25))
         self.assertEqual(n2, 0)
         self.assertEqual(len(self.emails), 1)
+
+    # RENOVAÇÃO (dias <= 0, ainda tem acesso) usa /renovar (exige sessão, quem tem
+    # acesso consegue logar). RECONTRATAÇÃO (dias > 0, acesso já caiu) usa /assinar
+    # (público) — /renovar bloquearia quem perdeu o acesso e a mensagem de resgate
+    # ficaria inacionável.
+
+    def test_link_e_renovar_quando_dias_e_negativo(self):
+        self._ativar_somente(-7)
+        self._criar()
+        self._disparar(date(2026, 7, 25))                # vencimento 2026-08-01, offset -7
+        msg = self.wa[0][1]
+        self.assertIn("/renovar", msg)
+        self.assertNotIn("/assinar", msg)
+
+    def test_link_e_renovar_quando_dias_e_zero(self):
+        self._ativar_somente(0)
+        self._criar()
+        self._disparar(date(2026, 8, 1))                 # vencimento 2026-08-01, offset 0
+        msg = self.wa[0][1]
+        self.assertIn("/renovar", msg)
+        self.assertNotIn("/assinar", msg)
+
+    def test_link_e_assinar_quando_dias_e_positivo(self):
+        self._ativar_somente(15)
+        self._criar()
+        self._disparar(date(2026, 8, 16))                # vencimento 2026-08-01, offset 15
+        msg = self.wa[0][1]
+        self.assertIn("/assinar", msg)
+        self.assertNotIn("/renovar", msg)
 
 
 if __name__ == "__main__":
