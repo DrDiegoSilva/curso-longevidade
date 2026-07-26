@@ -177,6 +177,15 @@ envio dos estudos.
 mostra plano, vencimento, valor contratado, e as opções Pix (com −5%) e cartão. Se o acesso já
 expirou, mostra o bônus de +1 mês. **Não** tem campo de cupom.
 
+**O marcador `{link}` das mensagens** aponta para `{ARTIGOS_URL}/renovar`. Quem não estiver com
+a sessão viva cai no `/entrar` e recebe o código de acesso pelo WhatsApp — o mesmo número para
+o qual a mensagem acabou de ser enviada, então o atrito é de segundos.
+
+*(Descartado: usar `auth_web.preparar_primeiro_acesso` para mandar um link já autenticado. Essa
+função emite token de **criar senha**, válido 7 dias. Mandar isso para quem já tem senha
+confunde o assinante e faz uma mensagem de cobrança parecer phishing de redefinição — não vale
+economizar um clique.)*
+
 **`/renovar` (POST):** monta o checkout no Asaas com o valor da Decisão 2, grava um `pending`
 marcado como renovação, e redireciona. Na confirmação do pagamento, o webhook já reconhece o
 assinante existente (guarda do Projeto E) e estende o período — a partir do **fim atual** quando
