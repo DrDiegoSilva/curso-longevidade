@@ -198,10 +198,19 @@ def init():
                 criado_em TEXT,
                 atualizado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS automacoes_renovacao (
+                id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
+                ativo INTEGER DEFAULT 1, criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS avisos_renovacao (
+                subscriber_id TEXT, automacao_id TEXT, vencimento_ref TEXT, enviado_em TEXT,
+                PRIMARY KEY (subscriber_id, automacao_id, vencimento_ref)
+            );
             """
         )
     _migrar_colunas()
     _seed_cupons()
+    _seed_automacoes()
     if _is_pg():
         _habilitar_rls()        # trava a Data API pública do Supabase (app conecta direto e ignora RLS)
     _INITED = True
@@ -210,7 +219,8 @@ def init():
 _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
-            "afiliados", "comissoes", "settings", "envios_slot", "envios_dia"]
+            "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
+            "automacoes_renovacao", "avisos_renovacao"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -245,6 +255,7 @@ def _migrar_colunas():
         _add_coluna(c, "pending_signups", "termos_versao", "TEXT")
         _add_coluna(c, "pending_signups", "termos_ip", "TEXT")
         _add_coluna(c, "comissoes", "estornada_em", "TEXT")
+        _add_coluna(c, "subscribers", "valor_contratado", "REAL")
 
 
 def _habilitar_rls():
@@ -358,6 +369,80 @@ def slot_ja_enviou(data, slot):
         r = c.execute("SELECT 1 FROM envios_slot WHERE data=? AND slot=?",
                       (data or "", slot or "")).fetchone()
     return r is not None
+
+
+# Textos padrão da régua. {nome}, {ate} (data do vencimento) e {link} (URL do /renovar).
+_AUTOMACOES_SEED = [
+    (-7, "whatsapp", "Olá {nome}! Sua assinatura da Atualização Científica vence em {ate} — "
+                     "daqui a 7 dias. Para não perder nenhum estudo, renove por aqui:\n{link}"),
+    (-3, "whatsapp", "{nome}, faltam 3 dias: sua assinatura vence em {ate}. "
+                     "A renovação leva 1 minuto:\n{link}"),
+    (0,  "whatsapp", "{nome}, sua assinatura vence hoje. A partir de amanhã os estudos param "
+                     "de chegar. Renove agora:\n{link}"),
+    (1,  "whatsapp", "{nome}, sua assinatura venceu ontem e os estudos pararam. Volte agora e "
+                     "ganhe *1 mês extra* de acesso:\n{link}"),
+    (3,  "whatsapp", "{nome}, seu acesso está parado há 3 dias. Se voltar agora, você ganha "
+                     "*1 mês a mais* junto com a renovação:\n{link}"),
+    (15, "whatsapp", "{nome}, última chamada: volte para a Atualização Científica e ganhe "
+                     "*1 mês extra*. Depois desta, não insistimos mais.\n{link}"),
+]
+
+
+def _seed_automacoes():
+    """Cria as automações padrão 1× (idempotente pelo id determinístico)."""
+    from datetime import datetime
+    with _conn() as c:
+        for dias, canal, texto in _AUTOMACOES_SEED:
+            c.execute("INSERT INTO automacoes_renovacao (id,dias,canal,texto,ativo,criado_em) "
+                      "VALUES (?,?,?,?,1,?) ON CONFLICT (id) DO NOTHING",
+                      (f"seed{dias}", dias, canal, texto, datetime.now().isoformat()))
+
+
+def listar_automacoes(so_ativas=False):
+    """Automações da régua, da mais antecipada para a mais tardia."""
+    q = "SELECT * FROM automacoes_renovacao"
+    if so_ativas:
+        q += " WHERE ativo=1"
+    q += " ORDER BY dias ASC"
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q).fetchall()]
+
+
+def salvar_automacao(id, dias, canal, texto, ativo=1):
+    """Cria (id vazio) ou atualiza uma automação. Devolve o id."""
+    import secrets
+    from datetime import datetime
+    id = (id or "").strip() or secrets.token_hex(6)
+    with _conn() as c:
+        c.execute("INSERT INTO automacoes_renovacao (id,dias,canal,texto,ativo,criado_em) "
+                  "VALUES (?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
+                  "dias=excluded.dias, canal=excluded.canal, texto=excluded.texto, "
+                  "ativo=excluded.ativo",
+                  (id, int(dias), canal, texto, 1 if int(ativo or 0) else 0,
+                   datetime.now().isoformat()))
+    return id
+
+
+def remover_automacao(id):
+    with _conn() as c:
+        return c.execute("DELETE FROM automacoes_renovacao WHERE id=?", (id,)).rowcount > 0
+
+
+def registrar_aviso(subscriber_id, automacao_id, vencimento_ref):
+    """Marca que este aviso já saiu para este assinante NESTE ciclo. True se marcou agora.
+
+    O `vencimento_ref` é a data de vencimento vigente no momento do envio: quando o assinante
+    renova, ela muda e a régua volta a valer no ciclo seguinte sem precisar limpar nada.
+    Mesmo padrão do ledger `envios_dia`, que matou o reenvio duplicado dos estudos.
+    """
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("INSERT INTO avisos_renovacao "
+                        "(subscriber_id,automacao_id,vencimento_ref,enviado_em) VALUES (?,?,?,?) "
+                        "ON CONFLICT (subscriber_id,automacao_id,vencimento_ref) DO NOTHING",
+                        (subscriber_id or "", automacao_id or "", vencimento_ref or "",
+                         datetime.now().isoformat()))
+        return cur.rowcount > 0
 
 
 def cupom_valido(codigo):

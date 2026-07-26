@@ -208,8 +208,10 @@ def _executar(event, pay, pid, enviar_fn):
             reg = subscribers.criar_de_pagamento(
                 {"nome": nome, "whatsapp": whatsapp, "email": email, "plano": plano.get("slug", ""),
                  "termos_versao": (pending or {}).get("termos_versao", ""),
-                 "termos_ip": (pending or {}).get("termos_ip", "")},
-                {"customer": pay.get("customer"), "subscription": sid, "payment": pid, "proximo_vencimento": prox})
+                 "termos_ip": (pending or {}).get("termos_ip", ""),
+                 "valor_contratado": pay.get("value")},
+                {"customer": pay.get("customer"), "subscription": sid, "payment": pid,
+                 "proximo_vencimento": prox})
             if not sid:
                 # Pix é pagamento DETACHED (avulso), sem assinatura recorrente por trás — não
                 # existe cobrança futura agendada, logo nunca chega um PAYMENT_OVERDUE pra

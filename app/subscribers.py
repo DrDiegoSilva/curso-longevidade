@@ -14,7 +14,7 @@ _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
          "asaas_customer_id", "asaas_subscription_id", "asaas_payment_id",
          "proximo_vencimento", "acesso_ate", "carencia_ate", "aviso_renov_em",
          "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em",
-         "termos_versao", "termos_aceito_em", "termos_ip", "senha_hash"]
+         "termos_versao", "termos_aceito_em", "termos_ip", "valor_contratado", "senha_hash"]
 
 
 def _norm(w):
@@ -142,6 +142,7 @@ def criar_de_pagamento(pending, dados_asaas=None, status="ATIVO"):
            "termos_versao": pending.get("termos_versao") or "",
            "termos_aceito_em": datetime.now().isoformat() if pending.get("termos_versao") else "",
            "termos_ip": pending.get("termos_ip") or "",
+           "valor_contratado": pending.get("valor_contratado"),
            "criado_em": datetime.now().isoformat()}
     _insert(reg)
     return reg
