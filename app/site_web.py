@@ -454,7 +454,14 @@ def landing():
 
 
 # ── Login OTP ──
-def pagina_entrar(etapa="numero", whatsapp="", erro=""):
+def pagina_entrar(etapa="numero", whatsapp="", erro="", via="whatsapp"):
+    """Login por código (OTP). via='whatsapp' (padrão) ou 'cpf'.
+    `whatsapp` = valor do identificador a repreencher/embutir (é o CPF quando via='cpf')."""
+    cpf_mode = (via == "cpf")
+    campo = "cpf" if cpf_mode else "whatsapp"
+    action = "/entrar-cpf-codigo" if cpf_mode else "/entrar-codigo"
+    senha_href = "/entrar-cpf" if cpf_mode else "/entrar"
+    recomecar_txt = "Usar outro CPF" if cpf_mode else "Usar outro número"
     erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
     if etapa == "codigo":
         corpo = f"""
@@ -462,56 +469,81 @@ def pagina_entrar(etapa="numero", whatsapp="", erro=""):
           <h2 class="disp">Digite o código</h2>
           <p class="hint">Enviamos um código de 6 dígitos no seu WhatsApp. Ele vale por 10 minutos.</p>
           {erro_html}
-          <form method="post" action="/entrar-codigo">
+          <form method="post" action="{action}">
             <input type="hidden" name="etapa" value="codigo">
-            <input type="hidden" name="whatsapp" value="{_esc(whatsapp)}">
+            <input type="hidden" name="{campo}" value="{_esc(whatsapp)}">
             <label>Código</label>
             <input type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" autofocus>
             <button class="cta" type="submit">Entrar</button>
           </form>
-          <p class="hint" style="margin-top:16px"><a href="/entrar-codigo" style="color:var(--ouro2)">Usar outro número</a> &nbsp;·&nbsp; <a href="/entrar" style="color:var(--suave)">Entrar com senha</a></p>
+          <p class="hint" style="margin-top:16px"><a href="{action}" style="color:var(--ouro2)">{recomecar_txt}</a> &nbsp;·&nbsp; <a href="{senha_href}" style="color:var(--suave)">Entrar com senha</a></p>
         </div></div>"""
     else:
+        label = "CPF" if cpf_mode else "WhatsApp (com DDD)"
+        imode = "numeric" if cpf_mode else "tel"
+        ph = "000.000.000-00" if cpf_mode else "(43) 99999-0000"
+        hint = ("Informe o CPF do seu cadastro e enviamos um código de acesso ao WhatsApp da assinatura."
+                if cpf_mode else
+                "Sem acesso à senha? Informe o WhatsApp da sua assinatura e enviamos um código de acesso.")
         corpo = f"""
         <div class="wrap"><div class="panel">
           <h2 class="disp">Entrar com código</h2>
-          <p class="hint">Sem acesso à senha? Informe o WhatsApp da sua assinatura e enviamos um código de acesso.</p>
+          <p class="hint">{hint}</p>
           {erro_html}
-          <form method="post" action="/entrar-codigo">
+          <form method="post" action="{action}">
             <input type="hidden" name="etapa" value="numero">
-            <label>WhatsApp (com DDD)</label>
-            <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" autofocus>
+            <label>{label}</label>
+            <input type="text" name="{campo}" inputmode="{imode}" placeholder="{ph}" autofocus>
             <button class="cta" type="submit">Enviar código</button>
           </form>
-          <p class="hint" style="margin-top:16px"><a href="/entrar" style="color:var(--ouro2)">← Entrar com senha</a></p>
+          <p class="hint" style="margin-top:16px"><a href="{senha_href}" style="color:var(--ouro2)">← Entrar com senha</a></p>
         </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_login(erro="", sem_senha=False, whatsapp=""):
-    """Tela de login principal: WhatsApp + senha (não depende do WhatsApp p/ entrar)."""
+def pagina_login(erro="", sem_senha=False, whatsapp="", via="whatsapp"):
+    """Tela de login principal: identificador + senha. via='whatsapp' (padrão) ou 'cpf'.
+    `whatsapp` = valor do identificador a repreencher (é o CPF quando via='cpf')."""
+    cpf_mode = (via == "cpf")
+    label = "CPF" if cpf_mode else "WhatsApp (com DDD)"
+    campo = "cpf" if cpf_mode else "whatsapp"
+    imode = "numeric" if cpf_mode else "tel"
+    ph = "000.000.000-00" if cpf_mode else "(43) 99999-0000"
+    action = "/entrar-cpf" if cpf_mode else "/entrar"
+    codigo_href = "/entrar-cpf-codigo" if cpf_mode else "/entrar-codigo"
+    titulo_hint = ("Entre com o CPF do seu cadastro e sua senha." if cpf_mode
+                   else "Entre com o WhatsApp da sua assinatura e sua senha.")
     erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
     if sem_senha:
-        erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
-                      '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
+        if cpf_mode:
+            erro_html += ('<div class="infobox">Você ainda não criou sua senha. Use '
+                          '<strong>Entrar com código no WhatsApp</strong> abaixo (ou peça seu link de acesso).</div>')
+        else:
+            erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
+                          '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
+    if cpf_mode:
+        aux = (f'<p class="hint" style="margin-top:16px"><a href="{codigo_href}" style="color:var(--ouro2)">Sem senha? Entrar com código no WhatsApp</a></p>'
+               f'<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar" style="color:var(--suave)">← Entrar com WhatsApp</a></p>')
+    else:
+        aux = ('<p class="hint" style="margin-top:16px">'
+               '<a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>'
+               '&nbsp;·&nbsp;'
+               '<a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a></p>'
+               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>'
+               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-cpf" style="color:var(--suave)">Assinante fora do Brasil / sem WhatsApp brasileiro? Entrar com CPF</a></p>')
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Área do assinante</h2>
-      <p class="hint">Entre com o WhatsApp da sua assinatura e sua senha.</p>
+      <p class="hint">{titulo_hint}</p>
       {erro_html}
-      <form method="post" action="/entrar">
-        <label>WhatsApp (com DDD)</label>
-        <input type="text" name="whatsapp" inputmode="tel" value="{_esc(whatsapp)}" placeholder="(43) 99999-0000" autofocus>
+      <form method="post" action="{action}">
+        <label>{label}</label>
+        <input type="text" name="{campo}" inputmode="{imode}" value="{_esc(whatsapp)}" placeholder="{ph}" autofocus>
         <label>Senha</label>
         <input type="password" name="senha" placeholder="sua senha">
         <button class="cta" type="submit">Entrar</button>
       </form>
-      <p class="hint" style="margin-top:16px">
-        <a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>
-        &nbsp;·&nbsp;
-        <a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a>
-      </p>
-      <p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>
+      {aux}
       <p class="hint" style="margin-top:14px">Ainda não assina? <a href="/" style="color:var(--ouro2)">Conheça o plano</a>.</p>
     </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
