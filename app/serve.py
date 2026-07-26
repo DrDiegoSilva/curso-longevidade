@@ -94,6 +94,11 @@ def agendador():
         except Exception as e:
             print(f"[agendador] {nome} erro: {e}", flush=True)
 
+AVISO_JA_RECORRENTE = ("Sua assinatura já renova automaticamente no cartão — não há "
+                       "nada a pagar aqui. Na data do vencimento a cobrança sai sozinha. "
+                       "Se quiser interromper, use a opção de cancelar a renovação.")
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     timeout = 20          # tempo-limite de socket: conexão lenta/pendurada cai em vez de segurar a thread
 
@@ -390,25 +395,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_meus_dados(
                 sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
         if path == "/renovar":
-            # Não existia caminho nenhum para o assinante renovar por conta própria — o
-            # checkout de /assinar recusa quem ainda TEM acesso, então os avisos da régua
-            # mandavam o cliente pra uma tela que o bloqueava. Preço é sempre o CONTRATADO
-            # (renovacao.preco_renovacao), nunca o de tabela, e sem campo de cupom: o
-            # desconto de afiliado vale só na 1ª venda.
-            import subscribers as _s, config as _c, renovacao as _r, pricing as _p
-            sub = self._sub_logado()
-            if not sub:
-                return self._redirect("/entrar")
-            plano = _c.plano_por_slug(sub.get("plano", "")) or {}
-            if not plano:
-                return self._redirect("/minha")
-            preco = _r.preco_renovacao(sub, plano)
-            expirado = not _s.tem_acesso(sub)
-            return self._html(site_web.pagina_renovar(
-                sub, plano,
-                _p.base_cobrada(plano, "PIX", preco, 0.0),
-                _p.base_cobrada(plano, "CARTAO", preco, 0.0),
-                sub.get("proximo_vencimento"), bonus=expirado))
+            return self._get_rota_renovar()
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             # /artigos só LÊ conteúdo (não muta dado nenhum do assinante) — o critério
@@ -819,6 +806,37 @@ class Handler(http.server.BaseHTTPRequestHandler):
         import urllib.parse as _up
         return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
 
+    # B4 (revisão final #2): `asaas.montar_checkout` monta TODO checkout de cartão como
+    # `chargeTypes: ["RECURRENT"]`. Quem já tem `asaas_subscription_id` (cartão à vista) já é
+    # cobrado sozinho pelo Asaas — passar por /renovar criava uma SEGUNDA assinatura
+    # recorrente, cobrando duas vezes para sempre. É o mesmo estrago que o c6b7466 evita do
+    # lado do webhook (gravar o subscription_id para a régua NÃO chamar esse assinante para
+    # renovar); a rota é a outra porta do mesmo problema.
+    def _get_rota_renovar(self):
+        """Tela de renovação do próprio assinante. Preço é sempre o CONTRATADO
+        (renovacao.preco_renovacao), nunca o de tabela, e sem campo de cupom: o desconto de
+        afiliado vale só na 1ª venda.
+
+        Existe porque o checkout de /assinar recusa quem ainda TEM acesso — sem esta rota os
+        avisos da régua mandavam o cliente para uma tela que o bloqueava."""
+        import site_web, subscribers as _s, config as _c, renovacao as _r, pricing as _p
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if sub.get("asaas_subscription_id"):
+            return self._html(site_web.pagina_msg("Renovação automática",
+                                                  AVISO_JA_RECORRENTE, logado=True))
+        plano = _c.plano_por_slug(sub.get("plano", "")) or {}
+        if not plano:
+            return self._redirect("/minha")
+        preco = _r.preco_renovacao(sub, plano)
+        expirado = not _s.tem_acesso(sub)
+        return self._html(site_web.pagina_renovar(
+            sub, plano,
+            _p.base_cobrada(plano, "PIX", preco, 0.0),
+            _p.base_cobrada(plano, "CARTAO", preco, 0.0),
+            sub.get("proximo_vencimento"), bonus=expirado))
+
     def _post_renovar(self, g):
         """Monta o checkout da renovação. Sem cupom: o desconto de afiliado é só na 1ª venda.
         Preço vem de `renovacao.preco_renovacao` (o CONTRATADO), nunca do preço de tabela."""
@@ -826,6 +844,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
+        if sub.get("asaas_subscription_id"):
+            # Mesma guarda do GET, no POST: sem ela, um form antigo em cache ou um POST
+            # direto ainda criaria a 2ª assinatura recorrente.
+            return self._html(site_web.pagina_msg("Renovação automática",
+                                                  AVISO_JA_RECORRENTE, logado=True))
         plano = config.plano_por_slug(sub.get("plano", "")) or {}
         if not plano:
             return self._redirect("/minha")
