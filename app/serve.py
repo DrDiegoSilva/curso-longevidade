@@ -518,6 +518,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"Varredura concluída: {curadoria.rodar_varredura()} novos candidatos."
                 except Exception as e:
                     print(f"[curadoria] varredura erro: {e}", flush=True); msg = "Falha na varredura (ver logs)."
+            elif acao == "varrer_classicos":
+                try:
+                    msg = f"Varredura de clássicos: {curadoria.rodar_varredura_classicos()} novos candidatos."
+                except Exception as e:
+                    print(f"[classicos] varredura erro: {e}", flush=True); msg = "Falha na varredura de clássicos (ver logs)."
             elif acao == "gerar":
                 try:
                     msg = f"{curadoria.gerar_selecionados()} resumo(s) gerado(s) para a reserva."

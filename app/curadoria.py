@@ -298,7 +298,9 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "varrer"
     if cmd == "varrer":
         rodar_varredura()
+    elif cmd == "classicos":
+        rodar_varredura_classicos()
     elif cmd == "gerar":
         gerar_selecionados()
     else:
-        print("uso: python curadoria.py [varrer|gerar]")
+        print("uso: python curadoria.py [varrer|classicos|gerar]")
