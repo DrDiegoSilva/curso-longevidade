@@ -28,6 +28,8 @@ def offset_vencimento(vencimento, hoje):
 
 def na_regua(sub, plano):
     """True se este assinante deve receber a régua."""
+    if not sub:
+        return False                       # sub ausente ou vazio
     if (plano or {}).get("cycle") != "YEARLY":
         return False
     if (sub or {}).get("asaas_subscription_id"):
@@ -38,8 +40,14 @@ def na_regua(sub, plano):
 
 
 def automacoes_do_dia(automacoes, offset):
-    """Automações ativas cujo `dias` bate exatamente com o offset de hoje."""
+    """Automações ativas cujo `dias` bate exatamente com o offset de hoje.
+
+    Coage `dias` e `ativo` a valores numéricos: dados vindos do banco ou tela
+    podem ser strings (ex.: `"0"`, `"-7"`), e em Python `"0"` é truthy enquanto
+    `0` é falsy. Sem coerção, uma automação desativada (`ativo=0`) gravada como
+    `ativo="0"` voltaria a disparar em produção.
+    """
     if offset is None:
         return []
     return [a for a in (automacoes or [])
-            if a.get("ativo") and int(a.get("dias")) == offset]
+            if int(a.get("ativo") or 0) and int(a.get("dias") or 0) == offset]

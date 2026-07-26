@@ -66,6 +66,11 @@ class TestNaRegua(unittest.TestCase):
         self.assertFalse(self.r.na_regua(_sub(), {}))
         self.assertFalse(self.r.na_regua(_sub(), None))
 
+    def test_sub_ausente_fica_fora(self):
+        # Assinante ausente ou vazio não pode receber régua
+        self.assertFalse(self.r.na_regua(None, ANUAL))
+        self.assertFalse(self.r.na_regua({}, ANUAL))
+
 
 class TestAutomacoesDoDia(unittest.TestCase):
     def setUp(self):
@@ -90,6 +95,31 @@ class TestAutomacoesDoDia(unittest.TestCase):
 
     def test_offset_none_devolve_vazio(self):
         self.assertEqual(self.r.automacoes_do_dia(self.autos, None), [])
+
+    def test_dias_como_string_dispara(self):
+        # Dados vindos do banco/tela podem ser strings; `dias: "-7"` deve casar com offset -7
+        autos_string = [
+            {"id": "a1", "dias": "-7", "ativo": 1, "canal": "whatsapp", "texto": "x"},
+        ]
+        r = self.r.automacoes_do_dia(autos_string, -7)
+        self.assertEqual([a["id"] for a in r], ["a1"])
+
+    def test_ativo_como_string_zero_nao_dispara(self):
+        # `ativo="0"` é string truthy em Python; sem coerção, dispararia.
+        # Com int(), `int("0") == 0` é False, e a automação não dispara.
+        autos = [
+            {"id": "a1", "dias": -7, "ativo": "0", "canal": "whatsapp", "texto": "x"},
+        ]
+        r = self.r.automacoes_do_dia(autos, -7)
+        self.assertEqual(r, [])
+
+    def test_ativo_como_string_um_dispara(self):
+        # `ativo="1"` é string truthy; com coerção, `int("1") == 1` é True e dispara.
+        autos = [
+            {"id": "a1", "dias": -7, "ativo": "1", "canal": "whatsapp", "texto": "x"},
+        ]
+        r = self.r.automacoes_do_dia(autos, -7)
+        self.assertEqual([a["id"] for a in r], ["a1"])
 
 
 if __name__ == "__main__":
