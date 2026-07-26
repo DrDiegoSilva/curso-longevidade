@@ -51,3 +51,60 @@ def automacoes_do_dia(automacoes, offset):
         return []
     return [a for a in (automacoes or [])
             if int(a.get("ativo") or 0) and int(a.get("dias") or 0) == offset]
+
+
+# ── Disparador (usa banco e rede) — mesmo formato do billing_notices.py ──
+def _texto(template, sub, vencimento, link):
+    """Substitui os marcadores. Data em pt-BR — ninguém lê ISO num WhatsApp."""
+    import site_web
+    return (template or "").replace("{nome}", (sub.get("nome") or "").split(" ")[0]) \
+                           .replace("{ate}", site_web._data_br(vencimento) or "") \
+                           .replace("{link}", link)
+
+
+def disparar(hoje=None, enviar_wa=None, enviar_email=None):
+    """Percorre os assinantes da régua e manda as automações que casam com hoje.
+
+    Cada envio é isolado: falha em um assinante não interrompe os demais e NÃO grava o ledger,
+    para que a próxima execução do mesmo dia tente de novo. Passado o dia, o disparo é perdido
+    de propósito — "vence em 7 dias" chegando no dia 3 confunde mais do que ajuda.
+
+    Devolve quantas mensagens saíram.
+    """
+    from datetime import date as _date
+    import config, db, subscribers
+    hoje = hoje or _date.today()
+    if enviar_wa is None:
+        import deliver
+        enviar_wa = deliver.enviar_texto
+    if enviar_email is None:
+        import email_send
+        enviar_email = lambda dest, assunto, corpo: email_send.enviar(dest, assunto, corpo)
+
+    automacoes = db.listar_automacoes(so_ativas=True)
+    link = f"{config.ARTIGOS_URL}/renovar"
+    enviadas = 0
+    for sub in subscribers.listar():
+        plano = config.plano_por_slug(sub.get("plano", "")) or {}
+        if not na_regua(sub, plano):
+            continue
+        venc = sub.get("proximo_vencimento")
+        off = offset_vencimento(venc, hoje)
+        for a in automacoes_do_dia(automacoes, off):
+            if not db.registrar_aviso(sub["id"], a["id"], venc):
+                continue                      # já saiu neste ciclo
+            try:
+                msg = _texto(a.get("texto"), sub, venc, link)
+                if a.get("canal") == "email":
+                    if sub.get("email"):
+                        enviar_email(sub["email"], "Sua assinatura — Atualização Científica", msg)
+                else:
+                    enviar_wa(sub.get("whatsapp"), msg)
+                enviadas += 1
+            except Exception as e:
+                print(f"[regua] envio falhou p/ {sub.get('id')} ({a.get('id')}): {e}", flush=True)
+                try:
+                    db.remover_aviso(sub["id"], a["id"], venc)   # destrava a retentativa de hoje
+                except Exception as e2:
+                    print(f"[regua] remover_aviso falhou: {e2}", flush=True)
+    return enviadas

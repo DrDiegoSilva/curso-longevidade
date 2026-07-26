@@ -445,6 +445,15 @@ def registrar_aviso(subscriber_id, automacao_id, vencimento_ref):
         return cur.rowcount > 0
 
 
+def remover_aviso(subscriber_id, automacao_id, vencimento_ref):
+    """Desfaz a marca do ledger — usado quando o envio falha, para a próxima execução do
+    mesmo dia tentar de novo."""
+    with _conn() as c:
+        c.execute("DELETE FROM avisos_renovacao WHERE subscriber_id=? AND automacao_id=? "
+                  "AND vencimento_ref=?", (subscriber_id or "", automacao_id or "",
+                                           vencimento_ref or ""))
+
+
 def cupom_valido(codigo):
     if not codigo:
         return False

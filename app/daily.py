@@ -360,7 +360,7 @@ def preparar_18h(amanha=None):
 
 
 def rotina_08h():
-    """Tarefa das 08h: avisa pré-renovação (todo dia) + envia o slot das 08h."""
+    """Tarefa das 08h: avisa pré-renovação (todo dia) + dispara a régua + envia o slot das 08h."""
     try:
         import billing_notices
         n = billing_notices.avisar_pre_renovacao()
@@ -368,6 +368,13 @@ def rotina_08h():
             print(f"[pre-renovacao] {n} aviso(s) enviado(s)", flush=True)
     except Exception as e:
         print(f"[pre-renovacao] erro: {e}", flush=True)
+    try:
+        import regua
+        n = regua.disparar()
+        if n:
+            print(f"[regua] {n} mensagem(ns) enviada(s)", flush=True)
+    except Exception as e:
+        print(f"[regua] erro: {e}", flush=True)
     enviar_slot("08h")
 
 
