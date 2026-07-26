@@ -811,6 +811,41 @@ class TestProcessar(unittest.TestCase):
             deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "ativado"))   # não quebrou a ativação
 
+    # ── IMPORTANT 1: recontratação limpa as marcas de cancelamento ──
+    def test_recontratacao_apos_cancelar_limpa_marcas_de_cancelamento(self):
+        # Ex-assinante que CANCELOU (cancelado_em preenchido via db.claim_cancelamento)
+        # e deixou vencer, mas depois volta e paga de novo -> recontratação (ramo
+        # "existente" sem tem_acesso, mesmo registro). Sem limpar cancelado_em/
+        # cancel_motivo aqui, dois estragos silenciosos: (1) regua.na_regua exclui quem
+        # tem cancelado_em preenchido — ele nunca mais recebe aviso de vencimento, some
+        # da régua pra sempre; (2) db.claim_cancelamento só cancela quem tem
+        # cancelado_em VAZIO — com a marca antiga, fica PERMANENTEMENTE impedido de
+        # cancelar de novo (bug distinto, já corrigido antes — não pode reabrir aqui).
+        import regua
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Volta", "whatsapp": "5543999990120", "email": "volta@x.com",
+             "cpf": "77788899945", "plano": "anual"},
+            {"customer": "cus_volta", "payment": "pay_volta_1", "proximo_vencimento": "2025-01-01"})
+        self.db.claim_cancelamento(reg["id"], "não quero mais", "2025-01-01T00:00:00")
+        cancelado = self.s.por_id(reg["id"])
+        self.assertFalse(self.s.tem_acesso(cancelado))
+        self.assertTrue(cancelado["cancelado_em"])
+        self.assertTrue(cancelado["cancel_motivo"])
+        st, msg = self.w.processar(
+            self._body_cpf(pid="pay_volta_2", sub=None, cpf_fmt="777.888.999-45"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["id"], reg["id"])           # mesmo registro, não duplicou
+        self.assertEqual(atual["status"], "ATIVO")
+        self.assertFalse(atual["cancelado_em"])             # marca de cancelamento limpa
+        self.assertFalse(atual["cancel_motivo"])
+        # consequência 1: volta a aparecer na régua de renovação
+        plano_anual = self.cfg.plano_por_slug("anual")
+        self.assertTrue(regua.na_regua(atual, plano_anual))
+        # consequência 2: consegue cancelar de novo (claim vence, cancelado_em vazio)
+        self.assertTrue(self.db.claim_cancelamento(reg["id"], "de novo", None))
+
 
 class TestAvisarVenda(unittest.TestCase):
     def test_avisar_venda_monta_email(self):

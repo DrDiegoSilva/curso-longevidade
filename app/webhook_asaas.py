@@ -259,10 +259,20 @@ def _executar(event, pay, pid, enviar_fn):
             # também precisa gravar o asaas_subscription_id (régua + eventos futuros da
             # assinatura, ver comentário detalhado no ramo de recompra). A regra do
             # acesso_ate já estava certa aqui (prox só quando NÃO há sid) — mantida.
+            # IMPORTANT 1 (correção): quem estava CANCELADO (cancelado_em preenchido) e
+            # volta a pagar depois de perder o acesso é reativado aqui — precisa limpar
+            # as marcas do cancelamento anterior, mesmo critério já usado no ramo RENOVAR
+            # mais abaixo (`cancelado_em=None, cancel_motivo=None`). Sem isso, dois
+            # estragos silenciosos: (1) regua.na_regua exclui quem tem cancelado_em
+            # preenchido — o assinante que recontratou nunca mais recebe aviso de
+            # vencimento, e some da régua pra sempre; (2) db.claim_cancelamento só
+            # cancela quem tem cancelado_em VAZIO — com a marca antiga, ele fica
+            # PERMANENTEMENTE impedido de cancelar de novo.
             extra_sub = {"asaas_subscription_id": sid} if sid else {}
             subscribers.marcar_status(existente["id"], "ATIVO", proximo_vencimento=prox,
                                       acesso_ate=(prox if not sid else None),
-                                      valor_contratado=pay.get("value"), **extra_sub)
+                                      valor_contratado=pay.get("value"),
+                                      cancelado_em=None, cancel_motivo=None, **extra_sub)
             reg = existente
         else:
             reg = subscribers.criar_de_pagamento(
