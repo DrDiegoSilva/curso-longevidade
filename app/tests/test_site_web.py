@@ -219,6 +219,17 @@ class TestRender(unittest.TestCase):
         self.assertIn('placeholder="000.000.000-00"', h)                   # CPF padronizado
 
 
+class TestCheckoutSeletor(unittest.TestCase):
+    def setUp(self):
+        import site_web
+        self.s = site_web
+
+    def test_pagina_assinar_tem_seletor(self):
+        html = self.s.pagina_assinar("anual")
+        self.assertIn('name="pais_dial"', html)
+        self.assertIn('name="cpf"', html)        # CPF continua no form
+
+
 class TestSeletorPais(unittest.TestCase):
     def test_renderiza_com_br_selecionado(self):
         import site_web

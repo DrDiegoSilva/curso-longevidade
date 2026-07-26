@@ -764,12 +764,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, cpf as cpfval
+        import site_web, config, db, subscribers, pricing, asaas, cpf as cpfval, phone
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
         dados = {"nome": g("nome").strip(), "email": g("email").strip(),
-                 "cpf": g("cpf").strip(), "whatsapp": g("whatsapp").strip()}
+                 "cpf": g("cpf").strip(),
+                 "whatsapp": phone.montar_e164(g("pais_dial") or "55", g("whatsapp"))}
         if not (dados["nome"] and dados["whatsapp"] and dados["email"] and dados["cpf"]):
             return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail, WhatsApp e CPF."))
         if not cpfval.valida(dados["cpf"]):

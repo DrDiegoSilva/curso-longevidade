@@ -1492,6 +1492,7 @@ def pagina_assinar(plano_slug=None, erro=""):
             <div class="field"><label>Nome completo</label><input type="text" name="nome" style="text-transform:uppercase" required></div>
             <div class="field"><label>E-mail</label><input type="text" name="email" inputmode="email" required></div>
             <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" required></div>
+            <div class="field"><label>País</label>{_seletor_pais()}</div>
             <div class="field"><label>WhatsApp (com DDD) — onde você recebe os estudos e faz login</label>
               <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
             <label class="section-label">Forma de pagamento</label>
