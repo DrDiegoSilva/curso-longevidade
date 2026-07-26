@@ -220,7 +220,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_admin(
                 subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons(),
                 confirmar_id=q.get("confirmar", [""])[0] or None,
-                erro=q.get("erro", [""])[0]), 200)
+                erro=q.get("erro", [""])[0],
+                reenviar_id=q.get("reenviar", [""])[0] or None,
+                sucesso=q.get("sucesso", [""])[0]), 200)
         if path.startswith("/agenda"):
             import config, db, daily, agenda_plan, site_web, auth_web
             from datetime import datetime, timedelta
@@ -483,6 +485,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
                                           if token_ok else f"/admin?erro={erro}")
                 subscribers.atualizar_whatsapp(g("id"), novo)
+            elif acao == "reenviar":
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&reenviar={g('id')}"
+                                      if token_ok else f"/admin?reenviar={g('id')}")
+            elif acao == "reenviar_confirmar":
+                sub = subscribers.por_id(g("id"))
+                if not sub:
+                    erro = up.quote("Assinante não encontrado.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                ok, detalhe = auth_web.reenviar_boas_vindas_wa(sub)
+                if ok:
+                    msg = up.quote("✅ Boas-vindas reenviadas por WhatsApp.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&sucesso={msg}"
+                                          if token_ok else f"/admin?sucesso={msg}")
+                erro = up.quote(f"❌ Falha ao reenviar: {detalhe}")
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                      if token_ok else f"/admin?erro={erro}")
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
             elif acao == "gerar_cupom":
