@@ -197,9 +197,11 @@ def _executar(event, pay, pid, enviar_fn):
                 subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
                 return (200, "parcela-registrada")
             # Pix não tem parcelamento — se chegou aqui (CPF/WhatsApp já é assinante com
-            # acesso vigente) é porque ele comprou OUTRO período antes do atual vencer.
-            # Sem tratar isso à parte, o pagamento seria engolido em silêncio: não
-            # estenderia o acesso e o dinheiro simplesmente sumiria. `novo_vencimento`
+            # acesso vigente) é porque ele comprou OUTRO período antes do atual vencer
+            # (Pix sem `subscription`, OU cartão à vista com uma assinatura recorrente
+            # NOVA, distinta da que ele já tinha — por isso caiu em ATIVAR e não em
+            # RENOVAR). Sem tratar isso à parte, o pagamento seria engolido em silêncio:
+            # não estenderia o acesso e o dinheiro simplesmente sumiria. `novo_vencimento`
             # decide sozinho a regra (Task 8): acesso ainda vigente -> estende a partir do
             # FIM ATUAL, SEM bônus (renovar em dia não ganha o resgate — só quem já perdeu
             # o acesso). Passa sempre o valor configurado (editável em /admin/mensagens,
@@ -211,9 +213,23 @@ def _executar(event, pay, pid, enviar_fn):
             # usa esse campo pra cobrar o preço que o assinante de fato contratou (ex.:
             # founder) em vez do preço de tabela — sem regravar aqui, uma recompra em outro
             # valor deixaria o campo desatualizado e a renovação seguinte cobraria errado.
+            # ACHADO CRÍTICO 2 (correção): quando o pagamento traz `subscription` (cartão à
+            # vista recorrente), grava o asaas_subscription_id no assinante — sem isso,
+            # dois estragos: (1) regua.na_regua só exclui quem tem esse campo preenchido;
+            # vazio, o assinante recorrente continuava na régua, recebia os avisos de
+            # renovar e era cobrado de novo pela régua ENQUANTO o cartão cobrava sozinho
+            # (cobrança em dobro); (2) eventos futuros dessa assinatura (PAYMENT_OVERDUE,
+            # cancelamento, estorno) são casados por subscribers.por_subscription — sem o
+            # id gravado, nunca achavam ninguém e o acesso nunca era cortado. Pix não traz
+            # `subscription` -> não passa o campo (fica como já estava gravado).
+            # acesso_ate segue a mesma regra do resto do arquivo: com assinatura recorrente
+            # gravada, None é o certo (o cartão renova e empurra sozinho, é o RENOVAR mais
+            # abaixo quem confirma o próximo ciclo); só sem assinatura (Pix) a data de fim
+            # é obrigatória, senão ATIVO sem acesso_ate vira acesso pra sempre.
+            extra_sub = {"asaas_subscription_id": sid} if sid else {}
             subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
-                                      acesso_ate=novo_fim, proximo_vencimento=novo_fim,
-                                      valor_contratado=pay.get("value"))
+                                      acesso_ate=(None if sid else novo_fim), proximo_vencimento=novo_fim,
+                                      valor_contratado=pay.get("value"), **extra_sub)
             # Recompra é manual (o assinante voltou e pagou de novo) -> WhatsApp.
             _confirmar_renovacao({"email": existente.get("email") or email,
                                   "nome": existente.get("nome") or nome,
@@ -238,9 +254,15 @@ def _executar(event, pay, pid, enviar_fn):
             # ramo de recompra acima: sem isso a recontratação meses depois, a um preço
             # diferente, deixaria o campo com o valor antigo (ou nulo) e a renovação
             # seguinte cobraria errado.
+            # ACHADO CRÍTICO 2 (correção): mesmo bug do ramo de recompra acima, aqui do
+            # lado de quem tinha PERDIDO o acesso — recontratação no cartão à vista
+            # também precisa gravar o asaas_subscription_id (régua + eventos futuros da
+            # assinatura, ver comentário detalhado no ramo de recompra). A regra do
+            # acesso_ate já estava certa aqui (prox só quando NÃO há sid) — mantida.
+            extra_sub = {"asaas_subscription_id": sid} if sid else {}
             subscribers.marcar_status(existente["id"], "ATIVO", proximo_vencimento=prox,
                                       acesso_ate=(prox if not sid else None),
-                                      valor_contratado=pay.get("value"))
+                                      valor_contratado=pay.get("value"), **extra_sub)
             reg = existente
         else:
             reg = subscribers.criar_de_pagamento(

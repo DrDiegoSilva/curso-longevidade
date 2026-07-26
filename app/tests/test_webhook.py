@@ -619,6 +619,128 @@ class TestProcessar(unittest.TestCase):
         atual = self.s.por_id(reg["id"])
         self.assertEqual(atual["valor_contratado"], 147.00)      # atualizado, não ficou 97.00
 
+    def _body_cpf(self, event="PAYMENT_CONFIRMED", pid="pay_x", sub=None, cpf_fmt="", ext="tok_sem_pending"):
+        """Payload com `cpfCnpj` DIRETO no pagamento — mesmo atalho que `_existente_por_cpf`
+        usa pro Pix avulso (comentário em _executar: "Pix avulso manda cpfCnpj nele, sem
+        precisar da API"). Usar isso aqui evita precisar mockar `asaas.obter_cliente`/
+        `obter_assinatura` (e ligar ASAAS_API_KEY) só pra achar o assinante existente pelo CPF."""
+        return {"event": event, "payment": {"id": pid, "externalReference": ext,
+                "customer": "cus_x", "subscription": sub, "dueDate": "2026-07-19",
+                "cpfCnpj": cpf_fmt}}
+
+    # ── ACHADO CRÍTICO 2: grava asaas_subscription_id na renovação por cartão ──
+    # Bug: nos dois ramos de renovação dentro do ATIVAR (recompra de quem ainda tem
+    # acesso e recontratação de quem perdeu), quando o pagamento trazia uma assinatura
+    # recorrente (cartão à vista -> `subscription` preenchido), o código gravava
+    # acesso_ate/proximo_vencimento/valor_contratado mas NUNCA o asaas_subscription_id.
+    # Consequência dupla: (a) regua.na_regua só exclui quem tem esse campo preenchido —
+    # vazio, o assinante recorrente continuava na régua, recebia os avisos de renovar,
+    # "renovava" de novo E o cartão cobrava sozinho = cobrança em dobro; (b) eventos
+    # futuros dessa assinatura (PAYMENT_OVERDUE, estorno) são casados por
+    # subscribers.por_subscription — sem o id gravado, nunca achavam ninguém e o acesso
+    # nunca era cortado (com acesso_ate nulo em ATIVO = acesso permanente de graça).
+
+    def test_ativar_recompra_com_assinatura_grava_subscription_id(self):
+        """TESTE 1/5: recompra no cartão À VISTA (subscription preenchida) por quem
+        AINDA tem acesso vigente precisa gravar o asaas_subscription_id. Também prova
+        a coerência do acesso_ate: com assinatura recorrente gravada, None é o certo
+        (o cartão renova e empurra sozinho) — só sem assinatura a data de fim é obrigatória."""
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Cartao", "whatsapp": "5543999990099", "email": "cartao@x.com",
+             "cpf": "55566677711", "plano": "mensal"},
+            {"customer": "cus_cartao", "payment": "pay_cartao_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # acesso ainda vigente
+        st, msg = self.w.processar(
+            self._body_cpf(pid="pay_cartao_2", sub="sub_cartao_novo", cpf_fmt="555.666.777-11"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["asaas_subscription_id"], "sub_cartao_novo")
+        self.assertIsNone(atual["acesso_ate"])   # CORREÇÃO: com sid, sem data de fim
+
+    def test_ativar_recompra_cartao_exclui_da_regua(self):
+        """TESTE 2/5 (consequência direta do 1): depois da recompra no cartão, o
+        assinante precisa SAIR da régua de renovação — é isso que evita ele ser
+        cobrado duas vezes (régua manda renovar + cartão cobra sozinho). Compara
+        ANTES (sem o id, ainda entraria) e DEPOIS (com o id gravado, exclui)."""
+        import regua
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Anual", "whatsapp": "5543999990100", "email": "anual@x.com",
+             "cpf": "22233344456", "plano": "anual"},
+            {"customer": "cus_anual", "payment": "pay_anual_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")
+        plano_anual = self.cfg.plano_por_slug("anual")
+        antes = self.s.por_id(reg["id"])
+        self.assertTrue(regua.na_regua(antes, plano_anual))   # sem o id, ainda entraria na régua
+        st, msg = self.w.processar(
+            self._body_cpf(pid="pay_anual_2", sub="sub_anual_novo", cpf_fmt="222.333.444-56"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual(st, 200)
+        depois = self.s.por_id(reg["id"])
+        self.assertEqual(depois["asaas_subscription_id"], "sub_anual_novo")
+        self.assertFalse(regua.na_regua(depois, plano_anual))   # excluído: agora renova sozinho
+
+    def test_recontratacao_com_assinatura_grava_subscription_id(self):
+        """TESTE 3/5: recontratação (acesso já tinha EXPIRADO) paga no cartão À VISTA
+        também precisa gravar o asaas_subscription_id — mesmo bug, outro ramo do
+        ATIVAR (quem tinha perdido o acesso, não quem ainda tinha)."""
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Recontrata", "whatsapp": "5543999990101", "email": "reconta@x.com",
+             "cpf": "33344455567", "plano": "mensal"},
+            {"customer": "cus_reconta", "payment": "pay_reconta_velho", "proximo_vencimento": "2025-07-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-07-01T00:00:00")   # expirado
+        st, msg = self.w.processar(
+            self._body_cpf(pid="pay_reconta_novo", sub="sub_reconta_novo", cpf_fmt="333.444.555-67"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "ativado"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["asaas_subscription_id"], "sub_reconta_novo")
+        self.assertIsNone(atual["acesso_ate"])   # este ramo já acertava a regra; segue coerente
+
+    def test_ativar_pix_sem_assinatura_nao_grava_id_e_permanece_na_regua(self):
+        """TESTE 4/5 (guarda contra excesso de zelo): Pix NÃO traz `subscription` — o
+        asaas_subscription_id deve continuar vazio (ele de fato não renova sozinho) e
+        o assinante deve PERMANECER na régua. Prova que a correção só age quando o
+        pagamento realmente traz uma assinatura recorrente."""
+        import regua
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Pix Anual", "whatsapp": "5543999990102", "email": "pixanual@x.com",
+             "cpf": "44455566678", "plano": "anual"},
+            {"customer": "cus_pixanual", "payment": "pay_pixanual_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")
+        plano_anual = self.cfg.plano_por_slug("anual")
+        st, msg = self.w.processar(
+            self._body_cpf(pid="pay_pixanual_2", sub=None, cpf_fmt="444.555.666-78"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
+        atual = self.s.por_id(reg["id"])
+        self.assertIsNone(atual["asaas_subscription_id"])
+        self.assertTrue(regua.na_regua(atual, plano_anual))   # continua na régua — não renova sozinho
+
+    def test_payment_overdue_apos_recompra_cartao_encontra_assinante(self):
+        """TESTE 5/5 (prova do achado 'b'): depois que a recompra no cartão grava o
+        asaas_subscription_id, um PAYMENT_OVERDUE dessa MESMA assinatura (cartão
+        falhou) precisa achar o assinante via subscribers.por_subscription e marcá-lo
+        INADIMPLENTE. Antes da correção, o id nunca ficava gravado e esse evento não
+        encontrava ninguém — o acesso nunca era cortado."""
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Overdue", "whatsapp": "5543999990103", "email": "overdue@x.com",
+             "cpf": "55566677789", "plano": "mensal"},
+            {"customer": "cus_overdue", "payment": "pay_overdue_1", "proximo_vencimento": "2026-08-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")
+        st1, msg1 = self.w.processar(
+            self._body_cpf(pid="pay_overdue_2", sub="sub_overdue_novo", cpf_fmt="555.666.777-89"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual(st1, 200)
+        self.assertEqual(self.s.por_id(reg["id"])["asaas_subscription_id"], "sub_overdue_novo")
+        st2, msg2 = self.w.processar(
+            self._body_cpf(event="PAYMENT_OVERDUE", pid="pay_overdue_3", sub="sub_overdue_novo",
+                           cpf_fmt="555.666.777-89"),
+            "segredo", enviar_fn=self.envfn)
+        self.assertEqual((st2, msg2), (200, "inadimplente"))
+        atual = self.s.por_id(reg["id"])
+        self.assertEqual(atual["status"], "INADIMPLENTE")
+
     def test_parcela_cartao_com_acesso_vigente_nao_estende_nem_envia_email(self):
         # TESTE 6 (protege dinheiro): parcela de um cartão parcelado (`installment`
         # preenchido) NÃO é um novo período — é a MESMA compra sendo paga aos poucos.
