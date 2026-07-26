@@ -218,6 +218,42 @@ def precisa_criar_senha(whatsapp):
     return bool(a and not a.get("senha_hash"))
 
 
+# ── Login por CPF (acha por CPF e delega pro login por WhatsApp) ──
+def _ativo_por_cpf(cpf_in):
+    """Assinante ATIVO cujos dígitos de CPF batem, ou None. (única lógica nova)"""
+    import cpf as cpfmod
+    n = cpfmod.so_digitos(cpf_in)
+    if not n:
+        return None
+    return next((a for a in subscribers.ativos()
+                 if cpfmod.so_digitos(a.get("cpf", "")) == n), None)
+
+
+def login_senha_cpf(cpf_in, senha):
+    """CPF + senha. Resolve o CPF e delega pro login_senha (por WhatsApp).
+    (status, token): 'ok' | 'sem_senha' | 'credenciais' | 'inativo'."""
+    a = _ativo_por_cpf(cpf_in)
+    if not a:
+        return ("inativo", None)
+    return login_senha(a.get("whatsapp", ""), senha)
+
+
+def iniciar_login_cpf(cpf_in, enviar_fn=None):
+    """Manda o OTP pro WhatsApp SALVO do assinante achado por CPF. Neutro. True se enviou."""
+    a = _ativo_por_cpf(cpf_in)
+    if not a:
+        return False
+    return iniciar_login(a.get("whatsapp", ""), enviar_fn)
+
+
+def verificar_cpf(cpf_in, codigo):
+    """Verifica o OTP p/ o assinante achado por CPF. Token da sessão, ou None."""
+    a = _ativo_por_cpf(cpf_in)
+    if not a:
+        return None
+    return verificar(a.get("whatsapp", ""), codigo)
+
+
 # ── Criação / redefinição de senha por token (link enviado por e-mail + WhatsApp) ──
 def _link_senha(token):
     return f"{config.ARTIGOS_URL}/criar-senha?token={token}"
