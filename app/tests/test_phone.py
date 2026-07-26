@@ -30,6 +30,15 @@ class TestNormalizar(unittest.TestCase):
     def test_vazio(self):
         self.assertEqual(phone.normalizar(""), "")
 
+    def test_none_vira_vazio(self):
+        self.assertEqual(phone.normalizar(None), "")
+
+    def test_br_fixo_10_digitos(self):
+        self.assertEqual(phone.normalizar("43 3333-4444"), "554333334444")
+
+    def test_br_com_pais_e_espacos(self):
+        self.assertEqual(phone.normalizar("55 43 3333-4444"), "554333334444")
+
 
 class TestParaApi(unittest.TestCase):
     def test_tira_mais_internacional(self):
