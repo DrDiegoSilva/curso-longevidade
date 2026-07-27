@@ -226,12 +226,15 @@ class TestPiso(unittest.TestCase):
                 a = dict(a); a["tema"] = tema; a["score"] = 2; a["citacoes"] = 5000 - i * 100
                 out.append(a)
             return out
-        out = curadoria.varrer_classicos(caps={"Obesidade": 3}, buscar_fn=_fake_buscar,
+        # cap=99 para que SEM piso haja 5 clássicos (todos os artigos do _fake_buscar),
+        # e COM piso (aplicado erroneamente) haja 3 (pela válvula com MIN_POR_TEMA=3).
+        # Assim o teste falha se o piso for aplicado.
+        out = curadoria.varrer_classicos(caps={"Obesidade": 99}, buscar_fn=_fake_buscar,
                                          triar_fn=fake_triar_com_score_baixo)
-        # Se o piso estivesse aplicado, todos os clássicos teriam sido cortados (score 2 < piso 6).
-        # Mas varrer_classicos ignora o piso, então devem estar presentes.
+        # Se o piso estivesse aplicado, apenas 3 clássicos sairiam (válvula com min=3).
+        # Sem o piso, todos os 5 entram (nenhum é filtrado por score).
         obes = [c for c in out if c["tema"] == "Obesidade"]
-        self.assertEqual(len(obes), 3)
+        self.assertEqual(len(obes), 5)  # prova de que o piso NÃO é aplicado
         self.assertTrue(all(c["score"] == 2 for c in obes))
 
 
