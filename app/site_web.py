@@ -841,7 +841,7 @@ def pagina_whatsapp(info_dict, conn, token=""):
 
 
 def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
-                 reenviar_id=None, sucesso=""):
+                 reenviar_id=None, sucesso="", contagem_slots=None):
     """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
     import phone
     tk = _esc(token)
@@ -911,6 +911,16 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                 f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="reenviar">'
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px" type="submit">📨 Reenviar</button></form>')
+    def cel_horario(s):
+        import subscribers
+        atual = subscribers.slot_de(s)
+        opts = "".join(f'<option value="{sl}"{" selected" if sl == atual else ""}>{sl}</option>'
+                       for sl in config.SLOTS)
+        return (f'<form method="post" action="/admin" style="display:flex;gap:5px;align-items:center">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="definir_slot">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<select name="slot" style="padding:5px 8px;font-size:12px;background:#0e211a;color:var(--creme);border:1px solid rgba(233,225,198,.2);border-radius:8px">{opts}</select>'
+                f'<button class="actbtn ghost" style="padding:6px 10px;font-size:12px" type="submit">Salvar</button></form>')
     linhas = "".join(
         '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
         f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
@@ -922,6 +932,7 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
         f'<td style="padding:13px 10px">{cel_curador(s)}</td>'
         f'<td style="padding:13px 10px">{cel_editar_numero(s)}</td>'
         f'<td style="padding:13px 10px">{cel_reenviar(s)}</td>'
+        f'<td style="padding:13px 10px">{cel_horario(s)}</td>'
         f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
         f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
         f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
@@ -939,12 +950,17 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                 f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {dur} · {c.get("usos", 0)} uso(s)</div></div>'
                 f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{"ATIVO" if on else "USADO"}</span></div>')
     cupons_lista = "".join(_cupom_row(c) for c in (cupons or [])) or '<p class="hint" style="margin-top:8px">Nenhum cupom gerado ainda.</p>'
+    resumo_slots = ""
+    if contagem_slots:
+        itens = " · ".join(f"{sl}: {contagem_slots.get(sl, 0)}" for sl in config.SLOTS)
+        resumo_slots = f'<p class="hint" style="margin-top:2px">Envio por horário — {itens}</p>'
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "assinantes")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      {resumo_slots}
       {erro_html}
       {sucesso_html}
       {confirm_html}
@@ -954,8 +970,8 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
         <table style="width:100%;border-collapse:collapse;min-width:990px">
           <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
             <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
-            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th style="padding:8px 10px">Editar número</th><th style="padding:8px 10px">Boas-vindas</th><th></th></tr></thead>
-          <tbody>{linhas or '<tr><td colspan="10" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
+            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th style="padding:8px 10px">Editar número</th><th style="padding:8px 10px">Boas-vindas</th><th style="padding:8px 10px">Horário</th><th></th></tr></thead>
+          <tbody>{linhas or '<tr><td colspan="11" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
         </table>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
