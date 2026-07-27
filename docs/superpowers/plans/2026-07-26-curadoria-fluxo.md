@@ -710,13 +710,13 @@ def _curadoria_chips(candidatos, token, tema=""):
         k = c.get("tema", "—")
         n[k] = n.get(k, 0) + 1
     temas = _CUR_ORDEM + [t for t in n if t not in _CUR_ORDEM]
-    chips = [f'<a class="chip{"" if tema else " on"}" href="/curadoria?token={tk}&aba=triagem">'
+    chips = [f'<a class="temachip{"" if tema else " on"}" href="/curadoria?token={tk}&aba=triagem">'
              f'Todos <b>{len(candidatos)}</b></a>']
     for t in temas:
         on = " on" if t == tema else ""
-        chips.append(f'<a class="chip{on}" href="/curadoria?token={tk}&aba=triagem&tema={quote(t)}">'
+        chips.append(f'<a class="temachip{on}" href="/curadoria?token={tk}&aba=triagem&tema={quote(t)}">'
                      f'{_CUR_EMOJI.get(t, "•")} {_esc(t)} <b>{n.get(t, 0)}</b></a>')
-    return f'<div class="chips">{"".join(chips)}</div>'
+    return f'<div class="temachips">{"".join(chips)}</div>'
 
 
 def _curadoria_reserva_item(r, token):
