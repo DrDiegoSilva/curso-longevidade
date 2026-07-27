@@ -94,10 +94,10 @@ def reabastecer():
     return total
 
 
-def _rotacao():
-    cfg = _cfg()
-    rot = cfg.get("rotacao_semana")
-    return rot if rot else list(cfg["temas"].keys())
+def _temas_por_dia():
+    """Mapa dia-da-semana -> [temas] da config. Vazio => sem preferência de tema
+    (a escolha cai para fresco > camada > nota, e nenhum dia fica vazio)."""
+    return _cfg().get("temas_por_dia") or {}
 
 
 def materializar_agenda(n_semanas=4, datas=None):
@@ -189,7 +189,7 @@ def materializar_agenda(n_semanas=4, datas=None):
         cands.append({"tipo": "fila", "tema": a.get("tema", ""), "titulo": a.get("titulo", ""),
                       "ref_id": None, "payload": a})
 
-    plano = agenda_plan.planejar_agenda(ordenados, cands, _rotacao(), None)
+    plano = agenda_plan.planejar_agenda(ordenados, cands, _temas_por_dia(), None)
     feitos = 0
     for data, cand in plano.items():
         try:

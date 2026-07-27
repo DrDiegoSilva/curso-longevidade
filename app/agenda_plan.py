@@ -1,7 +1,7 @@
 """Planejamento puro da agenda de envios — sem I/O (testável em memória).
 
 Regras: preencher só os dias VAZIOS; variedade (não repetir o tema do dia
-anterior quando houver alternativa) > rotação de tema como guia da vez >
+anterior quando houver alternativa) > tema do dia da semana como guia da vez >
 fresh-first (candidato fresco, ≤30d) > TIER de curadoria (curada/reserva >
 crua/candidato-fila > clássico como PISO, só entra quando não há melhor) >
 nota (score, só desempata dentro do mesmo tier). Não consome candidato duas vezes.
@@ -80,18 +80,18 @@ def _escolher(candidatos, usados, preferido, prev):
     return max(disp, key=lambda ic: _rank(ic[1], preferido, prev))
 
 
-def planejar_agenda(dias_ordenados, candidatos, rotacao, tema_anterior):
+def planejar_agenda(dias_ordenados, candidatos, temas_por_dia, tema_anterior):
     """dias_ordenados: [(data, tema_atual|None, bloqueado)]. Retorna {data: candidato}
-    só p/ os dias vazios (tema_atual None e não-bloqueado)."""
+    só p/ os dias vazios (tema_atual None e não-bloqueado). O tema preferido de cada dia
+    vem do mapa dia-da-semana (tema_do_dia), não de um contador — assim a grade não
+    deriva quando um dia está fixado, pulado ou já preenchido."""
     prev = tema_anterior
     usados, plano = set(), {}
-    rot = rotacao or []
-    rot_i = 0
     for data, tema_atual, bloqueado in dias_ordenados:
         if bloqueado or tema_atual is not None:
             prev = tema_atual
             continue
-        preferido = rot[rot_i % len(rot)] if rot else None
+        preferido = tema_do_dia(data, temas_por_dia)
         idx, cand = _escolher(candidatos, usados, preferido, prev)
         if cand is None:
             prev = None
@@ -99,7 +99,6 @@ def planejar_agenda(dias_ordenados, candidatos, rotacao, tema_anterior):
         plano[data] = cand
         usados.add(idx)
         prev = cand["tema"]
-        rot_i += 1
     return plano
 
 

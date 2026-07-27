@@ -38,6 +38,12 @@
     }
   },
   "dias_envio": ["segunda", "terca", "quarta", "quinta", "sexta"],
-  "rotacao_semana": ["Obesidade", "Hormonal", "Longevidade", "Performance", "Lipedema"],
+  "temas_por_dia": {
+    "segunda": ["Longevidade", "Performance"],
+    "terca":   ["Obesidade"],
+    "quarta":  ["Hormonal"],
+    "quinta":  ["Obesidade"],
+    "sexta":   ["Lipedema"]
+  },
   "journals_top": ["N Engl J Med", "Lancet", "JAMA", "BMJ", "Nature Medicine", "Cell Metab", "Diabetes Care", "Lancet Diabetes Endocrinol", "Circulation", "Ann Intern Med", "J Clin Endocrinol Metab", "Diabetes Obes Metab", "Obesity", "Thyroid", "Eur J Endocrinol", "Aging Cell", "Nature Aging", "GeroScience"]
 }

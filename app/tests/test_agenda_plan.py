@@ -19,6 +19,12 @@ def _c(tema, tipo="reserva", fresco=False, classico=False, score=5, ref_id="r"):
             "fresco": fresco, "classico": classico, "score": score}
 
 
+def _todo_dia(tema):
+    """Mapa que prefere o mesmo tema em qualquer dia — preserva a intenção dos testes
+    que só queriam dizer 'a preferência do dia é X'."""
+    return {d: [tema] for d in ap.DIAS}
+
+
 class TestDiasUteis(unittest.TestCase):
     def test_pula_fim_de_semana(self):
         envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
@@ -61,7 +67,7 @@ class TestPlanejar(unittest.TestCase):
     def test_variedade_nao_repete_tema(self):
         dias = self._dias(["2026-07-27", "2026-07-28", "2026-07-29"])
         cands = [_cand("A"), _cand("A"), _cand("B"), _cand("B")]
-        plano = ap.planejar_agenda(dias, cands, ["A", "B"], None)
+        plano = ap.planejar_agenda(dias, cands, {"segunda": ["A"], "terca": ["B"], "quarta": ["A"]}, None)
         temas = [plano[d]["tema"] for d in ["2026-07-27", "2026-07-28", "2026-07-29"]]
         self.assertNotEqual(temas[0], temas[1])
         self.assertNotEqual(temas[1], temas[2])
@@ -70,7 +76,7 @@ class TestPlanejar(unittest.TestCase):
         # dia do meio fixado/pulado (bloqueado) não recebe plano; seu tema alimenta variedade
         dias = [("2026-07-27", None, False), ("2026-07-28", "A", True), ("2026-07-29", None, False)]
         cands = [_cand("A"), _cand("A")]
-        plano = ap.planejar_agenda(dias, cands, ["A"], None)
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("A"), None)
         self.assertNotIn("2026-07-28", plano)
         self.assertIn("2026-07-27", plano)
         # 29 vem depois de bloqueado tema A -> variedade tenta != A, mas só há A -> ainda preenche
@@ -82,33 +88,33 @@ class TestPlanejar(unittest.TestCase):
         dias = self._dias(["2026-07-27"])
         cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}, score=9),
                  _cand("A", tipo="reserva", score=3)]
-        plano = ap.planejar_agenda(dias, cands, ["A"], None)
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("A"), None)
         self.assertEqual(plano["2026-07-27"]["tipo"], "reserva")
 
     def test_estoque_magro_deixa_vazio(self):
         dias = self._dias(["2026-07-27", "2026-07-28"])
         cands = [_cand("A")]
-        plano = ap.planejar_agenda(dias, cands, ["A"], None)
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("A"), None)
         self.assertEqual(len(plano), 1)
 
     def test_nao_reusa_candidato(self):
         dias = self._dias(["2026-07-27", "2026-07-28"])
         cands = [_cand("A", ref_id="r1"), _cand("B", ref_id="r2")]
-        plano = ap.planejar_agenda(dias, cands, ["A", "B"], None)
+        plano = ap.planejar_agenda(dias, cands, {"segunda": ["A"], "terca": ["B"]}, None)
         self.assertNotEqual(plano["2026-07-27"]["ref_id"], plano["2026-07-28"]["ref_id"])
 
     def test_variedade_vence_rotacao(self):
         # rotação pede A, mas o dia anterior foi A e há B disponível -> escolhe B
         dias = self._dias(["2026-07-27"])
         cands = [_cand("A"), _cand("B")]
-        plano = ap.planejar_agenda(dias, cands, ["A"], "A")
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("A"), "A")
         self.assertEqual(plano["2026-07-27"]["tema"], "B")
 
     def test_rotacao_vence_quando_tipo_e_score_empatam(self):
         # rotação (tema==preferido) vem antes do TIER: decide entre A e B mesmo com tipos diferentes
         dias = self._dias(["2026-07-27"])
         cands = [_cand("A", tipo="fila", ref_id=None, payload={"x": 1}), _cand("B", tipo="reserva")]
-        plano = ap.planejar_agenda(dias, cands, ["A"], "X")
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("A"), "X")
         self.assertEqual(plano["2026-07-27"]["tema"], "A")
 
 
@@ -116,20 +122,20 @@ class TestRankPiramide(unittest.TestCase):
     def test_fresco_vence_estoque_mesmo_tema(self):
         dias = [("2026-07-27", None, False)]
         cands = [_c("Obesidade", fresco=False, score=9), _c("Obesidade", fresco=True, score=6, ref_id="f")]
-        plano = ap.planejar_agenda(dias, cands, ["Obesidade"], None)
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("Obesidade"), None)
         self.assertEqual(plano["2026-07-27"]["ref_id"], "f")     # fresco fura, mesmo com score menor
 
     def test_classico_e_piso(self):
         dias = [("2026-07-27", None, False)]
         cands = [_c("Obesidade", classico=True, score=9, ref_id="cl"),
                  _c("Obesidade", classico=False, score=3, ref_id="rs")]
-        plano = ap.planejar_agenda(dias, cands, ["Obesidade"], None)
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("Obesidade"), None)
         self.assertEqual(plano["2026-07-27"]["ref_id"], "rs")    # estoque comum > clássico
 
     def test_emprestimo_entre_temas(self):
         dias = [("2026-07-27", None, False)]
         cands = [_c("Obesidade", classico=True, score=8, ref_id="ob")]   # só há clássico de Obesidade
-        plano = ap.planejar_agenda(dias, cands, ["Performance"], None)   # dia pedia Performance
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("Performance"), None)   # dia pedia Performance
         self.assertEqual(plano["2026-07-27"]["ref_id"], "ob")            # empresta do gigante
 
     def test_classificar_slot_novos_tipos(self):
@@ -143,7 +149,7 @@ class TestRankPiramide(unittest.TestCase):
         dias = [("2026-07-27", None, False)]
         cands = [_c("Obesidade", tipo="candidato", fresco=False, score=9, ref_id="crua"),
                  _c("Obesidade", tipo="reserva", fresco=False, score=3, ref_id="curada")]
-        plano = ap.planejar_agenda(dias, cands, ["Obesidade"], None)
+        plano = ap.planejar_agenda(dias, cands, _todo_dia("Obesidade"), None)
         self.assertEqual(plano["2026-07-27"]["ref_id"], "curada")
 
 
@@ -333,6 +339,64 @@ class TestTemaDoDia(unittest.TestCase):
 
     def test_lista_vazia_no_dia(self):
         self.assertIsNone(ap.tema_do_dia("2026-07-28", {"terca": []}))
+
+
+class TestPlanejarComMapa(unittest.TestCase):
+    MAPA = {
+        "segunda": ["Longevidade", "Performance"],
+        "terca":   ["Obesidade"],
+        "quarta":  ["Hormonal"],
+        "quinta":  ["Obesidade"],
+        "sexta":   ["Lipedema"],
+    }
+
+    def test_terca_recebe_obesidade(self):
+        # 2026-07-28 é terça
+        dias = [("2026-07-28", None, False)]
+        cands = [_cand("Hormonal", ref_id="h"), _cand("Obesidade", ref_id="o")]
+        plano = ap.planejar_agenda(dias, cands, self.MAPA, None)
+        self.assertEqual(plano["2026-07-28"]["ref_id"], "o")
+
+    def test_quinta_tambem_recebe_obesidade(self):
+        # 2026-07-30 é quinta — prova que o mapa vale por dia, não por posição na fila
+        dias = [("2026-07-30", None, False)]
+        cands = [_cand("Lipedema", ref_id="l"), _cand("Obesidade", ref_id="o")]
+        plano = ap.planejar_agenda(dias, cands, self.MAPA, None)
+        self.assertEqual(plano["2026-07-30"]["ref_id"], "o")
+
+    def test_semana_inteira_segue_o_mapa(self):
+        datas = ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"]
+        dias = [(d, None, False) for d in datas]
+        cands = ([_cand("Longevidade", ref_id="lo"), _cand("Performance", ref_id="pe")]
+                 + [_cand("Obesidade", ref_id=f"ob{i}") for i in range(2)]
+                 + [_cand("Hormonal", ref_id="ho"), _cand("Lipedema", ref_id="li")])
+        plano = ap.planejar_agenda(dias, cands, self.MAPA, None)
+        temas = [plano[d]["tema"] for d in datas]
+        self.assertIn(temas[0], ("Longevidade", "Performance"))
+        self.assertEqual(temas[1], "Obesidade")
+        self.assertEqual(temas[2], "Hormonal")
+        self.assertEqual(temas[3], "Obesidade")
+        self.assertEqual(temas[4], "Lipedema")
+
+    def test_sem_candidato_do_tema_o_dia_nao_fica_vazio(self):
+        # terça pede Obesidade, mas só há Hormonal -> preenche mesmo assim
+        dias = [("2026-07-28", None, False)]
+        cands = [_cand("Hormonal", ref_id="h")]
+        plano = ap.planejar_agenda(dias, cands, self.MAPA, None)
+        self.assertEqual(plano["2026-07-28"]["ref_id"], "h")
+
+    def test_variedade_ainda_vence_o_mapa(self):
+        # terça pede Obesidade, mas o dia anterior foi Obesidade e há alternativa
+        dias = [("2026-07-28", None, False)]
+        cands = [_cand("Obesidade", ref_id="o"), _cand("Hormonal", ref_id="h")]
+        plano = ap.planejar_agenda(dias, cands, self.MAPA, "Obesidade")
+        self.assertEqual(plano["2026-07-28"]["ref_id"], "h")
+
+    def test_mapa_vazio_ainda_preenche(self):
+        dias = [("2026-07-28", None, False)]
+        cands = [_cand("Hormonal", ref_id="h")]
+        plano = ap.planejar_agenda(dias, cands, {}, None)
+        self.assertEqual(plano["2026-07-28"]["ref_id"], "h")
 
 
 if __name__ == "__main__":
