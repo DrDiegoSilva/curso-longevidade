@@ -842,8 +842,9 @@ def pagina_whatsapp(info_dict, conn, token=""):
 
 def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                  reenviar_id=None, sucesso="", contagem_slots=None):
-    """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
+    """Tela de Assinantes no padrão do site (verde/dourado, cards com filtros)."""
     import phone
+    import subscribers
     tk = _esc(token)
     admins = {phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])}
     erro_html = f'<div class="erro" style="margin:14px 0">{_esc(erro)}</div>' if erro else ""
@@ -921,23 +922,26 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'<select name="slot" style="padding:5px 8px;font-size:12px;background:#0e211a;color:var(--creme);border:1px solid rgba(233,225,198,.2);border-radius:8px">{opts}</select>'
                 f'<button class="actbtn ghost" style="padding:6px 10px;font-size:12px" type="submit">Salvar</button></form>')
-    linhas = "".join(
-        '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
-        f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--suave)">{_esc(s.get("whatsapp") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-size:13px;color:var(--suave)">{_esc(s.get("email") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-size:13px;color:var(--ouro2)">{_esc(s.get("plano") or "—")}</td>'
-        f'<td style="padding:13px 10px">{badge(s.get("status"))}</td>'
-        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--suave)">{_esc(s.get("proximo_vencimento") or "—")}</td>'
-        f'<td style="padding:13px 10px">{cel_curador(s)}</td>'
-        f'<td style="padding:13px 10px">{cel_editar_numero(s)}</td>'
-        f'<td style="padding:13px 10px">{cel_reenviar(s)}</td>'
-        f'<td style="padding:13px 10px">{cel_horario(s)}</td>'
-        f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
-        f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
-        f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
-        f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px">remover</button></form></td></tr>'
-        for s in assinantes)
+    def _cel_remover(s):
+        return (f'<form method="post" action="/admin" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px">remover</button></form>')
+
+    def card(s):
+        atual = subscribers.slot_de(s)
+        return (
+            f'<div class="subcard" data-nome="{_esc((s.get("nome") or "").lower())}" data-slot="{_esc(atual)}">'
+            f'<div class="subcard-top"><span class="subcard-nome">{_esc(s.get("nome") or "—")}</span>{badge(s.get("status"))}</div>'
+            f'<div class="subrow"><span class="k">WhatsApp</span><span class="v mono">{_esc(s.get("whatsapp") or "—")}</span></div>'
+            f'<details class="edit-num"><summary>✏️ editar número</summary>{cel_editar_numero(s)}</details>'
+            f'<div class="subrow"><span class="k">E-mail</span><span class="v">{_esc(s.get("email") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Plano</span><span class="v gold">{_esc(s.get("plano") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Vencimento</span><span class="v mono">{_esc(s.get("proximo_vencimento") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Horário</span><span class="v">{cel_horario(s)}</span></div>'
+            f'<div class="subcard-actions">{cel_curador(s)}{cel_reenviar(s)}{_cel_remover(s)}</div>'
+            '</div>')
+    cards = "".join(card(s) for s in assinantes)
     ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
     n_cur = sum(1 for s in assinantes if s.get("curador"))
     def _cupom_row(c):
@@ -954,26 +958,91 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
     if contagem_slots:
         itens = " · ".join(f"{sl}: {contagem_slots.get(sl, 0)}" for sl in config.SLOTS)
         resumo_slots = f'<p class="hint" style="margin-top:2px">Envio por horário — {itens}</p>'
+    # contador de vendas ativas por plano (mensal vs anual; o resto vira "Outros")
+    _pl = {"Mensal": 0, "Anual": 0, "Outros": 0}
+    for s in assinantes:
+        if s.get("status") != "ATIVO":
+            continue
+        sl = (s.get("plano") or "").strip()
+        _pl["Mensal" if sl == "mensal" else "Anual" if sl == "anual" else "Outros"] += 1
+    plano_cont = f'Ativos por plano — Mensal: {_pl["Mensal"]} · Anual: {_pl["Anual"]}'
+    if _pl["Outros"]:
+        plano_cont += f' · Outros: {_pl["Outros"]}'
+    plano_cont_html = f'<p class="hint" style="margin-top:2px">{plano_cont}</p>'
+    # filtros client-side: busca por nome + chips de horário (o rótulo mostra a contagem)
+    chips = ['<button type="button" class="f-slot on" data-slot="">Todos</button>']
+    for sl in config.SLOTS:
+        n = (contagem_slots or {}).get(sl)
+        rotulo = sl + (f" ({n})" if n is not None else "")
+        chips.append(f'<button type="button" class="f-slot" data-slot="{sl}">{rotulo}</button>')
+    filtros_html = (
+        '<div class="subtools">'
+        '<input id="f-nome" class="f-busca" type="search" placeholder="buscar por nome…" autocomplete="off">'
+        f'<div class="f-chips">{"".join(chips)}</div>'
+        '</div>')
+    card_css = """<style>
+    .subtools{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:16px 0}
+    .f-busca{flex:1;min-width:220px;background:var(--verde2);border:1px solid rgba(233,225,198,.2);border-radius:10px;
+      color:var(--creme);font-family:system-ui,sans-serif;font-size:14px;padding:9px 13px}
+    .f-busca:focus{outline:2px solid var(--ouro2);outline-offset:1px}
+    .f-chips{display:flex;flex-wrap:wrap;gap:6px}
+    .f-slot{cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:700;letter-spacing:.03em;
+      padding:6px 12px;border-radius:100px;background:transparent;color:var(--suave);border:1px solid rgba(233,225,198,.24)}
+    .f-slot.on{background:#c9a22722;color:var(--ouro2);border-color:#c9a22766}
+    .subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin:6px 0 24px}
+    .subcard{background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:14px;padding:15px 16px}
+    .subcard.hide{display:none}
+    .subcard-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+    .subcard-nome{font-family:"Cormorant Garamond",Georgia,serif;font-size:22px;color:var(--creme);line-height:1.12;word-break:break-word}
+    .subcard .subrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;
+      border-top:1px solid rgba(233,225,198,.08);font-family:system-ui,sans-serif;font-size:13px}
+    .subcard .subrow .k{color:var(--suave);text-transform:uppercase;font-size:10px;letter-spacing:.09em;white-space:nowrap}
+    .subcard .subrow .v{color:var(--texto);text-align:right;word-break:break-word;min-width:0}
+    .subcard .subrow .v.gold{color:var(--ouro2)}
+    .subcard .subrow .v.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--suave)}
+    .edit-num{margin:2px 0}
+    .edit-num>summary{cursor:pointer;list-style:none;color:var(--ouro2);font-family:system-ui,sans-serif;font-size:12.5px;padding:2px 0}
+    .edit-num>summary::-webkit-details-marker{display:none}
+    .edit-num[open]>summary{margin-bottom:8px}
+    .subcard-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(233,225,198,.14)}
+    </style>"""
+    filtro_js = """<script>
+    (function(){
+      var busca=document.getElementById('f-nome');
+      var chips=document.querySelectorAll('.f-slot');
+      var slot='';
+      function apply(){
+        var q=((busca&&busca.value)||'').toLowerCase().trim();
+        document.querySelectorAll('.subcard').forEach(function(c){
+          var okN=!q||(c.getAttribute('data-nome')||'').indexOf(q)>=0;
+          var okS=!slot||c.getAttribute('data-slot')===slot;
+          c.classList.toggle('hide',!(okN&&okS));
+        });
+      }
+      if(busca)busca.addEventListener('input',apply);
+      chips.forEach(function(ch){ch.addEventListener('click',function(){
+        chips.forEach(function(x){x.classList.remove('on')});ch.classList.add('on');
+        slot=ch.getAttribute('data-slot')||'';apply();
+      });});
+    })();
+    </script>"""
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "assinantes")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      {plano_cont_html}
       {resumo_slots}
       {erro_html}
       {sucesso_html}
       {confirm_html}
       {reenviar_html}
       <div class="infobox" style="margin:14px 0"><strong>Curadoria:</strong> quem estiver marcado como <strong>curador</strong> recebe, todo dia útil às <strong>18h</strong>, o resumo do dia com o link para revisar/aprovar antes do envio das 8h. Você (admin) recebe <em>sempre</em>. Marque um médico convidado aqui para ele ajudar na revisão.</div>
-      <div style="overflow-x:auto;margin:18px 0">
-        <table style="width:100%;border-collapse:collapse;min-width:990px">
-          <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
-            <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
-            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th style="padding:8px 10px">Editar número</th><th style="padding:8px 10px">Boas-vindas</th><th style="padding:8px 10px">Horário</th><th></th></tr></thead>
-          <tbody>{linhas or '<tr><td colspan="11" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
-        </table>
-      </div>
+      {card_css}
+      {filtros_html}
+      <div class="subgrid">{cards or '<p class="hint" style="grid-column:1/-1">Nenhum assinante ainda.</p>'}</div>
+      {filtro_js}
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
         <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Adicionar cortesia</h3>
