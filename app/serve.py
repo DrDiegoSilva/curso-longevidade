@@ -269,17 +269,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             novos, cands, classicos = curadoria.montar_candidatos_triagem(db)
             reserva_pronto_n = db.contar_reserva_pronto()
             classico_elegivel_n = len(db.listar_classicos(elegiveis=True))
-            n_estoque = reserva_pronto_n + len(novos) + classico_elegivel_n
-            try:
-                estado = agenda_plan.estado_estoque(
-                    reserva_pronto_n, len(novos), classico_elegivel_n,
-                    datetime.now(), daily._dias_envio(), daily.ESTOQUE_MINIMO)
-            except Exception as e:
-                # ex.: admin salvou 0 dias de envio em /admin/envio -> dias_envio vazio
-                # faz estado_estoque levantar ValueError. Degrada pra faixa sem data
-                # em vez de 500 (a rota /agenda logo acima já usa esse padrão de guard).
-                print(f"[curadoria] estado do estoque falhou: {e}", flush=True)
-                estado = {"envios": n_estoque, "ate": None, "baixo": n_estoque < daily.ESTOQUE_MINIMO}
+            estado = agenda_plan.estado_estoque(
+                reserva_pronto_n, len(novos), classico_elegivel_n,
+                datetime.now(), daily._dias_envio(), daily.ESTOQUE_MINIMO)
             amanha = None
             try:
                 d = draft_store.carregar((datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"))
@@ -587,7 +579,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 msg = {"priorizar": "Priorizado — o resumo é gerado hoje à noite.",
                        "descartar": "Estudo descartado.",
                        "desfazer": "Prioridade removida."}[acao]
-                ancora = f"#cand-{up.quote(cid)}" if acao == "desfazer" else ""
+                ancora = f"#cand-{up.quote(cid)}" if acao in ("desfazer", "priorizar") else ""
             elif acao == "varrer":
                 try:
                     msg = f"Varredura concluída: {curadoria.rodar_varredura()} novos candidatos."

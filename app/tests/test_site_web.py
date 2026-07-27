@@ -335,6 +335,14 @@ class TestCuradoriaItem(unittest.TestCase):
     def test_preserva_aba_e_tema_no_form(self):
         html = self.s._curadoria_item(self.c, "tok", aba="triagem", tema="Obesidade")
         self.assertIn('name="tema" value="Obesidade"', html)
+        self.assertIn('name="aba" value="triagem"', html)
+
+    def test_preserva_aba_classicos_no_form(self):
+        # round-trip da aba Clássicos: descartar/priorizar um clássico precisa devolver
+        # aba=classicos, senão a ação joga o médico na Triagem (onde clássicos não aparecem)
+        # e a ação parece não ter feito nada.
+        html = self.s._curadoria_item(self.c, "tok", aba="classicos")
+        self.assertIn('name="aba" value="classicos"', html)
 
     def test_nao_tem_mais_checkbox(self):
         self.assertNotIn("<input type=\"checkbox\"", self.s._curadoria_item(self.c, "tok"))
@@ -385,19 +393,22 @@ class TestPaginaCuradoria(unittest.TestCase):
         html = self._render(reserva=reserva, aba="reserva")
         self.assertIn("Resumo pronto", html)
 
-    def test_aba_reserva_separa_prontos_de_enviados(self):
-        # o contador da aba conta só "pronto"; "enviado" segue listado abaixo, como
-        # histórico, separado por um cabeçalho — não misturado na mesma lista.
+    def test_aba_reserva_separa_prontos_de_fora_do_estoque(self):
+        # o contador da aba conta só "pronto"; o resto (agendado, enviado, ...) segue
+        # listado abaixo, separado por um cabeçalho — não misturado na mesma lista.
+        # O cabeçalho é neutro ("Fora do estoque"), não "Já enviados": a maior parte
+        # desse grupo numa instalação saudável é "agendado" (ainda vai sair), não "enviado".
         reserva = [
-            {"id": "r1", "tema": "Obesidade", "status": "enviado",
-             "titulo_pt": "Enviado Um", "resumo": "txt", "prioridade": 0},
+            {"id": "r1", "tema": "Obesidade", "status": "agendado",
+             "titulo_pt": "Agendado Um", "resumo": "txt", "prioridade": 0},
             {"id": "r2", "tema": "Obesidade", "status": "pronto",
              "titulo_pt": "Pronto Um", "resumo": "txt", "prioridade": 0},
         ]
         html = self._render(reserva=reserva, aba="reserva")
-        self.assertIn("Já enviados", html)
-        self.assertLess(html.index("Pronto Um"), html.index("Já enviados"))
-        self.assertLess(html.index("Já enviados"), html.index("Enviado Um"))
+        self.assertIn("Fora do estoque", html)
+        self.assertNotIn("Já enviados", html)
+        self.assertLess(html.index("Pronto Um"), html.index("Fora do estoque"))
+        self.assertLess(html.index("Fora do estoque"), html.index("Agendado Um"))
 
     def test_aba_classicos_lista_candidatos_classicos(self):
         cl = {**self.cand, "id": "k1", "titulo": "Clássico X", "tipo": "classico"}
@@ -425,6 +436,40 @@ class TestPaginaCuradoria(unittest.TestCase):
                                     "review_token": "tk9"})
         self.assertIn("Conteúdo garantido até", html)
         self.assertIn("Amanhã X", html)
+
+    def test_toda_classe_usada_no_html_tem_regra_no_css_global(self):
+        # Guard: pagina_curadoria só emite site_web._CSS (global), nunca um <style>
+        # local. Uma classe usada no markup sem regra correspondente no CSS global
+        # sai sem estilo (ex.: bug real da Correção 1 — .slot-btn/.badge* viviam só
+        # no <style> local da /agenda; .temachips no markup vs .chips no CSS).
+        # Cobre várias abas/estados pra passar por o máximo de ramos condicionais.
+        import re
+        selecionado = {**self.cand, "id": "c2", "status": "selecionado"}
+        reserva = [
+            {"id": "r1", "tema": "Obesidade", "status": "pronto", "titulo_pt": "Pronto",
+             "resumo": "txt", "prioridade": 1},
+            {"id": "r2", "tema": "Obesidade", "status": "agendado", "titulo_pt": "Agendado",
+             "resumo": "txt", "prioridade": 0},
+        ]
+        classicos = {"candidatos": [{**self.cand, "id": "k1", "tipo": "classico"}],
+                     "banco": [{"tema": "Obesidade", "citacoes": 40, "titulo_pt": "Banco X"}]}
+        amanha = {"titulo": "Amanhã X", "status": "APPROVED", "review_token": "tk9"}
+        estado_baixo = {**self.estado, "baixo": True}
+
+        html = "".join([
+            self._render(candidatos=[self.cand, selecionado], amanha=amanha, msg="Feito."),
+            self._render(aba="reserva", reserva=reserva),
+            self._render(aba="classicos", classicos=classicos),
+            self._render(estado=estado_baixo),
+        ])
+
+        classes_no_html = set()
+        for attr in re.findall(r'class="([^"]*)"', html):
+            classes_no_html.update(attr.split())
+        classes_no_css = set(re.findall(r'\.([a-zA-Z][\w-]*)', self.s._CSS))
+        faltando = classes_no_html - classes_no_css
+        self.assertEqual(faltando, set(),
+                          f"classes no HTML da curadoria sem regra em site_web._CSS: {sorted(faltando)}")
 
 
 if __name__ == "__main__":

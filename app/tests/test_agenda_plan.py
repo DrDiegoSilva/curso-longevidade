@@ -214,6 +214,15 @@ class TestEstadoEstoque(unittest.TestCase):
         e = ap.estado_estoque(9, 0, 0, datetime(2026, 7, 27), self.UTEIS, minimo=10)
         self.assertTrue(e["baixo"])
 
+    def test_dias_envio_vazio_degrada_ate_pra_none_sem_levantar(self):
+        # dias_envio sem nenhum dia útil válido faria dias_uteis_desde levantar
+        # ValueError; estado_estoque é função pura e não pode propagar isso pro
+        # chamador — degrada pra "não sei até quando" mantendo envios/baixo corretos.
+        e = ap.estado_estoque(3, 2, 1, datetime(2026, 7, 27), set(), minimo=10)
+        self.assertEqual(e["envios"], 6)
+        self.assertIsNone(e["ate"])
+        self.assertTrue(e["baixo"])
+
 
 class TestPreparoRoteamento(unittest.TestCase):
     """preparar_18h escolhe a fonte certa a partir do slot (com dublês nas partes de I/O)."""

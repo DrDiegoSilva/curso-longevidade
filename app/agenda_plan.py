@@ -116,9 +116,16 @@ def precisa_reabastecer(fila_n, reserva_n, horizonte):
 def estado_estoque(reserva_n, cand_n, classico_n, hoje, dias_envio, minimo):
     """Quantos envios o estoque cobre e até que dia. Puro (sem I/O).
     `hoje` é datetime (mesmo contrato de dias_uteis_desde); `dias_envio` é iterável de
-    nomes de dia; `ate` volta em YYYY-MM-DD, ou None quando não há estoque."""
+    nomes de dia; `ate` volta em YYYY-MM-DD, ou None quando não há estoque OU quando
+    `dias_envio` não tem nenhum dia útil válido (config incompleta/em edição —
+    degrada pra "não sei até quando" em vez de propagar o ValueError)."""
     envios = reserva_n + cand_n + classico_n
-    ate = dias_uteis_desde(hoje, envios, dias_envio)[-1] if envios else None
+    ate = None
+    if envios:
+        try:
+            ate = dias_uteis_desde(hoje, envios, dias_envio)[-1]
+        except ValueError:
+            ate = None
     return {"envios": envios, "ate": ate, "baixo": envios < minimo}
 
 

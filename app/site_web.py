@@ -191,7 +191,7 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .am-tit{font-size:15px;color:var(--creme);line-height:1.35;margin:6px 0 10px}
 .am-rod{display:flex;align-items:center;justify-content:space-between;gap:10px;
         font-family:var(--ui);font-size:12.5px;color:var(--muted)}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 14px}
+.temachips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 14px}
 .temachip{font-family:var(--ui);font-size:12.5px;color:var(--muted);background:rgba(255,255,255,.05);
       border:1px solid var(--line);border-radius:100px;padding:6px 13px;text-decoration:none;transition:.15s}
 .temachip:hover{color:var(--creme);border-color:rgba(201,162,39,.35)}
@@ -312,6 +312,17 @@ textarea:focus{outline:none;border-color:var(--ouro)}
 .pn-btn .k{font-family:var(--ui);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .pn-btn .v{font-family:var(--disp);font-size:16.5px;color:var(--cream);margin-top:3px}
 .pn-btn.next{text-align:right}
+/* badges + botão de slot (curadoria + agenda) */
+.badge{font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.03em;padding:3px 9px;border-radius:100px;white-space:nowrap}
+.badge-reserva{color:#9fe6c2;background:rgba(70,190,130,.14);border:1px solid rgba(70,190,130,.32)}
+.badge-fila{color:#ecd691;background:rgba(201,162,39,.15);border:1px solid rgba(201,162,39,.34)}
+.badge-pulado{color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line)}
+.badge-vazio{color:#eaa982;background:rgba(200,120,60,.15);border:1px solid rgba(200,120,60,.34)}
+.slot-btn,.slot-sel{font-family:var(--ui);font-size:11.5px;font-weight:600;letter-spacing:.01em;
+      padding:6px 11px;border-radius:100px;border:1px solid rgba(233,225,198,.22);
+      background:rgba(0,0,0,.22);color:var(--creme);cursor:pointer;transition:.14s;line-height:1}
+.slot-btn:hover,.slot-sel:hover{border-color:var(--ouro);color:var(--ouro2);background:rgba(201,162,39,.1)}
+.slot-btn:active{transform:translateY(1px)}
 @media(max-width:820px){
   .hero{grid-template-columns:1fr;gap:28px;padding:28px 0 18px}
   .sec{padding:40px 0}
@@ -1216,7 +1227,7 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
     if aba == "reserva":
         corpo_aba = "".join(_curadoria_reserva_item(r, token) for r in prontos)
         if resto_reserva:
-            corpo_aba += (f'<div class="sectag" style="margin-top:24px">📤 Já enviados · '
+            corpo_aba += (f'<div class="sectag" style="margin-top:24px">📦 Fora do estoque · '
                           f'{len(resto_reserva)}</div>'
                           + "".join(_curadoria_reserva_item(r, token) for r in resto_reserva))
         corpo_aba = corpo_aba or ('<p class="hint">Reserva vazia. Priorize candidatos na '
@@ -1328,19 +1339,9 @@ def pagina_agenda(semanas, estoque, token, msg=""):
     .slot.fixado{border-color:rgba(201,162,39,.5);background:linear-gradient(180deg,rgba(201,162,39,.09),rgba(255,255,255,.02))}
     .slot-h{display:flex;justify-content:space-between;align-items:center;gap:8px}
     .slot-dia{font-family:var(--ui);font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--creme);opacity:.65}
-    .badge{font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.03em;padding:3px 9px;border-radius:100px;white-space:nowrap}
-    .badge-reserva{color:#9fe6c2;background:rgba(70,190,130,.14);border:1px solid rgba(70,190,130,.32)}
-    .badge-fila{color:#ecd691;background:rgba(201,162,39,.15);border:1px solid rgba(201,162,39,.34)}
-    .badge-pulado{color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line)}
-    .badge-vazio{color:#eaa982;background:rgba(200,120,60,.15);border:1px solid rgba(200,120,60,.34)}
     .slot-tema{font-family:var(--ui);font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--ouro2);margin:10px 0 3px}
     .slot-tit{font-size:13.5px;color:var(--creme);line-height:1.35;min-height:37px}
     .slot-acts{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;align-items:center}
-    .slot-btn,.slot-sel{font-family:var(--ui);font-size:11.5px;font-weight:600;letter-spacing:.01em;
-          padding:6px 11px;border-radius:100px;border:1px solid rgba(233,225,198,.22);
-          background:rgba(0,0,0,.22);color:var(--creme);cursor:pointer;transition:.14s;line-height:1}
-    .slot-btn:hover,.slot-sel:hover{border-color:var(--ouro);color:var(--ouro2);background:rgba(201,162,39,.1)}
-    .slot-btn:active{transform:translateY(1px)}
     .slot-mv{display:inline}
     .slot-sel{appearance:none;-webkit-appearance:none}
     .slot.fixado .slot-btn{border-color:rgba(201,162,39,.4)}
