@@ -217,10 +217,22 @@ class TestPiso(unittest.TestCase):
         self.assertTrue(all(c["score"] >= 8 for c in obes))
 
     def test_varrer_classicos_ignora_o_piso(self):
-        # clássicos ranqueiam por citações — o piso de nota não pode cortá-los
-        out = curadoria.varrer_classicos(caps={"Obesidade": 99}, buscar_fn=_fake_buscar,
-                                         triar_fn=_fake_triar)
-        self.assertTrue([c for c in out if c["tema"] == "Obesidade"])
+        # clássicos ranqueiam por citações — o piso de nota não pode cortá-los.
+        # Para provar isso, usamos um triar_fn que devolve scores **abaixo** do piso default (6).
+        def fake_triar_com_score_baixo(arts, tema):
+            """Mesma estrutura de _fake_triar, mas com score 2 (abaixo do piso=6)."""
+            out = []
+            for i, a in enumerate(arts):
+                a = dict(a); a["tema"] = tema; a["score"] = 2; a["citacoes"] = 5000 - i * 100
+                out.append(a)
+            return out
+        out = curadoria.varrer_classicos(caps={"Obesidade": 3}, buscar_fn=_fake_buscar,
+                                         triar_fn=fake_triar_com_score_baixo)
+        # Se o piso estivesse aplicado, todos os clássicos teriam sido cortados (score 2 < piso 6).
+        # Mas varrer_classicos ignora o piso, então devem estar presentes.
+        obes = [c for c in out if c["tema"] == "Obesidade"]
+        self.assertEqual(len(obes), 3)
+        self.assertTrue(all(c["score"] == 2 for c in obes))
 
 
 class TestGerarRoteia(unittest.TestCase):
