@@ -928,5 +928,5 @@ git commit -m "test: verificação final do fluxo da curadoria"
 - **`descartado` já é respeitado** pelo resto do sistema: `db.listar_candidatos(status="novo")` não o retorna e `daily.materializar_agenda` só puxa `status="novo"`. Não há migração de schema nesta feature.
 - **A ação POST `acao=gerar`** (gerar resumos na mão) **fica no `serve.py`** como escape hatch, só perde o botão na UI. Não remover.
 - **`db.definir_selecao` fica órfã** depois da Task 5 (o único chamador era o ramo `selecionar`). **Deixar como está** — ela tem teste próprio em `app/tests/test_db.py:106` e remover só criaria churn. Isto é intencional, não é descuido: um revisor que apontar "função morta" pode ser respondido com esta nota.
-- **Números de linha** foram conferidos no branch `feat/login-cpf` em 2026-07-26. Se o arquivo tiver mudado, localize pelo trecho de código citado em vez de confiar no número.
+- **Números de linha** foram conferidos em 2026-07-26 contra a árvore do branch `feat/curadoria-fluxo` (base `main` = `70d7bca`, já com o login por CPF mesclado). Se o arquivo tiver mudado, localize pelo trecho de código citado em vez de confiar no número.
 - **Não há teste de rota HTTP** neste projeto — `serve.py` é cola fina e se verifica por `import serve` + testes dos módulos que ele chama. Siga esse padrão em vez de inventar um harness de HTTP.
