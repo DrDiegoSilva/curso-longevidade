@@ -188,6 +188,33 @@ class TestAgruparPorSemana(unittest.TestCase):
         self.assertEqual(ap.agrupar_por_semana([]), [])
 
 
+class TestEstadoEstoque(unittest.TestCase):
+    UTEIS = ["segunda", "terca", "quarta", "quinta", "sexta"]
+
+    def test_conta_e_projeta_a_data_do_ultimo_envio(self):
+        # 2026-07-27 é segunda; 5 envios cobrem até sexta 31/07
+        e = ap.estado_estoque(2, 3, 0, datetime(2026, 7, 27), self.UTEIS, minimo=10)
+        self.assertEqual(e["envios"], 5)
+        self.assertEqual(e["ate"], "2026-07-31")
+
+    def test_soma_as_tres_fontes(self):
+        e = ap.estado_estoque(1, 2, 4, datetime(2026, 7, 27), self.UTEIS, minimo=10)
+        self.assertEqual(e["envios"], 7)
+
+    def test_estoque_zero_nao_tem_data(self):
+        e = ap.estado_estoque(0, 0, 0, datetime(2026, 7, 27), self.UTEIS, minimo=10)
+        self.assertIsNone(e["ate"])
+        self.assertTrue(e["baixo"])
+
+    def test_limiar_exato_nao_e_baixo(self):
+        e = ap.estado_estoque(10, 0, 0, datetime(2026, 7, 27), self.UTEIS, minimo=10)
+        self.assertFalse(e["baixo"])
+
+    def test_abaixo_do_limiar_e_baixo(self):
+        e = ap.estado_estoque(9, 0, 0, datetime(2026, 7, 27), self.UTEIS, minimo=10)
+        self.assertTrue(e["baixo"])
+
+
 class TestPreparoRoteamento(unittest.TestCase):
     """preparar_18h escolhe a fonte certa a partir do slot (com dublês nas partes de I/O)."""
     def setUp(self):

@@ -113,6 +113,15 @@ def precisa_reabastecer(fila_n, reserva_n, horizonte):
     return (fila_n + reserva_n) < horizonte
 
 
+def estado_estoque(reserva_n, cand_n, classico_n, hoje, dias_envio, minimo):
+    """Quantos envios o estoque cobre e até que dia. Puro (sem I/O).
+    `hoje` é datetime (mesmo contrato de dias_uteis_desde); `dias_envio` é iterável de
+    nomes de dia; `ate` volta em YYYY-MM-DD, ou None quando não há estoque."""
+    envios = reserva_n + cand_n + classico_n
+    ate = dias_uteis_desde(hoje, envios, dias_envio)[-1] if envios else None
+    return {"envios": envios, "ate": ate, "baixo": envios < minimo}
+
+
 def agrupar_por_semana(slots_ordenados):
     """Quebra a lista de slots (ordenada por data) em blocos por semana ISO."""
     semanas, atual, chave = [], [], None
