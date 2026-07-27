@@ -122,7 +122,7 @@ Padrão da casa: `unittest` standalone em `app/tests/`, sem rede.
 - `planejar_agenda` cai para outro tema quando não há candidato do tema do dia — e o dia **não** fica vazio
 - variedade ainda vence o mapa quando o dia anterior teve o mesmo tema
 
-⚠️ **Os testes existentes de `TestPlanejar` e `TestRankPiramide` passam `rotacao` como lista** (`["A"]`, `["A","B"]`, `["Obesidade"]` — 10 call sites entre as linhas 55 e 125). Todos precisam migrar para o formato de dicionário. Para preservar a intenção de cada teste com edição mecânica, adicionar um helper no topo do arquivo:
+⚠️ **Os testes existentes de `TestPlanejar` e `TestRankPiramide` passam `rotacao` como lista** (`["A"]`, `["A","B"]`, `["Obesidade"]`, `["Performance"]` — 11 call sites entre as linhas 64 e 146). Todos precisam migrar para o formato de dicionário. Para preservar a intenção de cada teste com edição mecânica, adicionar um helper no topo do arquivo:
 
 ```python
 def _todo_dia(tema):
