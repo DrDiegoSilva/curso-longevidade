@@ -418,6 +418,36 @@ def _preparar_de_classico(classico_id):
     return r
 
 
+ALTERNATIVAS_MAX = 20
+
+
+def montar_alternativas(r):
+    """Lista de estudos p/ trocar o de amanhã: reserva (uploads no topo) + candidatos
+    (tema de amanhã primeiro). Exclui o estudo atual. Normalizado e cortado em ALTERNATIVAS_MAX."""
+    import db
+    atual_res = r.get("reserva_id")
+    atual_cand = r.get("candidato_id")
+    tema_amanha = (r.get("artigo") or {}).get("tema", "")
+    res_rows = [x for x in db.listar_reserva("pronto") if x["id"] != atual_res]
+    res_rows.sort(key=lambda x: (x.get("prioridade", 0) or 0, x.get("score", 0) or 0), reverse=True)
+    cand_rows = [x for x in db.listar_candidatos("novo") if x["id"] != atual_cand]
+    cand_rows.sort(key=lambda x: (1 if x.get("tema") == tema_amanha else 0, x.get("score", 0) or 0), reverse=True)
+    alts = (
+        [{"tipo": "reserva", "id": x["id"], "titulo": x.get("titulo_pt", ""),
+          "fonte": x.get("fonte", ""), "tema": x.get("tema", ""), "score": x.get("score", 0) or 0}
+         for x in res_rows]
+        + [{"tipo": "candidato", "id": x["id"], "titulo": x.get("titulo", ""),
+            "fonte": x.get("fonte", ""), "tema": x.get("tema", ""), "score": x.get("score", 0) or 0}
+           for x in cand_rows]
+    )
+    return alts[:ALTERNATIVAS_MAX]
+
+
+def alternativa_valida(r, tipo, cid):
+    """True se (tipo,cid) está entre as alternativas atuais (não confia no form)."""
+    return any(a["tipo"] == tipo and str(a["id"]) == str(cid) for a in montar_alternativas(r))
+
+
 def _preparar_fallback():
     """Comportamento original: fila fresca (gera conteúdo) e, se vazia, reserva."""
     if queue_store.tamanho() < REFILL_MINIMO:
