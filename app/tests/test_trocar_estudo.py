@@ -71,6 +71,36 @@ class TestMontarAlternativas(unittest.TestCase):
             self.assertFalse(daily.alternativa_valida(r, "reserva", "nope"))
 
 
+class TestReviewWebTrocar(unittest.TestCase):
+    def test_pagina_revisao_tem_botao_trocar(self):
+        import review_web
+        html = review_web.pagina_revisao({"artigo": {"titulo": "T"}, "data": "2026-07-28",
+                                          "resumo": "x", "review_token": "tok"})
+        self.assertIn('value="trocar"', html)
+        self.assertIn("🔁", html)
+
+    def test_pagina_trocar_lista_e_escapa(self):
+        import review_web
+        alts = [{"tipo": "reserva", "id": "res1", "titulo": "T <b>x</b>",
+                 "fonte": "NEJM", "tema": "Obesidade", "score": 9}]
+        r = {"artigo": {"titulo": "Atual"}}
+        html = review_web.pagina_trocar_estudo(alts, r, "tok")
+        self.assertIn("T &lt;b&gt;x&lt;/b&gt;", html)          # título escapado
+        self.assertIn('value="trocar_confirmar"', html)
+        self.assertIn('name="tipo" value="reserva"', html)
+        self.assertIn('name="id" value="res1"', html)
+        self.assertIn("/revisar/tok", html)                    # form + voltar
+
+    def test_pagina_trocar_vazio(self):
+        import review_web
+        html = review_web.pagina_trocar_estudo([], {"artigo": {"titulo": "Atual"}}, "tok")
+        self.assertIn("Sem outros estudos", html)
+
+    def test_pagina_trocando(self):
+        import review_web
+        self.assertIn("Trocando", review_web.pagina_trocando())
+
+
 class TestTrocarEstudoAmanha(unittest.TestCase):
     def setUp(self):
         import daily
