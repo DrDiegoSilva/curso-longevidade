@@ -321,6 +321,14 @@ class TestCuradoriaItem(unittest.TestCase):
         html = self.s._curadoria_item({**self.c, "url": "https://ex.com/a"}, "tok")
         self.assertIn('href="https://ex.com/a"', html)
 
+    def test_href_escapa_caracteres_perigosos_da_url(self):
+        # url vem de API externa (Europe PMC/OpenAlex) — dado não-confiável indo pro atributo href.
+        perigoso = 'https://ex.com/a?x=1&y=2"onmouseover=alert(1)'
+        html = self.s._curadoria_item({**self.c, "url": perigoso}, "tok")
+        self.assertIn('href="https://ex.com/a?x=1&amp;y=2&quot;onmouseover=alert(1)"', html)
+        self.assertNotIn('href="https://ex.com/a?x=1&y=2"onmouseover=alert(1)"', html)
+        self.assertNotIn('2"onmouseover', html)   # a aspa crua quebraria o atributo href
+
     def test_sem_doi_e_sem_url_nao_vira_link(self):
         html = self.s._curadoria_item({**self.c, "doi": "", "url": ""}, "tok")
         self.assertNotIn("<a class=\"ctitle\"", html)
