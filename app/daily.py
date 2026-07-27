@@ -501,6 +501,21 @@ def varredura_semanal(hoje=None, rodar_fn=None):
     return True
 
 
+def gerar_selecionados_noturno(gerar_fn=None):
+    """Gera os resumos dos candidatos que o Diego priorizou na curadoria.
+    Roda todo dia às config.HORA_CURADORIA — DEPOIS do preparo das 18h, que tem
+    prioridade (ele é quem dispara a revisão do estudo de amanhã).
+    Idempotente: gerar_selecionados marca 'resumido' e não repete. gerar_fn injetável."""
+    gerar_fn = gerar_fn or (lambda: __import__("curadoria").gerar_selecionados())
+    try:
+        n = gerar_fn()
+        print(f"[curadoria-noturna] {n} resumo(s) gerado(s)", flush=True)
+        return n
+    except Exception as e:
+        print(f"[curadoria-noturna] erro: {e}", flush=True)
+        return 0
+
+
 def montar_texto_resumo(titulo, resumo, tmeta, fresco=False):
     """Texto do WhatsApp p/ o assinante: selo de recência (se fresco) + badge do tema
     (emoji + rótulo) + título + resumo."""

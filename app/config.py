@@ -78,6 +78,7 @@ DIA_VARREDURA = os.environ.get("DSCURSO_DIA_VARREDURA") or "domingo"
 # os melhores que tiver — tema seco não pode zerar.
 SCORE_PISO = float(os.environ.get("DSCURSO_SCORE_PISO") or 6)
 MIN_POR_TEMA = int(os.environ.get("DSCURSO_MIN_POR_TEMA") or 3)
+HORA_CURADORIA = int(os.environ.get("DSCURSO_HORA_CURADORIA") or 21)   # gera os priorizados
 
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
