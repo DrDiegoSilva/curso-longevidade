@@ -248,7 +248,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Parcelado", "whatsapp": "5543999996666", "email": "p@x.com",
              "cpf": "11144477735", "plano": "anual"},
-            {"customer": "cus_1", "payment": "pay_1parc", "proximo_vencimento": "2026-08-19"})
+            {"customer": "cus_1", "payment": "pay_1parc", "installment": "inst_anual12x",
+             "proximo_vencimento": "2026-08-19"})
         import asaas
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -285,7 +286,8 @@ class TestProcessar(unittest.TestCase):
         # -> a guarda tem que casar pelo WhatsApp como fallback.
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. W", "whatsapp": "5543999997777", "email": "w@x.com", "plano": "anual"},
-            {"customer": "cus_2", "payment": "pay_1w", "proximo_vencimento": "2026-08-20"})
+            {"customer": "cus_2", "payment": "pay_1w", "installment": "inst_anual12x_w",
+             "proximo_vencimento": "2026-08-20"})
         import asaas, email_send
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -762,7 +764,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Parc6", "whatsapp": "5543999990005", "email": "parc6@x.com",
              "cpf": "11144477735", "plano": "anual"},
-            {"customer": "cus_6", "payment": "pay_6_1", "proximo_vencimento": "2026-08-19"})
+            {"customer": "cus_6", "payment": "pay_6_1", "installment": "inst_6",
+             "proximo_vencimento": "2026-08-19"})
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-19")   # data no futuro (edge case)
         import asaas, email_send
         self.cfg.ASAAS_API_KEY = "k"

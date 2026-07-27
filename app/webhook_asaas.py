@@ -190,6 +190,7 @@ def _executar(event, pay, pid, enviar_fn):
             # e não dentro dos ramos, porque o ATIVAR é reentrante por dois caminhos distintos
             # e os dois desembocavam em "conceder um ciclo novo".
             tipo_pagamento, _ = refunds.alvo_estorno(pay)
+            inst_id = pay.get("installment") or ""
             if pid and existente.get("asaas_payment_id") == pid:
                 # B5: o Asaas manda PAYMENT_CONFIRMED e PAYMENT_RECEIVED para o MESMO
                 # pagamento, e a idempotência é por (payment_id, event) — os dois passam.
@@ -198,13 +199,18 @@ def _executar(event, pay, pid, enviar_fn):
                 # A guarda é por identidade do pagamento, então a recompra legítima (outro
                 # pagamento, antes de vencer) continua passando.
                 return (200, "replay")
-            if tipo_pagamento == "installment":
-                # B6/B7: parcela de cartão parcelado. Só atualiza a referência do pagamento
-                # mais recente (é nela que o estorno se baseia). NUNCA concede período novo,
-                # NUNCA reativa e NUNCA limpa o cancelamento: antes, a parcela que chegasse
-                # depois do acesso vencer caía na recontratação e comprava um ciclo anual
-                # inteiro + bônus de resgate por R$ 91,58, ressuscitando quem tinha cancelado
-                # a renovação e apagando o `cancelado_em`.
+            if tipo_pagamento == "installment" and inst_id and inst_id == existente.get("asaas_installment_id"):
+                # B6/B7: parcela do contrato QUE JÁ ESTÁ EM ARQUIVO. Só atualiza a referência
+                # do pagamento mais recente (é nela que o estorno se baseia). NUNCA concede
+                # período novo, NUNCA reativa e NUNCA limpa o cancelamento: antes, a parcela
+                # que chegasse depois do acesso vencer caía na recontratação e comprava um
+                # ciclo anual inteiro + bônus por R$ 91,58, ressuscitando quem tinha cancelado.
+                #
+                # C1 da revisão #3: a comparação com o `asaas_installment_id` é o que separa
+                # uma parcela ATRASADA do contrato antigo da PARCELA 1 DE UM CONTRATO NOVO.
+                # Sem ela, o ex-assinante que voltava no anual em 12x (a coorte que as
+                # mensagens de resgate trazem de volta) pagava R$ 1.099 e recebia ZERO acesso,
+                # sem boas-vindas e sem alerta — e as 11 parcelas seguintes repetiam o silêncio.
                 subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid)
                 return (200, "parcela-registrada")
 
@@ -217,10 +223,15 @@ def _executar(event, pay, pid, enviar_fn):
         # (Pix, founder) tinha o valor comparado contra o preço de TABELA em
         # plano_por_base — não casava com nada, e a cascata caía no default MONTHLY (30
         # dias de acesso pra quem, por exemplo, pagou um ano).
+        # C2 da revisão #3: o PENDING subiu para a 2ª posição, à frente do cadastro antigo. Um
+        # pending fresco diz o que o cliente ACABOU DE ESCOLHER; o cadastro diz o que ele
+        # escolheu da última vez. Com a ordem anterior, um ex-mensal que voltasse comprando o
+        # anual era reativado como "mensal": recebia o ciclo do mensal (30 dias) por um ano
+        # pago, e a renovação seguinte cobrava a base do ANUAL por MÊS.
         plano = (config.plano_por_cycle(sub_obj.get("cycle"))
+                 or (config.plano_por_slug((pending or {}).get("plano", "")) if pending else None)
                  or (config.plano_por_slug(existente.get("plano", "")) if existente else None)
-                 or config.plano_por_base(pay.get("value"))
-                 or (config.plano_por_slug((pending or {}).get("plano", "")) if pending else None) or {})
+                 or config.plano_por_base(pay.get("value")) or {})
         if not plano:
             # IMPORTANT 2 (correção 3): a cascata inteira falhou (cliente novo, sem
             # pending, valor que não bate com nenhum preço de tabela) — dinheiro entrou
@@ -240,6 +251,14 @@ def _executar(event, pay, pid, enviar_fn):
         # renovação cai no preço de tabela, que é o certo, em vez de um valor inventado.
         base_contratada = (pending or {}).get("valor_base")
         extra_valor = {"valor_contratado": base_contratada} if base_contratada else {}
+        # C2 da revisão #3: quem recompra ou recontrata pode ter TROCADO de plano. Sem regravar,
+        # o registro seguia com o plano antigo enquanto `valor_contratado` já era a base do novo
+        # — e a renovação cobrava a base do anual por mês. Só grava quando a cascata resolveu um
+        # plano de verdade, para não apagar o que está em arquivo com um palpite vazio.
+        extra_plano = {"plano": plano["slug"]} if plano.get("slug") else {}
+        # C1: registra o GRUPO de parcelamento do contrato vigente — é o que permite distinguir,
+        # depois, uma parcela deste contrato de uma parcela de um contrato anterior.
+        extra_inst = {"asaas_installment_id": pay.get("installment")} if pay.get("installment") else {}
 
         if existente and subscribers.tem_acesso(existente):
             # Parcela e reentrega do mesmo pagamento já saíram nas guardas acima — o que
@@ -282,7 +301,7 @@ def _executar(event, pay, pid, enviar_fn):
             subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
                                       acesso_ate=(None if sid else novo_fim), proximo_vencimento=novo_fim,
                                       criado_em=datetime.now().isoformat(),
-                                      **extra_valor, **extra_sub)
+                                      **extra_plano, **extra_inst, **extra_valor, **extra_sub)
             # Recompra é manual (o assinante voltou e pagou de novo) -> WhatsApp.
             _confirmar_renovacao({"email": existente.get("email") or email,
                                   "nome": existente.get("nome") or nome,
@@ -331,7 +350,7 @@ def _executar(event, pay, pid, enviar_fn):
                                       cancelado_em=None, cancel_motivo=None,
                                       asaas_payment_id=pid,
                                       criado_em=datetime.now().isoformat(),
-                                      **extra_valor, **extra_sub)
+                                      **extra_plano, **extra_inst, **extra_valor, **extra_sub)
             reg = existente
         else:
             reg = subscribers.criar_de_pagamento(
@@ -459,6 +478,15 @@ def _executar(event, pay, pid, enviar_fn):
         return (200, "inadimplente")
 
     if acao == "SUSPENDER" and alvo:
+        # C3 da revisão #3: "cobrança apagada" NÃO é "dinheiro devolvido". PAYMENT_DELETED
+        # mora no mesmo grupo de REFUNDED/CHARGEBACK, mas significa que uma cobrança saiu do
+        # Asaas — normalmente uma que nunca foi paga. Dois estragos reais quando ela cortava
+        # acesso: (1) apagar no painel um Pix de renovação abandonado cancelava um assinante
+        # com um ano pago; (2) cancelar a renovação apaga as cobranças futuras da assinatura,
+        # o que negava a promessa central do Projeto E (o acesso vai até o fim do período
+        # pago). Só corta quando a cobrança apagada é justamente a que ele PAGOU.
+        if (event or "").upper() == "PAYMENT_DELETED" and alvo.get("asaas_payment_id") != pid:
+            return (200, "cobranca-apagada-ignorada")
         subscribers.marcar_status(alvo["id"], "CANCELADO", acesso_ate=datetime.now().isoformat())
         # A venda deixou de existir -> a comissão não é mais devida. Sem isto o afiliado
         # seguia na fila de pagamento por uma venda estornada (o /cancelar já fazia essa

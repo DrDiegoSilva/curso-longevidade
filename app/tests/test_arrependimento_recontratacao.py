@@ -68,7 +68,8 @@ class TestJanelaDeArrependimentoEmContratoNovo(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. A", "whatsapp": self.WPP, "email": "a@x.com", "cpf": self.CPF,
              "plano": "anual", "valor_contratado": 1099.0},
-            {"customer": "cus_1", "payment": "pay_velho", "proximo_vencimento": acesso_ate})
+            {"customer": "cus_1", "payment": "pay_velho", "installment": "inst_12x",
+             "proximo_vencimento": acesso_ate})
         antigo = (datetime.now() - timedelta(days=60)).isoformat()
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=acesso_ate, criado_em=antigo)
         sub = self.s.por_id(reg["id"])

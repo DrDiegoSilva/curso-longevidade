@@ -823,7 +823,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
-        if sub.get("asaas_subscription_id"):
+        if sub.get("asaas_subscription_id") and not sub.get("cancelado_em"):
             return self._html(site_web.pagina_msg("Renovação automática",
                                                   AVISO_JA_RECORRENTE, logado=True))
         plano = _c.plano_por_slug(sub.get("plano", "")) or {}
@@ -844,7 +844,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
-        if sub.get("asaas_subscription_id"):
+        if sub.get("asaas_subscription_id") and not sub.get("cancelado_em"):
             # Mesma guarda do GET, no POST: sem ela, um form antigo em cache ou um POST
             # direto ainda criaria a 2ª assinatura recorrente.
             return self._html(site_web.pagina_msg("Renovação automática",
@@ -906,6 +906,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_cancelar("Conta pra gente o motivo — é obrigatório."))
         if sub.get("oferta_retencao_em"):          # já usou a oferta -> cancela direto
             return self._executar_cancelamento(sub, motivo)
+        if not subscribers.tem_acesso(sub):
+            # Revisão #3: a oferta de retenção é "fique mais 30 dias" — só faz sentido para
+            # quem TEM acesso a manter. Sem esta guarda ela era exibida (e aceita) por quem
+            # já tinha o acesso cortado, inclusive por estorno/chargeback (SUSPENDER grava
+            # CANCELADO sem `cancelado_em`, e a sessão continua válida): virava reativação
+            # self-service de graça. E para quem simplesmente venceu, o "+30 dias" contava de
+            # uma data já passada e entregava ZERO — a mesma promessa vazia do B11 —
+            # queimando de vez a única oferta a que ele tinha direito.
+            return self._executar_cancelamento(sub, motivo)
         return self._html(site_web.pagina_cancelar_oferta(motivo))
 
     def _cancelar_confirmar(self, g):
@@ -926,6 +935,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # Idempotente de propósito: mostra a mesma página, não concede de novo e NÃO
                 # cancela — o cliente clicou justamente para não cancelar.
                 return self._html(site_web.pagina_oferta_aceita())
+            if not subscribers.tem_acesso(sub):
+                # Mesma guarda do passo 1, aqui no POST que de fato concede — senão um POST
+                # direto (ou o botão Voltar do navegador sobre o form antigo) contornava.
+                return self._executar_cancelamento(sub, motivo)
             sid = sub.get("asaas_subscription_id")
             try:
                 if sid:
@@ -943,6 +956,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ref = datetime.fromisoformat(base) if base else datetime.now()
             except Exception:
                 ref = datetime.now()
+            # Piso em hoje: estender a partir de uma data já passada devolveria menos de 30
+            # dias — ou nenhum — enquanto a tela promete "+30 dias".
+            ref = max(ref, datetime.now())
             novo = (ref + timedelta(days=30)).date().isoformat()
             extra = {} if sid else {"acesso_ate": novo}
             subscribers.marcar_status(sub["id"], "ATIVO",

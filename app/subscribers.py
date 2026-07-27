@@ -12,6 +12,7 @@ _migrado = False
 
 _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
          "asaas_customer_id", "asaas_subscription_id", "asaas_payment_id",
+         "asaas_installment_id",
          "proximo_vencimento", "acesso_ate", "carencia_ate", "aviso_renov_em",
          "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em",
          "termos_versao", "termos_aceito_em", "termos_ip", "valor_contratado", "senha_hash"]
@@ -151,7 +152,8 @@ def criar_de_pagamento(pending, dados_asaas=None, status="ATIVO"):
            "cpf": pending.get("cpf", ""), "plano": pending.get("plano", ""),
            "metodo": pending.get("metodo", ""), "status": status,
            "asaas_customer_id": a.get("customer"), "asaas_subscription_id": a.get("subscription"),
-           "asaas_payment_id": a.get("payment"), "proximo_vencimento": a.get("proximo_vencimento"),
+           "asaas_payment_id": a.get("payment"), "asaas_installment_id": a.get("installment"),
+           "proximo_vencimento": a.get("proximo_vencimento"),
            # Aceite feito no checkout (Task 7): copiado do pending pro assinante, pra
            # quem já aceitou lá não cair na tela de re-aceite (subscribers.precisa_aceitar).
            "termos_versao": pending.get("termos_versao") or "",

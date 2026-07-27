@@ -121,6 +121,7 @@ def init():
                 plano TEXT, metodo TEXT,
                 status TEXT DEFAULT 'ATIVO',
                 asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
+                asaas_installment_id TEXT,
                 proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
                 criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT,
                 senha_hash TEXT, curador INTEGER DEFAULT 0, slot_envio TEXT
@@ -212,6 +213,7 @@ def init():
     _migrar_colunas()
     _seed_cupons()
     _seed_automacoes()
+    _migrar_texto_seed0()
     if _is_pg():
         _habilitar_rls()        # trava a Data API pública do Supabase (app conecta direto e ignora RLS)
     _INITED = True
@@ -261,6 +263,10 @@ def _migrar_colunas():
         # método e pré-cupom). `valor` guarda o que o cliente PAGA, que no parcelado é uma
         # parcela e no Pix já vem com 5% off — nenhum dos dois serve como preço de renovação.
         _add_coluna(c, "pending_signups", "valor_base", "REAL")
+        # C1 da revisão #3: identifica o GRUPO de parcelamento do contrato vigente. Sem ele a
+        # guarda de parcela não distingue uma parcela atrasada do contrato antigo da parcela 1
+        # de um contrato NOVO — e o ex-assinante que voltava no anual em 12x pagava sem receber.
+        _add_coluna(c, "subscribers", "asaas_installment_id", "TEXT")
 
 
 def _habilitar_rls():
@@ -396,6 +402,27 @@ _AUTOMACOES_SEED = [
     (15, "whatsapp", "{nome}, última chamada: volte para a Atualização Científica e ganhe "
                      "*1 mês extra*. Depois desta, não insistimos mais.\n{link}"),
 ]
+
+
+_TEXTO_SEED0_ANTIGO = ("{nome}, sua assinatura vence hoje. A partir de amanhã os estudos param "
+                       "de chegar. Renove agora:\n{link}")
+
+
+def _migrar_texto_seed0():
+    """Corrige em bancos JÁ existentes o texto do aviso do dia do vencimento.
+
+    `_seed_automacoes` usa ON CONFLICT DO NOTHING com id determinístico, então uma correção
+    no seed nunca alcança quem já tem a linha — em produção a mensagem continuaria afirmando
+    "a partir de amanhã os estudos param de chegar", o que é falso (`acesso_ate` é data pura,
+    então no dia do vencimento já pararam) e agora contradiz o próprio link, que aponta para
+    a recontratação. Só troca o texto se ele ainda for EXATAMENTE o seed antigo: se o Diego
+    editou a mensagem na tela, a edição dele manda."""
+    novo = next((t for d, _c, t in _AUTOMACOES_SEED if d == 0), None)
+    if not novo:
+        return
+    with _conn() as c:
+        c.execute("UPDATE automacoes_renovacao SET texto=? WHERE id='seed0' AND texto=?",
+                  (novo, _TEXTO_SEED0_ANTIGO))
 
 
 def _seed_automacoes():

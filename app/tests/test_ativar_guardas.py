@@ -65,11 +65,15 @@ class TestGuardasAtivar(unittest.TestCase):
         return {"event": event, "payment": pay}
 
     def _assinante(self, acesso_ate, valor_contratado=1099.0, cancelado_em=None,
-                   plano="anual", pid="pay_velho"):
+                   plano="anual", pid="pay_velho", installment="inst_12x"):
+        # `installment` = grupo de parcelamento do contrato em arquivo. Em produção o
+        # assinante de cartão parcelado NASCE da parcela 1, que grava esse id — sem ele no
+        # fixture, uma parcela do mesmo contrato pareceria contrato novo (C1 da revisão #3).
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. A", "whatsapp": self.WPP, "email": "a@x.com", "cpf": self.CPF,
              "plano": plano, "valor_contratado": valor_contratado},
-            {"customer": "cus_1", "payment": pid, "proximo_vencimento": acesso_ate})
+            {"customer": "cus_1", "payment": pid, "installment": installment,
+             "proximo_vencimento": acesso_ate})
         extra = {"cancelado_em": cancelado_em} if cancelado_em else {}
         self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=acesso_ate, **extra)
         return self.s.por_id(reg["id"])
