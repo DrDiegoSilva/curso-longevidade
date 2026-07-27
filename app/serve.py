@@ -222,7 +222,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 confirmar_id=q.get("confirmar", [""])[0] or None,
                 erro=q.get("erro", [""])[0],
                 reenviar_id=q.get("reenviar", [""])[0] or None,
-                sucesso=q.get("sucesso", [""])[0]), 200)
+                sucesso=q.get("sucesso", [""])[0],
+                contagem_slots=subscribers.contar_por_slot()), 200)
         if path.startswith("/agenda"):
             import config, db, daily, agenda_plan, site_web, auth_web
             from datetime import datetime, timedelta
@@ -506,6 +507,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 erro = up.quote(f"❌ Falha ao reenviar: {detalhe}")
                 return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
                                       if token_ok else f"/admin?erro={erro}")
+            elif acao == "definir_slot":
+                import daily as _daily
+                sub = subscribers.por_id(g("id"))
+                if not sub:
+                    erro = up.quote("Assinante não encontrado.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = g("slot")
+                subscribers.definir_slot(sub["id"], novo)   # valida ∈ SLOTS; SEM teto (admin fura)
+                if novo in config.SLOTS and db.slot_ja_enviou(_daily._hoje_iso(), novo):
+                    try:
+                        _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
+                    except Exception as e:
+                        print(f"[admin] catch-up de slot falhou: {e}", flush=True)
+                msg = up.quote("✅ Horário atualizado.")
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&sucesso={msg}"
+                                      if token_ok else f"/admin?sucesso={msg}")
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
             elif acao == "gerar_cupom":
