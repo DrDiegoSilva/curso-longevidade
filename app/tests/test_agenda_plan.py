@@ -288,5 +288,52 @@ class TestPreparoRoteamento(unittest.TestCase):
         self.assertEqual(self.chamadas, [("reserva", "rid-x"), ("fallback", None)])
 
 
+class TestTemaDoDia(unittest.TestCase):
+    MAPA = {
+        "segunda": ["Longevidade", "Performance"],
+        "terca":   ["Obesidade"],
+        "quarta":  ["Hormonal"],
+        "quinta":  ["Obesidade"],
+        "sexta":   ["Lipedema"],
+    }
+
+    def test_dia_de_tema_unico(self):
+        # 2026-07-28 é terça, 2026-07-30 é quinta
+        self.assertEqual(ap.tema_do_dia("2026-07-28", self.MAPA), "Obesidade")
+        self.assertEqual(ap.tema_do_dia("2026-07-30", self.MAPA), "Obesidade")
+        self.assertEqual(ap.tema_do_dia("2026-07-29", self.MAPA), "Hormonal")
+        self.assertEqual(ap.tema_do_dia("2026-07-31", self.MAPA), "Lipedema")
+
+    def test_alterna_entre_semanas_consecutivas(self):
+        # 2026-07-27 e 2026-08-03 são segundas consecutivas
+        a = ap.tema_do_dia("2026-07-27", self.MAPA)
+        b = ap.tema_do_dia("2026-08-03", self.MAPA)
+        self.assertIn(a, ("Longevidade", "Performance"))
+        self.assertIn(b, ("Longevidade", "Performance"))
+        self.assertNotEqual(a, b)
+
+    def test_alterna_atravessando_a_virada_de_ano(self):
+        # 2026-12-28 (semana ISO 53) e 2027-01-04 (semana ISO 1) são segundas
+        # consecutivas com a MESMA paridade de semana ISO — a alternância não pode
+        # depender de isocalendar()[1].
+        a = ap.tema_do_dia("2026-12-28", self.MAPA)
+        b = ap.tema_do_dia("2027-01-04", self.MAPA)
+        self.assertNotEqual(a, b)
+
+    def test_estavel_dentro_da_mesma_data(self):
+        self.assertEqual(ap.tema_do_dia("2026-07-27", self.MAPA),
+                         ap.tema_do_dia("2026-07-27", self.MAPA))
+
+    def test_dia_fora_do_mapa_nao_tem_preferencia(self):
+        self.assertIsNone(ap.tema_do_dia("2026-08-01", self.MAPA))   # sábado
+
+    def test_mapa_vazio_ou_none(self):
+        self.assertIsNone(ap.tema_do_dia("2026-07-28", {}))
+        self.assertIsNone(ap.tema_do_dia("2026-07-28", None))
+
+    def test_lista_vazia_no_dia(self):
+        self.assertIsNone(ap.tema_do_dia("2026-07-28", {"terca": []}))
+
+
 if __name__ == "__main__":
     unittest.main()

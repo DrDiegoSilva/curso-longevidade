@@ -11,6 +11,20 @@ from datetime import datetime, timedelta
 DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
 
 
+def tema_do_dia(data, temas_por_dia):
+    """Tema preferido p/ a data (YYYY-MM-DD). Alterna a cada semana quando o dia tem
+    mais de um tema. Devolve None quando o dia não está no mapa (aí não há preferência).
+
+    A alternância usa `toordinal() // 7`, não a semana ISO: em anos de 53 semanas a
+    paridade ISO repete na virada (semana 53 e semana 1 têm a mesma paridade), o que
+    daria o mesmo tema em duas semanas seguidas. O ordinal é monotônico e ignora
+    fronteira de ano — consultado sempre no mesmo dia da semana, o balde avança de 1
+    a cada semana."""
+    dt = datetime.strptime(data, "%Y-%m-%d")
+    temas = (temas_por_dia or {}).get(DIAS[dt.weekday()]) or []
+    return temas[(dt.toordinal() // 7) % len(temas)] if temas else None
+
+
 def dias_uteis_desde(inicio, n, dias_envio):
     """Próximos n dias úteis (YYYY-MM-DD) a partir de `inicio` (datetime), inclusive."""
     validos = set(dias_envio) & set(DIAS)
