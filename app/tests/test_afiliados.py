@@ -76,6 +76,22 @@ class TestAfiliadosDb(unittest.TestCase):
         self.assertIsNone(self.db.obter_pending_por_cpf(""))
         self.assertIsNone(self.db.obter_pending_por_cpf("00000000000"))
 
+    def test_listar_comissoes_incluir_estornadas(self):
+        """`incluir_estornadas` é o parâmetro que a tela /admin/afiliados usa pra ver a
+        comissão estornada (marcada na UI), sem reabrir o bug de contar como pendente."""
+        self.db.criar_afiliado("Dra. Maria", "", "dramaria", 10, 3)
+        af = self.db.afiliado_por_codigo("dramaria")
+        c1 = self.db.registrar_comissao(af["id"], "sub1", "anual", 897.30, 26.92)
+        self.db.registrar_comissao(af["id"], "sub2", "mensal", 89.10, 2.67)
+        self.db.estornar_comissao("sub1")
+        # comportamento padrão (sem o novo parâmetro): estornada continua excluída
+        self.assertEqual(len(self.db.listar_comissoes(af["id"], pago=False)), 1)
+        # com incluir_estornadas=True: as 2 aparecem (pendente + estornada)
+        com_estornadas = self.db.listar_comissoes(af["id"], pago=False, incluir_estornadas=True)
+        self.assertEqual(len(com_estornadas), 2)
+        estornada = next(c for c in com_estornadas if c["id"] == c1)
+        self.assertIsNotNone(estornada["estornada_em"])
+
     def test_atualizar_afiliado(self):
         self.db.criar_afiliado("Ana", "ana@x.com", "ana95", 95, 3)
         af = self.db.afiliado_por_codigo("ana95")

@@ -2,8 +2,14 @@
 `montar_checkout` é puro/testável; as funções de rede logam erro server-side e
 nunca vazam o corpo cru do Asaas pro cliente.
 
-⚠️ Validar no sandbox: aceitação de RECURRENT + installmentCount juntos (cartão
-parcelado que renova). Se o Asaas recusar, escolher um dos dois na hora.
+CONFIRMADO (Diego, jul/2026, conta REAL — não é mais dúvida): quando vão RECURRENT e
+installmentCount juntos, o Asaas aplica só UM — o parcelamento. Cartão PARCELADO, portanto,
+NÃO renova sozinho e os pagamentos chegam sem `subscription`. Duas consequências de que o
+resto do sistema depende:
+  - a cláusula 2 dos termos está correta ao dizer que só o cartão à vista renova;
+  - o assinante de parcelado nunca fica com `asaas_subscription_id`, então o cancelamento
+    não chama DELETE /subscriptions — as parcelas restantes seguem sendo cobradas, que é o
+    que a cláusula 3 promete.
 """
 import json
 import urllib.request
@@ -96,3 +102,26 @@ def adiar_vencimento(sid, dias=30):
     base = atual.get("nextDueDate") or _hoje()
     novo = (datetime.fromisoformat(base) + timedelta(days=dias)).date().isoformat()
     return _req(f"subscriptions/{sid}", "PUT", {"nextDueDate": novo})
+
+
+_DESC_ESTORNO = "Cancelamento no prazo de arrependimento (CDC art. 49)."
+
+
+def _payload_estorno(valor):
+    p = {"description": _DESC_ESTORNO}
+    if valor is not None:                 # sem `value` o Asaas estorna o total
+        p["value"] = float(valor)
+    return p
+
+
+def estornar_pagamento(pid, valor=None):
+    """POST /payments/{id}/refund. valor=None => estorno total.
+    O saldo sai da conta Asaas; no cartão leva até 10 dias úteis pra aparecer na fatura."""
+    return _req(f"payments/{pid}/refund", "POST", _payload_estorno(valor))
+
+
+def estornar_parcelamento(iid, valor=None):
+    """POST /installments/{id}/refund. valor=None => estorno total do parcelamento.
+    Usado quando o pagamento faz parte de um parcelamento no cartão — estornar só a
+    parcela devolveria uma fração do valor."""
+    return _req(f"installments/{iid}/refund", "POST", _payload_estorno(valor))

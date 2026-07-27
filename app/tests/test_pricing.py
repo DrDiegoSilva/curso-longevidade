@@ -26,10 +26,11 @@ class TestPricing(unittest.TestCase):
             self.assertEqual(o["total"], 997.0)                       # total = base (sem juros)
             self.assertEqual(o["por_parcela"], round(997.0 / o["parcelas"], 2))
 
-    def test_anual_997(self):
+    def test_anual_1099(self):
         pl = self.cfg.plano_por_slug("anual")
-        self.assertEqual(pl["base"], 997.0)
-        self.assertEqual(pl["preco"], "R$ 997")
+        self.assertEqual(pl["base"], 1099.0)
+        self.assertEqual(pl["preco"], "R$ 1.099")
+        self.assertEqual(pl["pix_desconto_pct"], 5)
 
     def test_fmt_brl(self):
         self.assertEqual(self.p.fmt_brl(99.0), "R$ 99,00")
@@ -38,7 +39,7 @@ class TestPricing(unittest.TestCase):
 
     def test_preco_vigente_founder_e_pos(self):
         anual = self.cfg.plano_por_slug("anual")
-        self.assertEqual(self.p.preco_vigente(anual, 0), 997.0)
+        self.assertEqual(self.p.preco_vigente(anual, 0), 1099.0)
         self.assertEqual(self.p.preco_vigente(anual, self.cfg.FOUNDER_LIMITE), 1497.0)
         mensal = self.cfg.plano_por_slug("mensal")
         self.assertEqual(self.p.preco_vigente(mensal, 0), 99.0)
@@ -54,7 +55,7 @@ class TestPricing(unittest.TestCase):
 
     def test_preco_str_vigente(self):
         anual = self.cfg.plano_por_slug("anual")
-        self.assertEqual(self.p.preco_str_vigente(anual, 0), "R$ 997")
+        self.assertEqual(self.p.preco_str_vigente(anual, 0), "R$ 1.099")
         self.assertEqual(self.p.preco_str_vigente(anual, self.cfg.FOUNDER_LIMITE), "R$ 1.497")
 
     def test_valor_com_desconto(self):
@@ -62,6 +63,20 @@ class TestPricing(unittest.TestCase):
         self.assertEqual(self.p.valor_com_desconto(99.0, 10), 89.10)
         self.assertEqual(self.p.valor_com_desconto(1497.0, 10), 1347.30)
         self.assertEqual(self.p.valor_com_desconto(100.0, 0), 100.0)   # 0% = base
+
+    def test_base_cobrada_anual_pix_e_cupom(self):
+        anual = self.cfg.plano_por_slug("anual")     # base 1099, pix_desconto_pct 5
+        mensal = self.cfg.plano_por_slug("mensal")   # sem pix_desconto_pct
+        # cartão: só o cupom (NÃO ganha os 5% do Pix)
+        self.assertEqual(self.p.base_cobrada(anual, "CARTAO", 1099.0, 10), 989.10)
+        self.assertEqual(self.p.base_cobrada(anual, "CARTAO", 1099.0, 0), 1099.0)
+        # Pix sem cupom: 5% sobre a base
+        self.assertEqual(self.p.base_cobrada(anual, "PIX", 1099.0, 0), 1044.05)
+        # Pix + cupom: empilha (cupom primeiro, depois 5% do Pix)
+        esperado = self.p.valor_com_desconto(self.p.valor_com_desconto(1099.0, 10), 5)
+        self.assertEqual(self.p.base_cobrada(anual, "PIX", 1099.0, 10), esperado)
+        # mensal no Pix NÃO ganha desconto (5% é só no anual)
+        self.assertEqual(self.p.base_cobrada(mensal, "PIX", 99.0, 0), 99.0)
 
     def test_comissao(self):
         self.assertEqual(self.p.comissao(897.30, 3), 26.92)

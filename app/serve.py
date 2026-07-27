@@ -29,6 +29,38 @@ def proximo_disparo(now, horarios):
     return min(candidatos, key=lambda x: x[0])
 
 
+def _destino_seguro(destino):
+    """Valida o `destino` do form de /aceitar-termos antes de usá-lo num redirect.
+
+    Só aceita caminho relativo ao próprio site (começa com "/" e não sai dele). Cai
+    no padrão "/minha" quando `destino`:
+    - não começa com "/";
+    - começa com "//" ou "/\\" — o navegador trata "\\" como "/" na resolução de URL,
+      então "/\\evil.com" também resolve pro host evil.com (mesma família de bug do
+      "//evil.com", só que com barra invertida);
+    - contém "\\r", "\\n" ou "\\t" — CR/LF é response splitting (`send_header` do
+      `http.server` não valida CRLF no valor do header, então injetaria headers/corpo
+      extras, ex.: um Set-Cookie forjado). O TAB entra na mesma regra porque o parser
+      de URL do WHATWG REMOVE tab/CR/LF de qualquer posição antes de resolver: sem
+      isso, "/\\t/evil.com" passaria aqui e o navegador leria "//evil.com";
+    - tem caractere fora de latin-1 — `send_header` codifica o valor em latin-1
+      estrito, e um caractere fora dessa faixa derrubava a resposta inteira com
+      UnicodeEncodeError em vez de cair no padrão.
+    """
+    destino = destino or "/minha"
+    if not destino.startswith("/"):
+        return "/minha"
+    if len(destino) > 1 and destino[1] in ("/", "\\"):
+        return "/minha"
+    if "\r" in destino or "\n" in destino or "\t" in destino:
+        return "/minha"
+    try:
+        destino.encode("latin-1")
+    except UnicodeEncodeError:
+        return "/minha"
+    return destino
+
+
 def agendador():
     """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
@@ -65,6 +97,11 @@ def agendador():
             tarefas[nome]()
         except Exception as e:
             print(f"[agendador] {nome} erro: {e}", flush=True)
+
+AVISO_JA_RECORRENTE = ("Sua assinatura já renova automaticamente no cartão — não há "
+                       "nada a pagar aqui. Na data do vencimento a cobrança sai sozinha. "
+                       "Se quiser interromper, use a opção de cancelar a renovação.")
+
 
 class Handler(http.server.BaseHTTPRequestHandler):
     timeout = 20          # tempo-limite de socket: conexão lenta/pendurada cai em vez de segurar a thread
@@ -186,8 +223,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             return self._html(site_web.pagina_admin_afiliados(
-                db.listar_afiliados(), db.listar_comissoes(pago=False), config.ADMIN_TOKEN or "",
-                editar_id=q.get("editar", [""])[0] or None), 200)
+                db.listar_afiliados(), db.listar_comissoes(pago=False, incluir_estornadas=True),
+                config.ADMIN_TOKEN or "", editar_id=q.get("editar", [""])[0] or None), 200)
         if path == "/admin/mensagens":
             import config, site_web, auth_web, db, mensagens
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -200,7 +237,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.get_config(mensagens.K_WA, mensagens.WA_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_ASSUNTO, mensagens.EMAIL_ASSUNTO_DEFAULT),
                 db.get_config(mensagens.K_EMAIL_CORPO, mensagens.EMAIL_CORPO_DEFAULT),
-                config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
+                db.get_config(mensagens.K_EMAIL_RENOV_ASSUNTO, mensagens.EMAIL_RENOV_ASSUNTO_DEFAULT),
+                db.get_config(mensagens.K_EMAIL_RENOV_CORPO, mensagens.EMAIL_RENOV_CORPO_DEFAULT),
+                config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0],
+                automacoes=db.listar_automacoes(),
+                bonus_resgate_dias=mensagens.bonus_resgate_dias()), 200)
         if path == "/admin/envio":
             import config, site_web, auth_web, db, daily
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -224,7 +265,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 confirmar_id=q.get("confirmar", [""])[0] or None,
                 erro=q.get("erro", [""])[0],
                 reenviar_id=q.get("reenviar", [""])[0] or None,
-                sucesso=q.get("sucesso", [""])[0]), 200)
+                sucesso=q.get("sucesso", [""])[0],
+                contagem_slots=subscribers.contar_por_slot()), 200)
         if path.startswith("/agenda"):
             import config, db, daily, agenda_plan, site_web, auth_web
             from datetime import datetime, timedelta
@@ -330,16 +372,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     "Peça um novo link em 'Primeiro acesso' ou 'Esqueci minha senha'."))
             return self._html(site_web.pagina_criar_senha(tok))
         if path == "/sair":
+            # logout NUNCA passa pelo gate de aceite: só encerra a sessão, não muta
+            # dados do assinante, e é a única saída de quem ficaria preso na tela de
+            # aceite se este endpoint também exigisse aceitar primeiro.
             import auth_web
             auth_web.logout(auth_web._parse_cookie(self.headers.get("Cookie", "")).get("sid"))
             return self._redirect("/", clear=True)
+        if path == "/termos":
+            import site_legal
+            return self._html(site_legal.pagina_termos())
+        if path == "/privacidade":
+            import site_legal
+            return self._html(site_legal.pagina_privacidade())
         if path == "/minha":
             sub = self._sessao()
             if not sub:
                 return self._redirect("/entrar")
+            import subscribers as _subs
+            reg = self._sub_logado()
+            if reg is None:
+                # sessão viva mas sem assinante correspondente (removido/órfã) -> sessão
+                # inválida. Sem este `return`, o `if reg and ...` abaixo pulava a checagem
+                # de aceite em silêncio e caía direto em pagina_minha(sub, ...) usando só o
+                # dict raso da sessão (sem os campos do cadastro).
+                return self._redirect("/entrar")
+            if _subs.precisa_aceitar(reg):
+                import site_legal
+                return self._html(site_legal.pagina_aceite_termos("/minha"))
             import auth_web
             return self._html(site_web.pagina_minha(sub, admin=auth_web.eh_admin(sub["whatsapp"])))
         if path == "/cancelar":
+            # exceção deliberada ao gate de aceite: quem quer sair da assinatura não
+            # pode ser obrigado a aceitar termos novos antes — ver docstring de
+            # _cancelar_motivo/_cancelar_confirmar (POST) para o mesmo raciocínio.
             if not self._sessao():
                 return self._redirect("/entrar")
             return self._html(site_web.pagina_cancelar())
@@ -347,13 +412,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             sub = self._sub_logado()
             if not sub:
                 return self._redirect("/entrar")
-            import subscribers as _subs, db as _db, config as _cfg
+            import subscribers as _subs
+            if _subs.precisa_aceitar(sub):
+                import site_legal
+                return self._html(site_legal.pagina_aceite_termos("/meus-dados"))
+            import db as _db, config as _cfg
             atual = _subs.slot_de(sub)
             teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
             return self._html(site_web.pagina_meus_dados(
                 sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
+        if path == "/renovar":
+            return self._get_rota_renovar()
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
+            # /artigos só LÊ conteúdo (não muta dado nenhum do assinante) — o critério
+            # do gate de aceite é mutação, então esta rota fica de fora de propósito.
+            # Gateá-la também bloquearia o acesso ao conteúdo já pago, na prática igual
+            # a parar o envio diário, que é uma restrição global deste projeto.
             sub = self._sessao()
             if not sub:
                 return self._redirect("/entrar")
@@ -461,6 +536,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.set_config(mensagens.K_WA, g("wa"))
                 db.set_config(mensagens.K_EMAIL_ASSUNTO, g("email_assunto"))
                 db.set_config(mensagens.K_EMAIL_CORPO, g("email_corpo"))
+                db.set_config(mensagens.K_EMAIL_RENOV_ASSUNTO, g("email_renov_assunto"))
+                db.set_config(mensagens.K_EMAIL_RENOV_CORPO, g("email_renov_corpo"))
+            if g("acao") == "salvar_automacao":
+                try:
+                    db.salvar_automacao(g("id"), int(g("dias") or 0), g("canal") or "whatsapp",
+                                        g("texto"), 1 if g("ativo") == "1" else 0)
+                except (TypeError, ValueError):
+                    pass          # dias não numérico: ignora em vez de derrubar a tela
+            if g("acao") == "remover_automacao":
+                db.remover_automacao(g("id"))
+            if g("acao") == "salvar_bonus_resgate":
+                try:
+                    dias = int(g("bonus_resgate_dias") or 0)
+                    if dias >= 0:
+                        db.set_config(mensagens.K_BONUS_RESGATE_DIAS, str(dias))
+                except (TypeError, ValueError):
+                    pass          # valor não numérico: ignora, mantém o que já estava salvo
             return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
                                   if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
         if path == "/admin/envio":
@@ -523,6 +615,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 erro = up.quote(f"❌ Falha ao reenviar: {detalhe}")
                 return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
                                       if token_ok else f"/admin?erro={erro}")
+            elif acao == "definir_slot":
+                import daily as _daily
+                sub = subscribers.por_id(g("id"))
+                if not sub:
+                    erro = up.quote("Assinante não encontrado.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = g("slot")
+                subscribers.definir_slot(sub["id"], novo)   # valida ∈ SLOTS; SEM teto (admin fura)
+                if novo in config.SLOTS and db.slot_ja_enviou(_daily._hoje_iso(), novo):
+                    try:
+                        _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
+                    except Exception as e:
+                        print(f"[admin] catch-up de slot falhou: {e}", flush=True)
+                msg = up.quote("✅ Horário atualizado.")
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&sucesso={msg}"
+                                      if token_ok else f"/admin?sucesso={msg}")
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
             elif acao == "gerar_cupom":
@@ -680,53 +789,79 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._cancelar_motivo(g)
         if path == "/cancelar/confirmar":
             return self._cancelar_confirmar(g)
+        # /aceitar-termos e o fluxo de /cancelar (+ /cancelar/confirmar) são as
+        # exceções deliberadas ao gate de aceite dos termos: /aceitar-termos é o
+        # próprio caminho de aceitar (bloqueá-lo prenderia o assinante sem conseguir
+        # aceitar nunca), e quem quer cancelar não pode ser obrigado a aceitar termos
+        # novos primeiro — ver comentário em _cancelar_motivo/_cancelar_confirmar.
+        if path == "/aceitar-termos":
+            return self._aceitar_termos(g)
         if path == "/meus-dados":
-            import site_web, subscribers, auth_web
-            sub = self._sub_logado()
-            if not sub:
-                return self._redirect("/entrar")
-            acao = g("acao")
-            if acao == "salvar_contato":
-                subscribers.atualizar_contato(sub["id"], g("nome"), g("email"))
-                return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Dados salvos."), 200)
-            if acao == "salvar_horario":
-                import db as _db, config as _cfg, daily as _daily
-                novo = g("slot")
-                atual = subscribers.slot_de(sub)
-                teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
-                if novo != atual and novo in subscribers.slots_com_vaga(teto):
-                    subscribers.definir_slot(sub["id"], novo)
-                    hoje = _daily._hoje_iso()
-                    if _db.slot_ja_enviou(hoje, novo):     # novo horário já disparou hoje -> catch-up
-                        try:
-                            _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
-                        except Exception as e:
-                            print(f"[meus-dados] catch-up falhou: {e}", flush=True)  # não derruba a página
-                sub2 = subscribers.por_id(sub["id"])
-                atual2 = subscribers.slot_de(sub2)
-                return self._html(site_web.pagina_meus_dados(
-                    sub2, msg="Horário salvo.",
-                    slots=subscribers.slots_com_vaga(teto, atual2), slot_atual=atual2), 200)
-            if acao == "iniciar_troca":
-                if not self._rate_ok("otp", 5, 600):
-                    return
-                r = auth_web.iniciar_troca_numero(sub["id"], g("novo_numero"))
-                if r == "enviado":
-                    return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo", novo_num=g("novo_numero")), 200)
-                msg = "Número inválido." if r == "invalido" else "Esse número já é de outro assinante."
-                return self._html(site_web.pagina_meus_dados(sub, msg=msg), 200)
-            if acao == "confirmar_troca":
-                if not self._rate_ok("otp", 5, 600):
-                    return
-                st = auth_web.confirmar_troca_numero(sub["id"], g("novo_numero"), g("codigo"))
-                if st == "ok":
-                    return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Número atualizado."), 200)
-                erros = {"codigo_errado": "Código errado.", "expirado": "Código expirado, tente de novo.",
-                         "bloqueado": "Muitas tentativas, peça um novo código."}
-                return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo",
-                                  novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
-            return self._redirect("/meus-dados")
+            return self._meus_dados_post(g)
+        if path == "/renovar":
+            return self._post_renovar(g)
         return self._html("<h3>rota inválida</h3>", 404)
+
+    def _meus_dados_post(self, g):
+        """POST /meus-dados: as quatro ações daqui (salvar_contato, salvar_horario,
+        iniciar_troca, confirmar_troca) MUTAM dados do assinante — por isso passam
+        pelo mesmo gate de aceite (`subscribers.precisa_aceitar`) que os GETs de
+        /minha e /meus-dados já tinham.
+
+        PORQUÊ: sem esta checagem aqui, um form de /meus-dados já aberto no navegador
+        antes do deploy do re-aceite (ou uma requisição POST direta, sem passar pelo
+        GET) continuava gravando normalmente mesmo com o aceite pendente — o bloqueio
+        da área de conta valia só pra quem clicava em links, não pra quem já tinha a
+        página aberta ou usava a API diretamente. Com aceite pendente, NENHUMA ação é
+        executada: devolve a mesma tela de aceite que o GET devolveria."""
+        import site_web, subscribers, auth_web
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if subscribers.precisa_aceitar(sub):
+            import site_legal
+            return self._html(site_legal.pagina_aceite_termos("/meus-dados"))
+        acao = g("acao")
+        if acao == "salvar_contato":
+            subscribers.atualizar_contato(sub["id"], g("nome"), g("email"))
+            return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Dados salvos."), 200)
+        if acao == "salvar_horario":
+            import db as _db, config as _cfg, daily as _daily
+            novo = g("slot")
+            atual = subscribers.slot_de(sub)
+            teto = int(_db.get_config("slot_teto", str(_cfg.SLOT_TETO_DEFAULT)) or _cfg.SLOT_TETO_DEFAULT)
+            if novo != atual and novo in subscribers.slots_com_vaga(teto):
+                subscribers.definir_slot(sub["id"], novo)
+                hoje = _daily._hoje_iso()
+                if _db.slot_ja_enviou(hoje, novo):     # novo horário já disparou hoje -> catch-up
+                    try:
+                        _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
+                    except Exception as e:
+                        print(f"[meus-dados] catch-up falhou: {e}", flush=True)  # não derruba a página
+            sub2 = subscribers.por_id(sub["id"])
+            atual2 = subscribers.slot_de(sub2)
+            return self._html(site_web.pagina_meus_dados(
+                sub2, msg="Horário salvo.",
+                slots=subscribers.slots_com_vaga(teto, atual2), slot_atual=atual2), 200)
+        if acao == "iniciar_troca":
+            if not self._rate_ok("otp", 5, 600):
+                return
+            r = auth_web.iniciar_troca_numero(sub["id"], g("novo_numero"))
+            if r == "enviado":
+                return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo", novo_num=g("novo_numero")), 200)
+            msg = "Número inválido." if r == "invalido" else "Esse número já é de outro assinante."
+            return self._html(site_web.pagina_meus_dados(sub, msg=msg), 200)
+        if acao == "confirmar_troca":
+            if not self._rate_ok("otp", 5, 600):
+                return
+            st = auth_web.confirmar_troca_numero(sub["id"], g("novo_numero"), g("codigo"))
+            if st == "ok":
+                return self._html(site_web.pagina_meus_dados(subscribers.por_id(sub["id"]), msg="Número atualizado."), 200)
+            erros = {"codigo_errado": "Código errado.", "expirado": "Código expirado, tente de novo.",
+                     "bloqueado": "Muitas tentativas, peça um novo código."}
+            return self._html(site_web.pagina_meus_dados(sub, etapa_troca="codigo",
+                              novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
+        return self._redirect("/meus-dados")
 
     def _sub_logado(self):
         import subscribers
@@ -789,8 +924,98 @@ class Handler(http.server.BaseHTTPRequestHandler):
         import urllib.parse as _up
         return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
 
+    # B4 (revisão final #2): `asaas.montar_checkout` monta TODO checkout de cartão como
+    # `chargeTypes: ["RECURRENT"]`. Quem já tem `asaas_subscription_id` (cartão à vista) já é
+    # cobrado sozinho pelo Asaas — passar por /renovar criava uma SEGUNDA assinatura
+    # recorrente, cobrando duas vezes para sempre. É o mesmo estrago que o c6b7466 evita do
+    # lado do webhook (gravar o subscription_id para a régua NÃO chamar esse assinante para
+    # renovar); a rota é a outra porta do mesmo problema.
+    def _get_rota_renovar(self):
+        """Tela de renovação do próprio assinante. Preço é sempre o CONTRATADO
+        (renovacao.preco_renovacao), nunca o de tabela, e sem campo de cupom: o desconto de
+        afiliado vale só na 1ª venda.
+
+        Existe porque o checkout de /assinar recusa quem ainda TEM acesso — sem esta rota os
+        avisos da régua mandavam o cliente para uma tela que o bloqueava."""
+        import site_web, subscribers as _s, config as _c, renovacao as _r, pricing as _p
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if sub.get("asaas_subscription_id"):
+            return self._html(site_web.pagina_msg("Renovação automática",
+                                                  AVISO_JA_RECORRENTE, logado=True))
+        plano = _c.plano_por_slug(sub.get("plano", "")) or {}
+        if not plano:
+            return self._redirect("/minha")
+        preco = _r.preco_renovacao(sub, plano)
+        expirado = not _s.tem_acesso(sub)
+        return self._html(site_web.pagina_renovar(
+            sub, plano,
+            _p.base_cobrada(plano, "PIX", preco, 0.0),
+            _p.base_cobrada(plano, "CARTAO", preco, 0.0),
+            sub.get("proximo_vencimento"), bonus=expirado))
+
+    def _post_renovar(self, g):
+        """Monta o checkout da renovação. Sem cupom: o desconto de afiliado é só na 1ª venda.
+        Preço vem de `renovacao.preco_renovacao` (o CONTRATADO), nunca do preço de tabela."""
+        import site_web, config, db, subscribers, pricing, renovacao, asaas
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if sub.get("asaas_subscription_id"):
+            # Mesma guarda do GET, no POST: sem ela, um form antigo em cache ou um POST
+            # direto ainda criaria a 2ª assinatura recorrente.
+            return self._html(site_web.pagina_msg("Renovação automática",
+                                                  AVISO_JA_RECORRENTE, logado=True))
+        plano = config.plano_por_slug(sub.get("plano", "")) or {}
+        if not plano:
+            return self._redirect("/minha")
+        metodo = "CARTAO" if g("metodo").upper() == "CARTAO" else "PIX"
+        preco = renovacao.preco_renovacao(sub, plano)
+        base_final = pricing.base_cobrada(plano, metodo, preco, 0.0)
+        dados = {"nome": sub.get("nome", ""), "email": sub.get("email", ""),
+                 "cpf": sub.get("cpf", ""), "whatsapp": sub.get("whatsapp", "")}
+        token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
+                                  "parcelas": 1, "valor": base_final, "valor_base": preco,
+                                  "afiliado_codigo": ""})
+        try:
+            payload = asaas.montar_checkout(plano, metodo, 1, dados, token,
+                                            config.PUBLIC_URL, base=base_final)
+            res = asaas.criar_checkout(payload)
+            if not res.get("url"):
+                raise RuntimeError("checkout sem url")
+            return self._redirect(res["url"])
+        except Exception as e:
+            print(f"[renovar] checkout falhou: {e}", flush=True)
+            expirado = not subscribers.tem_acesso(sub)
+            return self._html(site_web.pagina_renovar(
+                sub, plano, pricing.base_cobrada(plano, "PIX", preco, 0.0),
+                pricing.base_cobrada(plano, "CARTAO", preco, 0.0),
+                sub.get("proximo_vencimento"), bonus=expirado,
+                erro="Não conseguimos iniciar o pagamento agora. Tente novamente em instantes."))
+
+    def _aceitar_termos(self, g):
+        """Exceção deliberada ao gate: esta rota É o próprio caminho de aceitar os
+        termos, então não pode exigir `precisa_aceitar` == False como pré-condição —
+        isso prenderia o assinante pendente num loop sem saída."""
+        import subscribers, legal, site_legal
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if g("aceito") != "1":
+            return self._html(site_legal.pagina_aceite_termos(_destino_seguro(g("destino"))))
+        ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+              or self.client_address[0])
+        subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
+        return self._redirect(_destino_seguro(g("destino")))
+
     def _cancelar_motivo(self, g):
-        import site_web
+        """Passo 1 do cancelamento. Exceção deliberada ao gate de aceite dos termos:
+        `sub` vem de `_sub_logado()` sem checar `subscribers.precisa_aceitar` — quem
+        quer sair da assinatura não pode ficar preso tendo que aceitar termos novos
+        primeiro. Isso vale pra todo o fluxo de cancelamento (aqui e em
+        `_cancelar_confirmar`), que é o único jeito de sair sem depender do suporte."""
+        import site_web, subscribers
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
@@ -799,9 +1024,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_cancelar("Conta pra gente o motivo — é obrigatório."))
         if sub.get("oferta_retencao_em"):          # já usou a oferta -> cancela direto
             return self._executar_cancelamento(sub, motivo)
+        if not subscribers.tem_acesso(sub):
+            # Revisão #3: a oferta de retenção é "fique mais 30 dias" — só faz sentido para
+            # quem TEM acesso a manter. Sem esta guarda ela era exibida (e aceita) por quem
+            # já tinha o acesso cortado, inclusive por estorno/chargeback (SUSPENDER grava
+            # CANCELADO sem `cancelado_em`, e a sessão continua válida): virava reativação
+            # self-service de graça. E para quem simplesmente venceu, o "+30 dias" contava de
+            # uma data já passada e entregava ZERO — a mesma promessa vazia do B11 —
+            # queimando de vez a única oferta a que ele tinha direito.
+            return self._executar_cancelamento(sub, motivo)
         return self._html(site_web.pagina_cancelar_oferta(motivo))
 
     def _cancelar_confirmar(self, g):
+        """Passo 2 do cancelamento (aceitar oferta de retenção OU confirmar de vez).
+        Mesma exceção deliberada de `_cancelar_motivo`: sem gate de aceite — quem está
+        cancelando não pode ser barrado por termos pendentes."""
         import site_web, subscribers, asaas
         from datetime import datetime, timedelta
         sub = self._sub_logado()
@@ -809,45 +1046,127 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect("/entrar")
         motivo = g("motivo").strip()
         if g("acao") == "aceitar":
+            if sub.get("oferta_retencao_em"):
+                # B8: a oferta é uma vez por assinante. A checagem existia só em
+                # `_cancelar_motivo`, que decide EXIBIR — um POST repetido empurrava +30 dias
+                # a cada chamada, sem limite (acesso grátis ilimitado no cartão à vista).
+                # Idempotente de propósito: mostra a mesma página, não concede de novo e NÃO
+                # cancela — o cliente clicou justamente para não cancelar.
+                return self._html(site_web.pagina_oferta_aceita())
+            if not subscribers.tem_acesso(sub):
+                # Mesma guarda do passo 1, aqui no POST que de fato concede — senão um POST
+                # direto (ou o botão Voltar do navegador sobre o form antigo) contornava.
+                # NÃO cancela: este ramo é o do botão "Quero meu mês grátis", e cancelar aqui
+                # faria exatamente o contrário do que o cliente pediu — com `cancelado_em`
+                # gravado (que trava qualquer cancelamento futuro), e-mail de cancelamento e,
+                # dentro dos 7 dias, estorno automático. Alcançável quando o acesso vence
+                # entre a tela e o clique, ou quando um chargeback cai no meio do fluxo.
+                return self._html(site_web.pagina_msg(
+                    "Oferta indisponível",
+                    "Esta oferta vale enquanto a assinatura está ativa, e o seu acesso já "
+                    "terminou. Para voltar, é só refazer a assinatura — o valor é o mesmo "
+                    "que você já contratava.", logado=True))
             sid = sub.get("asaas_subscription_id")
             try:
                 if sid:
                     asaas.adiar_vencimento(sid, 30)
             except Exception as e:
                 print(f"[cancelar] adiar vencimento falhou: {e}", flush=True)
-            base = sub.get("proximo_vencimento")
+            # B11: `acesso_ate` é o campo que controla o acesso de quem NÃO tem assinatura
+            # recorrente (Pix e cartão parcelado, desde o dbb6dde). Gravar só o
+            # `proximo_vencimento` fazia a tela prometer "+30 dias" e entregar ZERO: o
+            # cliente desistia do cancelamento, deixava a janela de arrependimento correr e
+            # perdia o acesso na data original. Com assinatura recorrente é o contrário —
+            # `acesso_ate` fica NULL de propósito e quem manda é o ciclo do Asaas.
+            base = (sub.get("acesso_ate") if not sid else None) or sub.get("proximo_vencimento")
             try:
                 ref = datetime.fromisoformat(base) if base else datetime.now()
             except Exception:
                 ref = datetime.now()
+            # Piso em hoje: estender a partir de uma data já passada devolveria menos de 30
+            # dias — ou nenhum — enquanto a tela promete "+30 dias".
+            ref = max(ref, datetime.now())
             novo = (ref + timedelta(days=30)).date().isoformat()
+            extra = {} if sid else {"acesso_ate": novo}
             subscribers.marcar_status(sub["id"], "ATIVO",
-                                      oferta_retencao_em=datetime.now().isoformat(), proximo_vencimento=novo)
+                                      oferta_retencao_em=datetime.now().isoformat(),
+                                      proximo_vencimento=novo, **extra)
             return self._html(site_web.pagina_oferta_aceita())
         return self._executar_cancelamento(sub, motivo)
 
     def _executar_cancelamento(self, sub, motivo):
-        import site_web, subscribers, asaas, email_send
+        """Cancela a assinatura. A gravação do cancelamento vem PRIMEIRO e inteira
+        (db.claim_cancelamento), e é ela mesma o claim contra corrida; o estorno é um
+        ajuste posterior.
+
+        PORQUÊ nesta ordem: duplo clique em /cancelar/confirmar (servidor
+        ThreadingMixIn) ou um re-submit sequencial (a sessão continua válida depois de
+        cancelar) chamam este método mais de uma vez para o mesmo assinante. Enquanto
+        o claim era só uma marca prévia e o estado final era gravado no fim, existia
+        uma janela entre "reservei" e "existe": toda falha dentro dela deixava o
+        assinante marcado (logo, incapaz de cancelar de novo) e sem cancelamento
+        registrado. Agora ou o cancelamento está inteiro no banco, ou nada aconteceu.
+        """
+        import site_web, asaas, db, subscribers
+        acesso_ate = sub.get("proximo_vencimento")   # padrão: acesso até o fim do período pago
+        estado = _gravar_cancelamento(sub, motivo, acesso_ate)
+        if estado == "perdeu":
+            # Outra chamada já cancelou este assinante (e já estornou/emailou, se era o
+            # caso). Nada a repetir: só mostra o que está PERSISTIDO — relendo do banco,
+            # porque o `sub` em memória é anterior ao cancelamento da outra chamada e
+            # traria o acesso_ate errado.
+            return self._html(site_web.pagina_cancelado(_acesso_ate_persistido(sub)))
         sid = sub.get("asaas_subscription_id")
-        try:
-            if sid:
+        if sid:
+            asaas_ok = False
+            try:
                 asaas.cancelar_assinatura(sid)
-        except Exception as e:
-            print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
-        acesso_ate = sub.get("proximo_vencimento")   # acesso até o fim do período pago
-        subscribers.registrar_cancelamento(sub["id"], motivo, acesso_ate=acesso_ate)
-        if sub.get("email"):
-            ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
-            html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>"
-                    f"<p>Confirmamos o cancelamento da sua assinatura da Atualização Científica. "
-                    f"Não haverá novas cobranças.{site_web._esc(ate)}</p>"
-                    f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
-                    f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
-            email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
+                asaas_ok = True
+            except Exception as e:
+                # Alerta, não só log: a assinatura pode seguir cobrando em silêncio e o
+                # cliente não consegue mais tentar (o cancelamento já está gravado, então
+                # uma nova tentativa dele perderia o claim e não chamaria o Asaas de novo).
+                print(f"[cancelar] cancelar assinatura Asaas falhou: {e}", flush=True)
+                _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} gravado, mas a "
+                              f"assinatura NÃO foi cancelada no Asaas ({e}) — cancele manualmente, "
+                              f"senão ela continua cobrando")
+            if asaas_ok:
+                # A recorrência não existe mais, então o campo não pode continuar apontando
+                # pra ela: é esse id que diz "já renova sozinho", e tanto `regua.na_regua`
+                # quanto o guard do /renovar leem exatamente ele. Mantê-lo deixava quem
+                # cancelou fora dos avisos de vencimento PARA SEMPRE e ouvindo "sua assinatura
+                # já renova automaticamente" ao tentar voltar. Quando o cancelamento no Asaas
+                # FALHA o campo é preservado de propósito: a assinatura pode seguir cobrando,
+                # e deixar esse cliente montar um segundo checkout RECURRENT seria cobrança em
+                # dobro — o estrago que o B4 existe para evitar.
+                # Fora do try do Asaas de propósito: uma falha AQUI não é "não cancelei no
+                # Asaas" e não pode disparar aquele alerta, que diria o contrário do ocorrido.
+                # "CANCELADO" literal e não `sub["status"]`: `sub` é o dicionário de ANTES do
+                # claim, e repassá-lo desfaria o cancelamento recém-gravado.
+                try:
+                    subscribers.marcar_status(sub["id"], "CANCELADO", asaas_subscription_id=None)
+                except Exception as e:
+                    print(f"[cancelar] limpar subscription_id falhou: {e}", flush=True)
+        # Estorno só quando temos CERTEZA do estado gravado. Em "incerto" (banco falhou e
+        # não deu pra confirmar) o dinheiro não se move — regra global.
+        resultado = estornar_arrependimento(sub) if estado == "venceu" else None
+        estornado, tipo_estorno = resultado if resultado is not None else (None, None)
+        if estornado is not None:              # 0.0 é estorno válido, não "sem estorno"
+            acesso_ate = None                   # reembolsou integral -> acesso cessa agora
+            try:
+                db.encerrar_acesso(sub["id"])
+            except Exception as e:
+                # O cancelamento já está gravado e correto; só o ajuste do acesso ficou
+                # pendente. Nunca pode derrubar a resposta — vira alerta.
+                print(f"[cancelar] encerrar_acesso falhou após estorno OK: {e}", flush=True)
+                _alertar(sub, f"estorno de {sub.get('nome') or sub.get('id')} CONCLUÍDO, mas não "
+                              f"consegui encerrar o acesso no cadastro ({e}) — zere o 'acesso até' "
+                              f"manualmente")
+        _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate)
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, cpf as cpfval, phone
+        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
@@ -860,6 +1179,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail, WhatsApp e CPF."))
         if not cpfval.valida(dados["cpf"]):
             return self._html(site_web.pagina_assinar(plano["slug"], "CPF inválido — confira os números."))
+        if g("aceito") != "1":
+            # Gate ANTES de qualquer criação (pending ou assinante direto via cupom de
+            # cortesia, logo abaixo) — sem aceite não existe cadastro, em caminho nenhum.
+            return self._html(site_web.pagina_assinar(
+                plano["slug"], "É preciso aceitar os Termos e a Política de Privacidade."))
+        # Mesmo padrão de _aceitar_termos: atrás de proxy, o IP real vem no cabeçalho.
+        ip_cliente = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                      or self.client_address[0])
         dados["cpf"] = cpfval.so_digitos(dados["cpf"])          # guarda só os dígitos
         ja = subscribers.por_cpf(dados["cpf"]) or subscribers.por_whatsapp(dados["whatsapp"])
         if ja and subscribers.tem_acesso(ja):                   # já tem assinatura ativa -> não duplica
@@ -874,7 +1201,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Cupom de cortesia: ativa na hora, sem Asaas
         if cupom and db.cupom_valido(cupom):
             info = db.obter_cupom(cupom) or {}
-            reg = subscribers.criar_de_pagamento({**dados, "plano": plano["slug"], "metodo": "CUPOM"}, {}, status="ATIVO")
+            reg = subscribers.criar_de_pagamento(
+                {**dados, "plano": plano["slug"], "metodo": "CUPOM",
+                 "termos_versao": legal.VERSAO, "termos_ip": ip_cliente}, {}, status="ATIVO")
             dias = int(info.get("dias_acesso") or 0)
             if dias > 0:                       # cortesia com prazo -> define o fim do acesso
                 from datetime import datetime, timedelta
@@ -891,14 +1220,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect("/obrigado")
         # Pagamento via checkout Asaas
         n_ativos = len(subscribers.ativos())
-        base_vig = pricing.preco_vigente(plano, n_ativos)
+        # `ja` truthy e chegou até aqui = existe, mas SEM acesso vigente (quem tem
+        # acesso já foi bloqueado acima) — é recontratação, não venda nova. Cobra o
+        # valor que o assinante CONTRATOU (renovacao.preco_renovacao), não o de tabela
+        # do momento: é a mesma promessa da cláusula 2 dos termos ("pelo mesmo valor
+        # contratado"), só que pela porta pública em vez da /renovar autenticada.
+        base_vig = renovacao.preco_renovacao(ja, plano) if ja else pricing.preco_vigente(plano, n_ativos)
         # Cupom de afiliado: 10% off na 1ª venda + atribuição (segue pro checkout PAGO)
         af = db.afiliado_por_codigo(cupom) if cupom else None
         af_codigo = af["codigo"] if af else ""
-        base_final = pricing.valor_com_desconto(base_vig, af["pct_desconto"]) if af else base_vig
+        base_final = pricing.base_cobrada(plano, metodo, base_vig, af["pct_desconto"] if af else 0.0)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
+        # `valor_base` é a BASE contratada (pré-desconto de método, pré-cupom de afiliado):
+        # é ela que o webhook grava em `valor_contratado` e que a renovação usa como preço.
+        # `valor` (o que o cliente paga) não serve: no parcelado o Asaas confirma parcela por
+        # parcela e no Pix já vem com 5% off, que a renovação reaplicaria a cada ciclo.
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
-                                  "parcelas": parcelas, "valor": valor, "afiliado_codigo": af_codigo})
+                                  "parcelas": parcelas, "valor": valor, "valor_base": base_vig,
+                                  "afiliado_codigo": af_codigo,
+                                  "termos_versao": legal.VERSAO, "termos_ip": ip_cliente})
         try:
             payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_final)
             res = asaas.criar_checkout(payload)
@@ -912,6 +1252,242 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, *a):
         pass
+
+
+def _alertar(sub, motivo):
+    """Avisa o admin sobre um cancelamento que precisa de mão humana. À prova de
+    exceção: alerta é aviso, nunca pode derrubar o cancelamento de quem está na tela."""
+    try:
+        import webhook_asaas
+        webhook_asaas._alertar_admin(sub.get("asaas_payment_id"), sub.get("asaas_subscription_id"), motivo)
+    except Exception as e:
+        print(f"[cancelar] alerta admin falhou: {e}", flush=True)
+
+
+def _gravar_cancelamento(sub, motivo, acesso_ate):
+    """Grava o cancelamento inteiro (claim atômico) e classifica o resultado:
+
+      "venceu"  -> esta chamada gravou agora; é dona do fluxo (estorno + e-mail).
+      "perdeu"  -> outra chamada já cancelou este assinante; não há nada a repetir.
+      "incerto" -> o banco falhou e não deu pra confirmar o que ficou gravado.
+
+    PORQUÊ existe o "incerto": uma exceção no claim pode ter estourado ANTES ou DEPOIS
+    do commit. Assumir "venceu" estornaria em cima de um cancelamento que talvez já
+    tenha estornado (dinheiro devolvido duas vezes); assumir "perdeu" deixaria o
+    cliente sem cancelamento nenhum. Então relê o banco: se o cancelamento está lá, foi
+    "perdeu"; se não está e o banco responde, tenta gravar de novo (o UPDATE é
+    condicional, repetir é seguro); só quando nem isso resolve é que vira "incerto" —
+    e aí o cancelamento SEGUE (nunca travar o cliente), mas sem mover dinheiro.
+    """
+    import db
+    try:
+        return "venceu" if db.claim_cancelamento(sub["id"], motivo, acesso_ate) else "perdeu"
+    except Exception as e:
+        print(f"[cancelar] claim_cancelamento falhou: {e}", flush=True)
+    try:
+        import subscribers
+        atual = subscribers.por_id(sub["id"]) or {}
+    except Exception as e:
+        print(f"[cancelar] releitura do assinante após falha do claim falhou: {e}", flush=True)
+        _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} seguiu SEM confirmação do "
+                      f"banco ({e}) — confira o cadastro e, se ele estiver dentro dos 7 dias, avalie "
+                      f"o estorno manualmente (não estornei para não devolver em dobro)")
+        return "incerto"
+    if atual.get("cancelado_em") or (atual.get("status") or "") == "CANCELADO":
+        # Daqui pra frente há duas causas possíveis, e não dá pra distinguir qual foi:
+        # (a) outra chamada ganhou a corrida e já tratou tudo (Asaas cancelado, e-mail
+        # enviado) — nada a fazer; ou (b) foi o UPDATE desta PRÓPRIA chamada que
+        # commitou e a exceção estourou DEPOIS — nesse caso ninguém cancelou no Asaas,
+        # ninguém mandou e-mail, e o cliente vê "cancelado" na tela mas SEGUE sendo
+        # cobrado. O custo de alertar à toa no caso (a) é bem menor que o de deixar
+        # (b) passar em silêncio — por isso alerta sempre, não só quando a 2ª
+        # tentativa também falha.
+        _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} caiu numa exceção "
+                      f"no claim mas já aparece gravado no banco — pode ter sido corrida "
+                      f"perdida (nada a fazer) OU o próprio UPDATE desta chamada que commitou "
+                      f"antes da exceção estourar (Asaas NÃO cancelado, e-mail NÃO enviado, "
+                      f"cliente pode seguir sendo cobrado) — confira o cadastro e o Asaas "
+                      f"manualmente")
+        return "perdeu"           # o UPDATE tinha gravado (ou outra chamada ganhou a corrida)
+    try:
+        return "venceu" if db.claim_cancelamento(sub["id"], motivo, acesso_ate) else "perdeu"
+    except Exception as e:
+        print(f"[cancelar] 2ª tentativa do claim falhou: {e}", flush=True)
+        _alertar(sub, f"NÃO consegui gravar o cancelamento de {sub.get('nome') or sub.get('id')} "
+                      f"({e}) — cancele no cadastro manualmente; não estornei porque o estado do "
+                      f"banco não pôde ser confirmado")
+        return "incerto"
+
+
+def _acesso_ate_persistido(sub):
+    """acesso_ate que está GRAVADO no banco (o do vencedor da corrida), não o do `sub`
+    em memória — que é anterior ao cancelamento e mostraria data futura para quem já
+    foi reembolsado. À prova de exceção: no pior caso mostra o que temos em memória."""
+    try:
+        import subscribers
+        return (subscribers.por_id(sub["id"]) or sub).get("acesso_ate")
+    except Exception as e:
+        print(f"[cancelar] releitura p/ a página de cancelado falhou: {e}", flush=True)
+        return sub.get("acesso_ate")
+
+
+def _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate):
+    """Confirmação por e-mail: versão com reembolso ou versão comum. À prova de exceção
+    — o cancelamento já está gravado, um problema de e-mail não pode virar erro na tela.
+
+    `tipo_estorno` (o mesmo de `refunds.alvo_estorno`, vindo de `estornar_arrependimento`)
+    decide se o valor entra no e-mail. No cartão parcelado o Asaas estorna o
+    PARCELAMENTO inteiro (ex.: R$ 997), mas `estornado` aqui é o valor de UMA parcela
+    (ex.: R$ 83,08) — é o único número que a API do Asaas devolve pra essa cobrança, e
+    ele não representa o total reembolsado. Imprimir esse número como "reembolso
+    integral" mentiria por um fator de N parcelas. Quando `tipo_estorno == "installment"`
+    o e-mail não imprime NENHUM valor — só confirma que o reembolso integral foi pedido."""
+    if not sub.get("email"):
+        return
+    try:
+        import site_web, email_send, pricing
+        if estornado is not None:            # 0.0 é estorno válido, não "sem estorno"
+            if tipo_estorno == "installment":
+                linha_valor = "O reembolso integral do valor pago foi solicitado"
+            else:
+                linha_valor = (f"O reembolso integral de <strong>{pricing.fmt_brl(estornado)}"
+                               f"</strong> foi solicitado")
+            corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
+                     f"Científica dentro do prazo de arrependimento.</p>"
+                     f"<p>{linha_valor} e aparece em até 10 dias úteis, conforme o meio de "
+                     f"pagamento utilizado.</p>")
+        else:
+            ate = f" Seu acesso segue até {acesso_ate}." if acesso_ate else ""
+            corpo = (f"<p>Confirmamos o cancelamento da sua assinatura da Atualização "
+                     f"Científica. Não haverá novas cobranças.{site_web._esc(ate)}</p>")
+        html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>{corpo}"
+                f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
+                f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
+        email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
+    except Exception as e:
+        print(f"[cancelar] e-mail de confirmação falhou: {e}", flush=True)
+
+
+# Status do Asaas que significam "o estorno existe" numa re-consulta. PARTIALLY_REFUNDED
+# fica DE FORA de propósito: nosso estorno é sempre integral, então devolução parcial é
+# sinal de que algo diferente aconteceu e precisa de olho humano.
+_STATUS_ESTORNADO = ("REFUNDED", "REFUND_REQUESTED", "REFUND_IN_PROGRESS")
+
+
+def _estorno_confirmado_no_asaas(pid):
+    """Re-consulta o pagamento depois de uma falha AMBÍGUA do estorno.
+
+    PORQUÊ: um timeout de rede pode estourar DEPOIS de o Asaas já ter processado o
+    estorno. Tratar isso como "não estornou" gera o pior par possível — alerta pedindo
+    estorno manual (devolução em dobro) e cliente sem o acesso que já foi pago de volta.
+
+    Devolve `(valor, tipo, pendente)` quando o Asaas confirma o estorno (mesmo que
+    ainda em andamento); None quando ele diz que não houve, ou quando a própria
+    re-consulta falha (sem certeza, não afirmamos que o dinheiro saiu).
+
+    `pendente` é True para REFUND_REQUESTED/REFUND_IN_PROGRESS — status que ainda
+    podem falhar depois (ex.: Pix sem saldo na conta Asaas), então mesmo tratados como
+    sucesso aqui, o chamador precisa alertar pedindo confirmação humana. É False só
+    para REFUNDED, que é definitivo."""
+    import asaas, refunds
+    try:
+        atual = asaas.obter_pagamento(pid) or {}
+        status = str(atual.get("status") or "").upper()
+        if status not in _STATUS_ESTORNADO:
+            return None
+        tipo, _ = refunds.alvo_estorno(atual)
+        valor = float(atual.get("value") or 0)
+        return (valor, tipo, status != "REFUNDED")
+    except Exception as e:
+        print(f"[cancelar] re-consulta do pagamento após falha do estorno falhou: {e}", flush=True)
+        return None
+
+
+def estornar_arrependimento(sub):
+    """Estorno INTEGRAL quando o cancelamento cai dentro dos 7 dias (CDC art. 49).
+
+    Devolve `(valor, tipo)` quando o estorno sai (ou já tinha saído — falha ambígua
+    confirmada no Asaas), ou None quando não havia direito, não havia cobrança
+    (cortesia por cupom) ou o estorno no Asaas falhou de verdade. `tipo` vem de
+    `refunds.alvo_estorno`: "installment" quando o alvo foi o parcelamento inteiro, ou
+    "payment" quando foi um pagamento avulso — quem manda e-mail (`_email_cancelamento`)
+    usa isso pra saber se pode imprimir `valor` (no parcelado ele é só o de UMA
+    parcela, não o total estornado). Falha aqui NUNCA bloqueia o cancelamento: o
+    assinante não pode ficar preso por um problema nosso — vira alerta pro admin.
+
+    NÃO faz claim de corrida (duplo clique / retry concorrente). Isso é
+    responsabilidade de quem chama: db.claim_cancelamento grava o cancelamento inteiro
+    de forma atômica ANTES daqui, e só o vencedor desse claim chega a esta função — um
+    claim aqui dentro protegeria só a chamada ao Asaas e deixaria o resto do fluxo
+    exposto à mesma corrida.
+
+    O estorno no Asaas e a baixa da comissão do afiliado rodam em try/except
+    SEPARADOS de propósito: é o estorno no Asaas que decide o retorno da função,
+    porque é ele que move dinheiro de verdade. Se ele der certo, a função SEMPRE
+    devolve o valor, mesmo que a baixa de comissão falhe em seguida (ex.: "database
+    is locked" no servidor multi-thread) — senão o chamador acha que não houve
+    estorno, mantém o acesso do cliente e ainda manda alerta dizendo que o dinheiro
+    não saiu, quando na verdade já saiu.
+    """
+    from datetime import date
+    import asaas, db, refunds, webhook_asaas
+    if not refunds.dentro_arrependimento(sub.get("criado_em"), date.today()):
+        return None
+    pid = sub.get("asaas_payment_id")
+    if not pid:                       # cortesia por cupom: não houve cobrança pra estornar
+        return None
+    try:
+        pagamento = asaas.obter_pagamento(pid)
+        # valor fica DENTRO do try, antes de mover dinheiro (Achado 3): se "value"
+        # vier não-numérico, falha aqui — sem ter chamado o Asaas ainda — em vez de
+        # explodir depois do estorno já ter saído (o que travaria o cancelamento
+        # inteiro com o dinheiro já fora e o cliente ainda ATIVO).
+        valor = float(pagamento.get("value") or 0)
+        tipo, alvo = refunds.alvo_estorno(pagamento)
+        if tipo == "installment":
+            asaas.estornar_parcelamento(alvo)
+        else:
+            asaas.estornar_pagamento(alvo)
+    except Exception as e:
+        print(f"[cancelar] estorno de arrependimento falhou: {e}", flush=True)
+        # Falha AMBÍGUA: o erro pode ter vindo depois de o Asaas já ter estornado
+        # (timeout de rede na resposta). Pergunta ao Asaas antes de concluir que o
+        # dinheiro não saiu — senão pediríamos estorno manual em cima de um estorno já
+        # feito (devolução em dobro) e ainda manteríamos o acesso do reembolsado.
+        resultado = _estorno_confirmado_no_asaas(pid)
+        if resultado is None:
+            webhook_asaas._alertar_admin(
+                pid, sub.get("asaas_subscription_id"),
+                f"ESTORNO de arrependimento FALHOU para {sub.get('nome') or sub.get('id')} "
+                f"({e}) — estorne manualmente no painel do Asaas")
+            return None
+        valor, tipo, pendente = resultado
+        print(f"[cancelar] apesar do erro ({e}), o Asaas confirma o estorno de {pid} "
+              f"— seguindo como sucesso", flush=True)
+        if pendente:
+            # REFUND_REQUESTED/REFUND_IN_PROGRESS: o Asaas ainda não terminou de
+            # processar. Continuamos tratando como sucesso (não re-estornar, evita
+            # duplicidade), mas se isso falhar depois (ex.: Pix sem saldo na conta
+            # Asaas) o cliente fica sem o dinheiro E sem acesso, e ninguém saberia —
+            # por isso pede confirmação humana mesmo seguindo em frente.
+            webhook_asaas._alertar_admin(
+                pid, sub.get("asaas_subscription_id"),
+                f"Estorno de arrependimento de {sub.get('nome') or sub.get('id')} ainda está em "
+                f"processamento no Asaas (status != REFUNDED) — confirme manualmente que ele "
+                f"conclui")
+    try:
+        db.estornar_comissao(sub["id"])
+    except Exception as e:
+        # O estorno no Asaas JÁ deu certo (dinheiro já saiu) — isso nunca pode virar
+        # None pro chamador. Só a baixa de comissão do afiliado ficou pendente.
+        print(f"[cancelar] baixa de comissão falhou após estorno OK: {e}", flush=True)
+        webhook_asaas._alertar_admin(
+            pid, sub.get("asaas_subscription_id"),
+            f"Estorno de arrependimento CONCLUÍDO para {sub.get('nome') or sub.get('id')} — "
+            f"mas a baixa da comissão do afiliado FALHOU ({e}) — ajuste manualmente no "
+            f"painel de afiliados")
+    return (valor, tipo)
+
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True

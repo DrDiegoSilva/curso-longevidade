@@ -6,12 +6,20 @@ from datetime import date, timedelta
 
 
 def assinantes_a_avisar(subs, dias, hoje):
-    """ATIVOs com vencimento em [hoje, hoje+dias] ainda não avisados NESTE ciclo."""
+    """ATIVOs com renovação automática (asaas_subscription_id) e vencimento em
+    [hoje, hoje+dias] ainda não avisados NESTE ciclo.
+
+    Quem NÃO tem assinatura recorrente (Pix à vista, cartão parcelado) é coberto pela
+    régua (regua.py) — sem essa exclusão, esse assinante receberia dois avisos com
+    textos diferentes, um deles dizendo "renova sozinha" para quem não renova.
+    """
     limite = hoje + timedelta(days=dias)
     out = []
     for s in subs:
         if s.get("status") != "ATIVO":
             continue
+        if not s.get("asaas_subscription_id"):
+            continue        # sem assinatura recorrente = régua (regua.py), não este aviso
         pv = s.get("proximo_vencimento")
         if not pv:
             continue

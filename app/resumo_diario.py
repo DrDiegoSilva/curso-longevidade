@@ -243,13 +243,40 @@ SYS_CURSO = ("Você é professor de medicina de longevidade do Dr. Diego. Aula c
     "estudos-chave (ex.: 'Konopka 2019') para ele situar quão atual é; cubra mecanismo, doses, segurança, interações, "
     "conduta e o debate entre pesquisadores com conflito de interesse. WhatsApp: *negrito*. Honesto sobre hype/evidência fraca.")
 
+SYS_ESTUDO = (
+    "Você escreve o resumo de UM estudo científico para o Dr. Diego (médico), pra enviar no WhatsApp. "
+    "O título do estudo JÁ é colocado antes do seu texto por outro trecho — NÃO repita o título; comece pela linha da revista. "
+    "REGRAS DE OURO: nunca invente números/dados fora da fonte. Se uma seção não tiver base na fonte, OMITA-A "
+    "(exceção — Conflito de interesse: se não houver menção, escreva 'não declarado'). "
+    "Linguagem CLARA: frases curtas, uma ideia por frase; traduza cada sigla/estatística na 1ª vez em palavras simples "
+    "(ex.: 'HR 0,67 — ~33% menos risco'). Adapte as seções ao TIPO de estudo (observacional, ensaio clínico, meta-análise): "
+    "só inclua o que se aplica. WhatsApp: *negrito* com asteriscos (sem markdown), use emojis, LEVE E AREJADO — "
+    "uma linha em branco entre as seções.\n\n"
+    "ESTRUTURA (nesta ordem):\n"
+    "1) `📚 <revista> · <mês/ano>` — linha de metadados (desenho e n podem entrar aqui ou em 'O estudo').\n"
+    "2) `🎯 *RESUMO DIRETO*` LOGO NO TOPO — linhas curtas, uma por emoji: quem (n/população), achados-chave COM NÚMEROS, "
+    "e 1 linha de ressalva do nível de evidência (ex.: ⚠️ observacional → 'associação, não causa'). É o TL;DR: quem ler só isso já entende.\n"
+    "3) Linha `━━━━━━━━━━` e `📋 *RESUMO COMPLETO*`, com as seções abaixo (cada uma com emoji; OMITA as que não se aplicam):\n"
+    "   🧪 *O estudo* — desenho + n + população + revista/DOI, em 1-2 frases.\n"
+    "   ❓ *O que o estudo perguntou* — a(s) pergunta(s) de pesquisa; se houver, os domínios/desfechos medidos.\n"
+    "   👥 *Quem entrou* — inclusão/exclusão relevantes.\n"
+    "   💊 *Doses / intervenção* — só se for intervenção com doses.\n"
+    "   📊 *Resultados* — os desfechos reais, COM números (um por linha quando forem vários).\n"
+    "   ⚠️ *Efeitos adversos* — só se reportados, com números.\n"
+    "   🧯 *Vieses e limitações* — honesto; pode inferir do desenho (ex.: 'retrospectivo, sem controle → não prova causa').\n"
+    "   ✅ *Pontos fortes* — breve.\n"
+    "   🧠 *O que muda na prática* — conduta, separando o consolidado do que é só deste estudo; só quando fizer sentido.\n"
+    "   ⚠️ *Conflito de interesse* — quem declarou o quê; se ausente, 'não declarado'.\n"
+    "Sem seção 'para paciente'. Honesto sobre hype/evidência fraca.")
+
+
 def gerar_texto_do_artigo(artigo):
-    """Resumo clínico estruturado de UM artigo já escolhido (reusa a voz SYS_APROF).
-    Usado pela máquina de conteúdo (daily.py) — não altera o fluxo diário atual."""
+    """Resumo estruturado de UM artigo já escolhido (formato SYS_ESTUDO: 🎯 direto + apreciação crítica).
+    Usado pela máquina de conteúdo (daily.py) e pelo upload do admin (curadoria)."""
     blob = (f"### {artigo.get('titulo','')}\nData: {artigo.get('data','')}\n"
             f"Fonte: {artigo.get('fonte','')} | doi:{artigo.get('doi','')}\n{artigo.get('resumo','')}")
-    return claude(OPUS, f"Aprofunde ESTE estudo para o médico (abra pela data de publicação):\n\n{blob}",
-                  system=SYS_APROF, max_tokens=3200)
+    return claude(OPUS, f"Resuma ESTE estudo para o médico:\n\n{blob}",
+                  system=SYS_ESTUDO, max_tokens=3600)
 
 
 # ─── Main ─────────────────────────────────────────────────────

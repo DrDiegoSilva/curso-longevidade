@@ -121,6 +121,7 @@ def init():
                 plano TEXT, metodo TEXT,
                 status TEXT DEFAULT 'ATIVO',
                 asaas_customer_id TEXT, asaas_subscription_id TEXT, asaas_payment_id TEXT,
+                asaas_installment_id TEXT,
                 proximo_vencimento TEXT, acesso_ate TEXT, carencia_ate TEXT, aviso_renov_em TEXT,
                 criado_em TEXT, cancelado_em TEXT, cancel_motivo TEXT, oferta_retencao_em TEXT,
                 senha_hash TEXT, curador INTEGER DEFAULT 0, slot_envio TEXT
@@ -129,6 +130,7 @@ def init():
                 token TEXT PRIMARY KEY,
                 nome TEXT, email TEXT, cpf TEXT, whatsapp TEXT,
                 plano TEXT, metodo TEXT, parcelas INTEGER, valor REAL,
+                valor_base REAL,
                 afiliado_codigo TEXT,
                 criado_em TEXT
             );
@@ -205,10 +207,20 @@ def init():
                 criado_em TEXT,
                 atualizado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS automacoes_renovacao (
+                id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
+                ativo INTEGER DEFAULT 1, criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS avisos_renovacao (
+                subscriber_id TEXT, automacao_id TEXT, vencimento_ref TEXT, enviado_em TEXT,
+                PRIMARY KEY (subscriber_id, automacao_id, vencimento_ref)
+            );
             """
         )
     _migrar_colunas()
     _seed_cupons()
+    _seed_automacoes()
+    _migrar_texto_seed0()
     if _is_pg():
         _habilitar_rls()        # trava a Data API pública do Supabase (app conecta direto e ignora RLS)
     _INITED = True
@@ -218,7 +230,7 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
-            "classicos"]
+            "automacoes_renovacao", "avisos_renovacao", "classicos"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -248,6 +260,21 @@ def _migrar_colunas():
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
         _add_coluna(c, "reserva_resumos", "score", "REAL DEFAULT 0")
         _add_coluna(c, "pending_signups", "afiliado_codigo", "TEXT")
+        _add_coluna(c, "subscribers", "termos_versao", "TEXT")
+        _add_coluna(c, "subscribers", "termos_aceito_em", "TEXT")
+        _add_coluna(c, "subscribers", "termos_ip", "TEXT")
+        _add_coluna(c, "pending_signups", "termos_versao", "TEXT")
+        _add_coluna(c, "pending_signups", "termos_ip", "TEXT")
+        _add_coluna(c, "comissoes", "estornada_em", "TEXT")
+        _add_coluna(c, "subscribers", "valor_contratado", "REAL")
+        # B1/B2 da revisão final #2: o webhook precisa da BASE contratada (pré-desconto de
+        # método e pré-cupom). `valor` guarda o que o cliente PAGA, que no parcelado é uma
+        # parcela e no Pix já vem com 5% off — nenhum dos dois serve como preço de renovação.
+        _add_coluna(c, "pending_signups", "valor_base", "REAL")
+        # C1 da revisão #3: identifica o GRUPO de parcelamento do contrato vigente. Sem ele a
+        # guarda de parcela não distingue uma parcela atrasada do contrato antigo da parcela 1
+        # de um contrato NOVO — e o ex-assinante que voltava no anual em 12x pagava sem receber.
+        _add_coluna(c, "subscribers", "asaas_installment_id", "TEXT")
         _add_coluna(c, "curadoria_candidatos", "citacoes", "INTEGER DEFAULT 0")
         _add_coluna(c, "curadoria_candidatos", "tipo", "TEXT DEFAULT 'varredura'")
 
@@ -278,12 +305,17 @@ def criar_pending(dados):
     token = secrets.token_hex(16)
     with _conn() as c:
         c.execute(
-            """INSERT INTO pending_signups (token,nome,email,cpf,whatsapp,plano,metodo,parcelas,valor,afiliado_codigo,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO pending_signups (token,nome,email,cpf,whatsapp,plano,metodo,parcelas,valor,valor_base,afiliado_codigo,termos_versao,termos_ip,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (token, dados.get("nome", ""), dados.get("email", ""), dados.get("cpf", ""),
              dados.get("whatsapp", ""), dados.get("plano", ""), dados.get("metodo", ""),
              int(dados.get("parcelas", 1)), float(dados.get("valor", 0)),
-             (dados.get("afiliado_codigo", "") or ""), datetime.now().isoformat()),
+             # None (não 0) quando ausente: o webhook distingue "base desconhecida" de
+             # "base zero" pra não gravar um valor_contratado inventado.
+             (float(dados["valor_base"]) if dados.get("valor_base") else None),
+             (dados.get("afiliado_codigo", "") or ""),
+             (dados.get("termos_versao", "") or ""), (dados.get("termos_ip", "") or ""),
+             datetime.now().isoformat()),
         )
     return token
 
@@ -292,6 +324,23 @@ def obter_pending(token):
     with _conn() as c:
         r = c.execute("SELECT * FROM pending_signups WHERE token=?", (token,)).fetchone()
     return dict(r) if r else None
+
+
+def obter_pendings_por_cpf(cpf, limite=10):
+    """Os pendings recentes desse CPF, do mais novo pro mais velho.
+
+    Plural de propósito: o Asaas não devolve o `externalReference`, então o webhook casa o
+    pending pelo CPF — e o cliente que volta no navegador e refaz o checkout com outro
+    método/plano deixa mais de um em aberto. Pegando só o mais recente, o pending CERTO
+    (o do link que ele de fato pagou) ficava enterrado atrás do abandonado.
+    """
+    dig = "".join(ch for ch in (cpf or "") if ch.isdigit())
+    if not dig:
+        return []
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM pending_signups WHERE cpf=? ORDER BY criado_em DESC LIMIT ?",
+                         (dig, int(limite))).fetchall()
+    return [dict(r) for r in rows]
 
 
 def obter_pending_por_cpf(cpf):
@@ -361,6 +410,112 @@ def slot_ja_enviou(data, slot):
         r = c.execute("SELECT 1 FROM envios_slot WHERE data=? AND slot=?",
                       (data or "", slot or "")).fetchone()
     return r is not None
+
+
+# Textos padrão da régua. {nome}, {ate} (data do vencimento) e {link} (URL do /renovar).
+_AUTOMACOES_SEED = [
+    (-7, "whatsapp", "Olá {nome}! Sua assinatura da Atualização Científica vence em {ate} — "
+                     "daqui a 7 dias. Para não perder nenhum estudo, renove por aqui:\n{link}"),
+    (-3, "whatsapp", "{nome}, faltam 3 dias: sua assinatura vence em {ate}. "
+                     "A renovação leva 1 minuto:\n{link}"),
+    # "a partir de amanhã" era falso: `acesso_ate` é data pura (meia-noite), então no dia do
+    # vencimento os estudos JÁ pararam. Texto novo não promete um prazo que não existe.
+    (0,  "whatsapp", "{nome}, sua assinatura venceu hoje e os estudos param de chegar. "
+                     "Renove agora para retomar de onde parou:\n{link}"),
+    (1,  "whatsapp", "{nome}, sua assinatura venceu ontem e os estudos pararam. Volte agora e "
+                     "ganhe *1 mês extra* de acesso:\n{link}"),
+    (3,  "whatsapp", "{nome}, seu acesso está parado há 3 dias. Se voltar agora, você ganha "
+                     "*1 mês a mais* junto com a renovação:\n{link}"),
+    (15, "whatsapp", "{nome}, última chamada: volte para a Atualização Científica e ganhe "
+                     "*1 mês extra*. Depois desta, não insistimos mais.\n{link}"),
+]
+
+
+_TEXTO_SEED0_ANTIGO = ("{nome}, sua assinatura vence hoje. A partir de amanhã os estudos param "
+                       "de chegar. Renove agora:\n{link}")
+
+
+def _migrar_texto_seed0():
+    """Corrige em bancos JÁ existentes o texto do aviso do dia do vencimento.
+
+    `_seed_automacoes` usa ON CONFLICT DO NOTHING com id determinístico, então uma correção
+    no seed nunca alcança quem já tem a linha — em produção a mensagem continuaria afirmando
+    "a partir de amanhã os estudos param de chegar", o que é falso (`acesso_ate` é data pura,
+    então no dia do vencimento já pararam) e agora contradiz o próprio link, que aponta para
+    a recontratação. Só troca o texto se ele ainda for EXATAMENTE o seed antigo: se o Diego
+    editou a mensagem na tela, a edição dele manda."""
+    novo = next((t for d, _c, t in _AUTOMACOES_SEED if d == 0), None)
+    if not novo:
+        return
+    with _conn() as c:
+        c.execute("UPDATE automacoes_renovacao SET texto=? WHERE id='seed0' AND texto=?",
+                  (novo, _TEXTO_SEED0_ANTIGO))
+
+
+def _seed_automacoes():
+    """Cria as automações padrão 1× (idempotente pelo id determinístico)."""
+    from datetime import datetime
+    with _conn() as c:
+        for dias, canal, texto in _AUTOMACOES_SEED:
+            c.execute("INSERT INTO automacoes_renovacao (id,dias,canal,texto,ativo,criado_em) "
+                      "VALUES (?,?,?,?,1,?) ON CONFLICT (id) DO NOTHING",
+                      (f"seed{dias}", dias, canal, texto, datetime.now().isoformat()))
+
+
+def listar_automacoes(so_ativas=False):
+    """Automações da régua, da mais antecipada para a mais tardia."""
+    q = "SELECT * FROM automacoes_renovacao"
+    if so_ativas:
+        q += " WHERE ativo=1"
+    q += " ORDER BY dias ASC"
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q).fetchall()]
+
+
+def salvar_automacao(id, dias, canal, texto, ativo=1):
+    """Cria (id vazio) ou atualiza uma automação. Devolve o id."""
+    import secrets
+    from datetime import datetime
+    id = (id or "").strip() or secrets.token_hex(6)
+    with _conn() as c:
+        c.execute("INSERT INTO automacoes_renovacao (id,dias,canal,texto,ativo,criado_em) "
+                  "VALUES (?,?,?,?,?,?) ON CONFLICT (id) DO UPDATE SET "
+                  "dias=excluded.dias, canal=excluded.canal, texto=excluded.texto, "
+                  "ativo=excluded.ativo",
+                  (id, int(dias), canal, texto, 1 if int(ativo or 0) else 0,
+                   datetime.now().isoformat()))
+    return id
+
+
+def remover_automacao(id):
+    with _conn() as c:
+        return c.execute("DELETE FROM automacoes_renovacao WHERE id=?", (id,)).rowcount > 0
+
+
+def registrar_aviso(subscriber_id, automacao_id, vencimento_ref):
+    """Marca que este aviso já saiu para este assinante NESTE ciclo. True se marcou agora.
+
+    O `vencimento_ref` é a data de vencimento vigente no momento do envio: quando o assinante
+    renova, ela muda e a régua volta a valer no ciclo seguinte sem precisar limpar nada.
+    Mesmo padrão do ledger `envios_dia`, que matou o reenvio duplicado dos estudos.
+    """
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("INSERT INTO avisos_renovacao "
+                        "(subscriber_id,automacao_id,vencimento_ref,enviado_em) VALUES (?,?,?,?) "
+                        "ON CONFLICT (subscriber_id,automacao_id,vencimento_ref) DO NOTHING",
+                        (subscriber_id or "", automacao_id or "", vencimento_ref or "",
+                         datetime.now().isoformat()))
+        return cur.rowcount > 0
+
+
+def remover_aviso(subscriber_id, automacao_id, vencimento_ref):
+    """Desfaz a marca do ledger — usado quando o envio falha, para a próxima execução do
+    mesmo dia tentar de novo."""
+    with _conn() as c:
+        c.execute("DELETE FROM avisos_renovacao WHERE subscriber_id=? AND automacao_id=? "
+                  "AND vencimento_ref=?", (subscriber_id or "", automacao_id or "",
+                                           vencimento_ref or ""))
 
 
 def cupom_valido(codigo):
@@ -474,13 +629,26 @@ def registrar_comissao(afiliado_id, subscriber_id, plano, valor_venda, valor_com
     return cid
 
 
-def listar_comissoes(afiliado_id=None, pago=None):
+def listar_comissoes(afiliado_id=None, pago=None, incluir_estornadas=False):
+    """`pago=False` é a consulta de "pendente" (usada no painel) — por isso, quando
+    filtramos por não-paga, também excluímos as ESTORNADAS por padrão: uma comissão
+    estornada (venda devolvida) não é mais devida, então não pode aparecer como pendente nem
+    entrar na fila de pagamento. Sem filtro (`pago=None`) continua trazendo tudo,
+    inclusive estornadas — é o que a tela de histórico/auditoria precisa ver.
+
+    `incluir_estornadas=True` é o caso da tela /admin/afiliados: ela quer `pago=False`
+    (não trazer o que já foi quitado) mas TAMBÉM quer ver as estornadas — pra exibi-las
+    marcadas na UI, não pra escondê-las de novo. Não muda o default (False): quem chama
+    sem esse parâmetro continua com o comportamento antigo, que é o que protege o
+    agregado `comissao_pendente` (listar_afiliados) e o marcar_comissao_paga."""
     q = "SELECT * FROM comissoes"
     conds, params = [], []
     if afiliado_id is not None:
         conds.append("afiliado_id=?"); params.append(afiliado_id)
     if pago is not None:
         conds.append("pago=?"); params.append(1 if pago else 0)
+        if not pago and not incluir_estornadas:
+            conds.append("estornada_em IS NULL")
     if conds:
         q += " WHERE " + " AND ".join(conds)
     q += " ORDER BY criado_em DESC"
@@ -489,19 +657,88 @@ def listar_comissoes(afiliado_id=None, pago=None):
 
 
 def marcar_comissao_paga(id):
+    """`AND estornada_em IS NULL` é rede de segurança: mesmo que a listagem do painel
+    já exclua comissões estornadas de "pendente", isto impede que um POST direto
+    (bypass da tela) marque como paga uma comissão de venda que foi devolvida."""
     from datetime import datetime
     with _conn() as c:
-        c.execute("UPDATE comissoes SET pago=1, pago_em=? WHERE id=?", (datetime.now().isoformat(), id))
+        c.execute("UPDATE comissoes SET pago=1, pago_em=? WHERE id=? AND estornada_em IS NULL",
+                  (datetime.now().isoformat(), id))
+
+
+def estornar_comissao(subscriber_id):
+    """Marca como estornada toda comissão gerada por esse assinante (venda devolvida).
+    Sem isso o afiliado receberia comissão de uma venda que deixou de existir.
+    Retorna quantas linhas foram marcadas."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("UPDATE comissoes SET estornada_em=? WHERE subscriber_id=? AND estornada_em IS NULL",
+                        (datetime.now().isoformat(), subscriber_id))
+        return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+
+def claim_cancelamento(subscriber_id, motivo, acesso_ate):
+    """Grava o cancelamento INTEIRO (status + cancelado_em + motivo + acesso_ate) num
+    ÚNICO UPDATE condicional atômico, que é ao mesmo tempo o claim contra corrida.
+
+    PORQUÊ o claim é a própria gravação, e não uma marca prévia: enquanto "reservar o
+    cancelamento" e "gravar o cancelamento" eram dois passos, existia uma janela entre
+    eles em que o assinante estava marcado como cancelado mas o estado final (status,
+    motivo, até quando o acesso vale) ainda não tinha sido escrito. Qualquer falha
+    dentro dessa janela — banco, Asaas, processo morto — deixava o cadastro num meio
+    termo: com cancelado_em preenchido (logo, impossível de cancelar de novo, porque o
+    claim sempre perderia) e sem o cancelamento de fato registrado. Fundindo os dois
+    passos, ou o cancelamento está inteiro no banco ou não aconteceu nada.
+
+    O estorno deixa de fazer parte do claim e vira ajuste POSTERIOR (encerrar_acesso):
+    se o reembolso der certo, zera-se o acesso; se falhar, o estado gravado aqui já é o
+    correto (acesso até o fim do período pago) e não há nada a desfazer.
+
+    `WHERE ... AND (cancelado_em IS NULL OR cancelado_em='')` é a condição do claim: um
+    único UPDATE é atômico tanto no SQLite quanto no Postgres (trava a linha), então
+    duplo clique ou retry de rede em /cancelar só entrega o fluxo a UMA chamada.
+
+    Retorna True se esta chamada gravou agora (venceu o claim) e False se outra já
+    tinha cancelado (perdeu — não é falha, é corrida; nada a repetir).
+    """
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE subscribers SET status='CANCELADO', cancelado_em=?, cancel_motivo=?, acesso_ate=? "
+            "WHERE id=? AND (cancelado_em IS NULL OR cancelado_em='')",
+            (datetime.now().isoformat(), motivo or "", acesso_ate, subscriber_id))
+        return cur.rowcount > 0
+
+
+def encerrar_acesso(subscriber_id):
+    """Ajuste posterior ao claim: zera acesso_ate porque o estorno integral saiu (quem
+    foi reembolsado não segue com acesso até o fim do período pago).
+
+    Roda DEPOIS do cancelamento já estar gravado, de propósito: mover dinheiro é a
+    parte que pode falhar de forma ambígua, e o cancelamento não pode depender dela.
+
+    `AND status='CANCELADO'` protege contra tirar o acesso de quem voltou a ser ATIVO
+    entre o claim e este ajuste (ex.: webhook de renovação chegando no meio).
+    Retorna True se zerou.
+    """
+    with _conn() as c:
+        cur = c.execute("UPDATE subscribers SET acesso_ate=NULL WHERE id=? AND status='CANCELADO'",
+                        (subscriber_id,))
+        return cur.rowcount > 0
 
 
 def listar_afiliados():
-    """Afiliados + agregados de comissão (n_vendas, comissao_total, comissao_pendente)."""
+    """Afiliados + agregados de comissão (n_vendas, comissao_total, comissao_pendente).
+
+    `comissao_pendente` exclui comissão estornada (venda devolvida): sem essa
+    exclusão, o painel mostraria como devido dinheiro de uma venda que já foi
+    reembolsada integralmente ao cliente."""
     with _conn() as c:
         afs = [dict(r) for r in c.execute("SELECT * FROM afiliados ORDER BY criado_em DESC").fetchall()]
         for a in afs:
             ag = c.execute(
                 "SELECT COUNT(*) n, COALESCE(SUM(valor_comissao),0) tot, "
-                "COALESCE(SUM(CASE WHEN pago=0 THEN valor_comissao ELSE 0 END),0) pend "
+                "COALESCE(SUM(CASE WHEN pago=0 AND estornada_em IS NULL THEN valor_comissao ELSE 0 END),0) pend "
                 "FROM comissoes WHERE afiliado_id=?", (a["id"],)).fetchone()
             a["n_vendas"] = ag["n"]
             a["comissao_total"] = round(float(ag["tot"] or 0), 2)

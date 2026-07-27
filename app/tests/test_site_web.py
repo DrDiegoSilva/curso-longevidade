@@ -19,21 +19,43 @@ class TestRender(unittest.TestCase):
         self.assertIn("melhor preço", h)   # badge do anual (D1)
         self.assertNotIn("20% OFF", h)     # badge antiga removida
 
+    def test_foot_linka_termos_e_privacidade(self):
+        # antes só dava pra chegar em /termos e /privacidade pelo checkbox do
+        # checkout ou pela tela de re-aceite — documento de consumidor precisa
+        # estar acessível a qualquer momento, inclusive antes da compra
+        h = self.s._foot()
+        self.assertIn('href="/termos"', h)
+        self.assertIn('href="/privacidade"', h)
+
+    def test_landing_tem_links_legais_no_rodape(self):
+        # a landing é a página pública por excelência, alcançável sem login e
+        # antes de qualquer compra — o rodapé dela precisa linkar os termos
+        h = self.s.landing()
+        self.assertIn('href="/termos"', h)
+        self.assertIn('href="/privacidade"', h)
+
+    def test_paginas_legais_tambem_exibem_o_rodape_com_os_links(self):
+        # site_legal.pagina_termos/pagina_privacidade reaproveitam _pagina (que
+        # chama _foot) — confirma que o rodapé com os links chega até lá também
+        import site_legal
+        for html in (site_legal.pagina_termos(), site_legal.pagina_privacidade()):
+            self.assertIn('href="/termos"', html)
+            self.assertIn('href="/privacidade"', html)
+
     def test_landing_founder_vagas(self):
         import subscribers
         orig = subscribers.ativos
         subscribers.ativos = lambda: []                 # 0 ativos -> founder
         try:
             h = self.s.landing()
-            self.assertIn("de 20 vagas", h)             # selo de lançamento
-            self.assertIn("R$ 997", h)
+            self.assertIn("R$ 1.099", h)                # preço founder do anual
+            self.assertNotIn("Preço de lançamento", h)  # contador de vagas removido (Diego 2026-07-24)
         finally:
             subscribers.ativos = orig
         subscribers.ativos = lambda: [{}] * 20          # 20 ativos -> pós-founder
         try:
             h = self.s.landing()
             self.assertIn("R$ 1.497", h)
-            self.assertNotIn("de 20 vagas", h)
         finally:
             subscribers.ativos = orig
         self.assertIn("Quero assinar", h)
@@ -76,10 +98,11 @@ class TestRender(unittest.TestCase):
 
     def test_assinar_form_mensal(self):
         h = self.s.pagina_assinar("mensal")
-        # redesign do checkout (fdb4898) separou nome/descrição em tiles: "Pix" +
-        # "R$ 99,00 à vista" (antes era um rótulo único "Pix à vista · ...").
-        self.assertIn('<span class="pt-nome">Pix</span>', h)
-        self.assertIn("à vista", h)
+        # mensal saiu do Pix (2026-07-26, aceita_pix=False): só cartão no checkout —
+        # sem o tile, o rádio do cartão vem `checked` (senão abriria sem forma
+        # de pagamento selecionada).
+        self.assertNotIn('value="PIX"', h)
+        self.assertIn('value="CARTAO" checked', h)
         self.assertIn("/mês · renova", h)                 # cartão mensal recorre (texto encurtado no redesign)
         self.assertIn('name="metodo"', h)
         self.assertIn('name="cupom"', h)
@@ -159,6 +182,47 @@ class TestRender(unittest.TestCase):
         self.assertIn("marcar_comissao_paga", h)     # botão de baixa
         self.assertIn("26,92", h)                    # comissão formatada BRL
 
+    def test_pagina_admin_afiliados_comissao_estornada(self):
+        """Venda estornada (cancelamento no arrependimento) não pode sumir da tela: aparece
+        marcada como estornada, fora do total pendente e sem o botão de marcar como paga."""
+        afs = [{"id": "a1", "nome": "Dra. Maria", "contato": "maria@x.com", "codigo": "DRAMARIA",
+                "pct_desconto": 10, "pct_comissao": 3, "ativo": 1,
+                "n_vendas": 1, "comissao_total": 26.92, "comissao_pendente": 0}]
+        comis_estornada = [{"id": "c1", "afiliado_id": "a1", "subscriber_id": "s1", "plano": "anual",
+                            "valor_venda": 897.30, "valor_comissao": 26.92, "pago": 0,
+                            "estornada_em": "2026-07-25T10:00:00"}]
+        h = self.s.pagina_admin_afiliados(afs, comis_estornada, token="tk")
+        # (a) aparece na tela, marcada como estornada
+        self.assertIn("ESTORNADA", h)
+        self.assertIn("26,92", h)                      # o valor da comissão estornada continua visível
+        # (b) fora do total devido: a coluna "Pendente" do afiliado mostra R$ 0,00
+        self.assertIn("R$ 0,00", h)
+        # (c) sem o botão de marcar como paga (única comissão passada é a estornada) —
+        # note que o texto "marcar como paga" ainda existe no hint estático da tela,
+        # então o que prova a ausência do BOTÃO é a action do form (com underscore)
+        self.assertNotIn("marcar_comissao_paga", h)
+
+    def test_pagina_admin_afiliados_estornada_convive_com_pendente(self):
+        """Com uma comissão pendente de verdade na lista, ela mantém o botão normalmente —
+        só a estornada fica sem ele."""
+        afs = [{"id": "a1", "nome": "Dra. Maria", "contato": "", "codigo": "DRAMARIA",
+                "pct_desconto": 10, "pct_comissao": 3, "ativo": 1,
+                "n_vendas": 2, "comissao_total": 29.59, "comissao_pendente": 2.67}]
+        comis = [
+            {"id": "c1", "afiliado_id": "a1", "subscriber_id": "s1", "plano": "anual",
+             "valor_venda": 897.30, "valor_comissao": 26.92, "pago": 0,
+             "estornada_em": "2026-07-25T10:00:00"},
+            {"id": "c2", "afiliado_id": "a1", "subscriber_id": "s2", "plano": "mensal",
+             "valor_venda": 89.10, "valor_comissao": 2.67, "pago": 0},
+        ]
+        h = self.s.pagina_admin_afiliados(afs, comis, token="tk")
+        self.assertIn("ESTORNADA", h)
+        self.assertIn("marcar_comissao_paga", h)        # botão continua existindo p/ a pendente real
+        # o botão (com o id no hidden input) só existe p/ a comissão pendente (c2); a
+        # estornada (c1) não gera nenhum form de baixa, então o id dela nunca aparece
+        self.assertNotIn('value="c1"', h)
+        self.assertIn('value="c2"', h)
+
     def test_admin_nav_tem_afiliados(self):
         self.assertIn("/admin/afiliados", self.s._admin_nav("tk", "afiliados"))
 
@@ -195,6 +259,15 @@ class TestRender(unittest.TestCase):
         self.assertIn("salvar_mensagens", h)
         self.assertIn("/admin/mensagens", self.s._admin_nav("tk", "mensagens"))
 
+    def test_pagina_admin_mensagens_inclui_confirmacao_de_renovacao(self):
+        h = self.s.pagina_admin_mensagens("WA", "Assunto", "Corpo",
+                                          "Assunto Renov X", "Corpo Renov {ate}", token="tk")
+        self.assertIn("Assunto Renov X", h)
+        self.assertIn("Corpo Renov", h)
+        self.assertIn('name="email_renov_assunto"', h)
+        self.assertIn('name="email_renov_corpo"', h)
+        self.assertIn("{ate}", h)          # marcador documentado pro Diego
+
     def test_assinar_cadastro_padronizado(self):
         h = self.s.pagina_assinar("mensal")
         self.assertIn('name="nome" style="text-transform:uppercase"', h)   # nome visual maiúsculo
@@ -222,11 +295,12 @@ class TestSeletorPais(unittest.TestCase):
         self.assertIn('value="55" selected', html)
         self.assertIn("Estados Unidos", html)   # tem opção internacional
 
-    def test_pagina_admin_traz_seletor_no_form_de_cortesia(self):
+    def test_pagina_admin_traz_seletor_no_editar_numero(self):
         import site_web
-        h = site_web.pagina_admin([], token="tk")
-        self.assertIn('name="pais_dial"', h)
-        self.assertIn("Adicionar cortesia", h)
+        h = site_web.pagina_admin(
+            [{"id": 1, "nome": "X", "whatsapp": "5544999998888", "status": "ATIVO"}], token="tk")
+        self.assertIn('name="pais_dial"', h)        # seletor de país no "editar número" do card
+        self.assertIn('value="editar_numero"', h)
 
 
 class TestCuradoriaCabecalho(unittest.TestCase):

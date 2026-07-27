@@ -14,6 +14,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 class TestAuth(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o valor anterior pra restaurar no tearDown — sem isso, DSCURSO_DATA
+        # fica setado pro resto do processo (unittest discover roda tudo numa run só)
+        # e vaza: outro teste que reimporta `config` sem setar sua própria DSCURSO_DATA
+        # herda este tmpdir (já pode nem existir mais) e config.subscribers_path()
+        # aponta pra cá, migrando o subscribers.json daqui pro banco fresco do outro
+        # teste (achado real: contaminava test_bonus_resgate.py via _migrar_json).
+        self._dscurso_data_antes = os.environ.get("DSCURSO_DATA")
+        self._dscurso_artigos_db_antes = os.environ.get("DSCURSO_ARTIGOS_DB")
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         # assinantes: um ATIVO, um inativo
@@ -33,6 +41,18 @@ class TestAuth(unittest.TestCase):
         self.db.init()
         self.enviados = []
         self.enviar_fn = lambda wpp, msg: self.enviados.append((wpp, msg))
+
+    def tearDown(self):
+        # Restaura (ou remove) as env vars pra não vazar pro próximo teste do
+        # `discover` — ver comentário no setUp.
+        if self._dscurso_data_antes is None:
+            os.environ.pop("DSCURSO_DATA", None)
+        else:
+            os.environ["DSCURSO_DATA"] = self._dscurso_data_antes
+        if self._dscurso_artigos_db_antes is None:
+            os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        else:
+            os.environ["DSCURSO_ARTIGOS_DB"] = self._dscurso_artigos_db_antes
 
     def _codigo_enviado(self):
         return re.search(r"\b(\d{6})\b", self.enviados[-1][1]).group(1)

@@ -12,8 +12,10 @@ _migrado = False
 
 _COLS = ["id", "nome", "whatsapp", "email", "cpf", "plano", "metodo", "status",
          "asaas_customer_id", "asaas_subscription_id", "asaas_payment_id",
+         "asaas_installment_id",
          "proximo_vencimento", "acesso_ate", "carencia_ate", "aviso_renov_em",
-         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em", "senha_hash"]
+         "criado_em", "cancelado_em", "cancel_motivo", "oferta_retencao_em",
+         "termos_versao", "termos_aceito_em", "termos_ip", "valor_contratado", "senha_hash"]
 
 
 def _norm(w):
@@ -112,6 +114,21 @@ def por_subscription(sid):
     return dict(r) if r else None
 
 
+def por_payment(pid):
+    """Assinante cuja última cobrança em arquivo é este pagamento. None se vazio/sem match.
+
+    Existe para os eventos que NÃO trazem `subscription` (estorno/chargeback/overdue de Pix
+    ou de cartão parcelado): sem isto, `por_subscription` devolvia None e o evento era
+    descartado como "ignorado", deixando acesso ativo depois de um estorno.
+    """
+    if not pid:
+        return None
+    _ensure()
+    with db._conn() as c:
+        r = c.execute("SELECT * FROM subscribers WHERE asaas_payment_id=?", (pid,)).fetchone()
+    return dict(r) if r else None
+
+
 def por_whatsapp(w):
     n = _norm(w)
     return next((s for s in listar() if _norm(s.get("whatsapp", "")) == n), None)
@@ -135,7 +152,14 @@ def criar_de_pagamento(pending, dados_asaas=None, status="ATIVO"):
            "cpf": pending.get("cpf", ""), "plano": pending.get("plano", ""),
            "metodo": pending.get("metodo", ""), "status": status,
            "asaas_customer_id": a.get("customer"), "asaas_subscription_id": a.get("subscription"),
-           "asaas_payment_id": a.get("payment"), "proximo_vencimento": a.get("proximo_vencimento"),
+           "asaas_payment_id": a.get("payment"), "asaas_installment_id": a.get("installment"),
+           "proximo_vencimento": a.get("proximo_vencimento"),
+           # Aceite feito no checkout (Task 7): copiado do pending pro assinante, pra
+           # quem já aceitou lá não cair na tela de re-aceite (subscribers.precisa_aceitar).
+           "termos_versao": pending.get("termos_versao") or "",
+           "termos_aceito_em": datetime.now().isoformat() if pending.get("termos_versao") else "",
+           "termos_ip": pending.get("termos_ip") or "",
+           "valor_contratado": pending.get("valor_contratado"),
            "criado_em": datetime.now().isoformat()}
     _insert(reg)
     return reg
@@ -149,9 +173,10 @@ def marcar_status(id, status, **campos):
         c.execute(f"UPDATE subscribers SET {sets} WHERE id=?", list(campos.values()) + [id])
 
 
-def registrar_cancelamento(id, motivo, acesso_ate=None):
-    marcar_status(id, "CANCELADO", cancel_motivo=motivo,
-                  cancelado_em=datetime.now().isoformat(), acesso_ate=acesso_ate)
+# registrar_cancelamento foi removida de propósito: gravar o cancelamento agora é
+# db.claim_cancelamento, um UPDATE condicional único que é ao mesmo tempo a gravação e o
+# claim contra corrida. Manter um segundo caminho de escrita (incondicional) só serviria
+# para alguém, um dia, cancelar por fora do claim e reabrir a janela de duplo estorno.
 
 
 def definir_senha(id, senha_hash):
@@ -225,3 +250,18 @@ def slots_com_vaga(teto, slot_atual=None):
     (pra o assinante poder manter o horário mesmo se lotou depois)."""
     cont = contar_por_slot()
     return [s for s in config.SLOTS if cont.get(s, 0) < int(teto) or s == slot_atual]
+
+
+def precisa_aceitar(sub):
+    """True quando o assinante ainda não aceitou a versão vigente dos termos.
+    Vale tanto pra base antiga (nunca aceitou) quanto pra quem aceitou versão anterior."""
+    import legal
+    return (sub or {}).get("termos_versao") != legal.VERSAO
+
+
+def registrar_aceite(id, versao, ip=""):
+    """Grava o aceite: versão, momento e IP — é a prova de que o assinante concordou."""
+    _ensure()
+    with db._conn() as c:
+        c.execute("UPDATE subscribers SET termos_versao=?, termos_aceito_em=?, termos_ip=? WHERE id=?",
+                  (versao, datetime.now().isoformat(), ip or "", id))

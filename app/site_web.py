@@ -11,6 +11,7 @@ import html as _html
 import config
 import pdf
 import pricing
+import ui
 
 MARCA = "Dr. Diego Silva"
 CRM = "CRM-PR 54310"
@@ -80,6 +81,7 @@ a{color:inherit;text-decoration:none}
 .btn.solid:hover{transform:translateY(-2px);box-shadow:0 18px 40px -10px rgba(201,162,39,.65)}
 .btn.ghost{color:var(--cream);border:1px solid rgba(201,162,39,.5)}
 .btn.ghost:hover{border-color:var(--gold);color:var(--gold2)}
+button.btn{border:none;cursor:pointer}
 .trust{margin-top:20px;font-family:var(--ui);font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:center}
 .trust b{color:var(--cream);font-weight:600}
 /* sample dispatch (papel) */
@@ -206,7 +208,10 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .actbtn{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.03em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));border:none;cursor:pointer;padding:11px 22px;border-radius:100px}
 .actbtn.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5)}
 input:focus{outline:none;border-color:var(--ouro)}
-button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
+button.cta{border:none;cursor:pointer;width:100%;font-size:16px;font-family:var(--ui);font-weight:700;letter-spacing:.02em;color:#1a1300;background:linear-gradient(180deg,var(--ouro2),var(--ouro));padding:15px 28px;border-radius:100px;box-shadow:0 12px 30px -10px rgba(201,162,39,.5);transition:transform .18s,box-shadow .18s}
+button.cta:hover{transform:translateY(-2px);box-shadow:0 18px 40px -10px rgba(201,162,39,.62)}
+button.cta.ghost{background:transparent;color:var(--creme);border:1px solid rgba(201,162,39,.5);box-shadow:none}
+button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:none}
 .erro{background:rgba(180,40,40,.18);border:1px solid rgba(220,90,90,.4);color:#ffd9d9;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-family:system-ui,sans-serif;font-size:14px}
 /* arquivo */
 .crumb{font-family:system-ui,sans-serif;font-size:13px;color:var(--suave);margin:8px 0 24px}
@@ -234,6 +239,9 @@ button.cta{border:none;cursor:pointer;width:100%;font-size:16px}
 .social .post{font-size:17px;color:#3a2f10;font-style:italic;line-height:1.6}
 .docbtn{display:inline-block;margin-top:6px;font-family:system-ui,sans-serif;font-size:14px;color:var(--ouro2);text-decoration:none;border:1px solid rgba(201,162,39,.5);border-radius:100px;padding:10px 20px}
 .foot{padding:40px 0 60px;border-top:1px solid rgba(233,225,198,.1);color:var(--suave);font-family:system-ui,sans-serif;font-size:13px;margin-top:20px}
+.foot .flinks{margin-top:10px;font-size:12px}
+.foot .flinks a{color:var(--suave);text-decoration:underline;text-underline-offset:2px}
+.foot .flinks a:hover{color:var(--ouro2)}
 .foot .cfm{max-width:640px;margin-top:8px;font-size:12px;opacity:.8}
 /* assinar */
 .pick{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));margin:26px 0}
@@ -276,6 +284,9 @@ textarea:focus{outline:none;border-color:var(--ouro)}
 .btn-pay{width:100%;border:none;cursor:pointer;margin-top:6px;font-family:var(--ui);font-weight:800;font-size:16px;letter-spacing:.02em;color:#1a1300;background:linear-gradient(180deg,var(--gold2),var(--gold));padding:17px 30px;border-radius:100px;box-shadow:0 14px 34px -10px rgba(201,162,39,.6);transition:.18s}
 .btn-pay:hover{transform:translateY(-2px);box-shadow:0 20px 46px -10px rgba(201,162,39,.72)}
 .securow{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:14px;font-family:var(--ui);font-size:12px;color:var(--muted)}
+.check-termos{display:flex;gap:10px;align-items:flex-start;margin:16px 0 8px;font-family:var(--ui);font-size:13px;line-height:1.5;color:var(--muted);cursor:pointer}
+.check-termos input{margin-top:3px;flex:none}
+.check-termos a{color:var(--ouro2);text-decoration:underline}
 @media(max-width:760px){.checkout{grid-template-columns:1fr}.summary{position:static}.paytiles{grid-template-columns:1fr}}
 /* ===== arquivo (redesign: abas por tema + mês/semana + leitura) ===== */
 .back{display:inline-flex;align-items:center;gap:8px;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--cream);border:1px solid var(--line);border-radius:100px;padding:9px 18px;margin-bottom:22px;transition:.18s}
@@ -377,6 +388,8 @@ def _topbar(logado=False, atual=""):
 def _foot():
     return (f'<div class="wrap"><div class="foot">'
             f'{_esc(MARCA)} · {_esc(CRM)} · {_esc(PRODUTO)}'
+            f'<div class="flinks"><a href="/termos">Termos de assinatura</a> · '
+            f'<a href="/privacidade">Política de privacidade</a></div>'
             f'<div class="cfm">Conteúdo de caráter científico-educacional, destinado a médicos. '
             f'Não substitui o julgamento clínico individual nem constitui recomendação de conduta.</div>'
             f'</div></div>')
@@ -396,14 +409,14 @@ def landing():
              ("🦵", "Lipedema"), ("🏃", "Performance"), ("🧬", "Longevidade")]
     themes = "".join(
         f'<div class="theme"><div class="e">{_esc(e)}</div>'
-        f'<div class="t">{_esc(t)}</div><div class="n">estudo do dia</div></div>'
+        f'<div class="t">{_esc(t)}</div></div>'
         for e, t in temas)
     valores = [
-        ("01 · curadoria", "Curadoria + revisão médica", "Uma IA tria a literatura da semana; o Dr. Diego revisa antes de sair. Você recebe o que importa, sem ruído.", "card big c-a"),
+        ("01 · curadoria", "Curadoria + revisão médica", "Curadoria criteriosa da literatura da semana; o Dr. Diego revisa antes de sair — você recebe o que importa, sem ruído.", "card big c-a"),
         ("02 · cadência", "1 estudo por dia útil", "De segunda a sexta, um artigo relevante — resumo clínico direto ao ponto, no seu WhatsApp.", "card c-b"),
         ("03 · áudio", "Áudio-resumo", "Prefere ouvir? Cada edição vem com um áudio narrado de ~2 minutos — perfeito pro trânsito ou entre atendimentos.", "card c-c"),
-        ("04 · redes", "Pronto para as redes", "Cada edição traz um gancho para levar o tema aos seus pacientes.", "card c-d"),
-        ("05 · pdf", "PDF elegante", "Um documento assinado, com gráfico e fonte — pronto para guardar ou compartilhar.", "card c-e"),
+        ("04 · redes", "Você nas redes sociais", "Cada edição traz um gancho forte, já pronto, para levar o tema aos seus seguidores. Sem perder tempo pensando 'o que postar hoje?'.", "card c-d"),
+        ("05 · pdf", "PDF Objetivo", "Um PDF objetivo e visual, com gráficos e tabelas, organizado para facilitar a leitura, o entendimento e a organização das ideias.", "card c-e"),
         ("06 · arquivo", "Arquivo consultável", "Tudo por tema e data, sempre à mão neste portal.", "card c-f"),
     ]
     bento = "".join(
@@ -416,19 +429,16 @@ def landing():
         + ('<div class="badge">melhor preço</div>' if p["slug"] == "anual" else "")
         + f'<div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(pricing.preco_str_vigente(p, n_ativos)) if p.get("preco") else "sob consulta"}</div>'
-        f'<div class="pe">Pix · {_esc(p["periodo"])}</div>'
+        f'<div class="pe">{_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(pricing.nota_str_vigente(p, n_ativos))}</div>' if pricing.nota_str_vigente(p, n_ativos) else "")
         + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS if not p.get("oculto"))
-    vagas = pricing.vagas_founder(n_ativos)
-    vagas_html = (f'<p class="sub" style="color:var(--gold2);font-weight:700">Preço de lançamento — '
-                  f'restam {vagas} de {config.FOUNDER_LIMITE} vagas</p>' if vagas > 0 else "")
     corpo = f"""
     <div class="wrap">
       <section class="hero">
         <div>
           <div class="eyebrow">{_esc(PRODUTO)}</div>
-          <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — todo dia útil.</h1>
-          <p class="lead">Um estudo relevante por dia, com resumo clínico objetivo, <em>áudio-resumo</em> pra ouvir no trânsito, gancho para as suas redes e um PDF elegante. Curado por IA, revisado por médico.</p>
+          <h1 class="disp">A ciência que move a sua <em>prática clínica</em> — na palma da mão.</h1>
+          <p class="lead">Um estudo relevante por dia, no formato que você preferir: resumo clínico em texto, <em>áudio-resumo</em> pra ouvir no trânsito ou PDF objetivo. E de bônus, um gancho forte para falar do assunto nas suas redes sociais. Revisado e aprovado por médico.</p>
           <div class="ctas">
             <a class="btn solid" href="{_cta()}">Quero assinar</a>
             <a class="btn ghost" href="/entrar">Já sou assinante</a>
@@ -457,22 +467,21 @@ def landing():
 
       <section class="sec">
         <h2 class="disp">O que chega até você</h2>
-        <p class="sub">A fila varia os temas para você não receber dois dias seguidos do mesmo assunto — e tudo fica guardado no seu arquivo.</p>
+        <p class="sub">Os temas são variados para você não receber dois dias seguidos do mesmo assunto — e tudo fica guardado no seu arquivo.</p>
         <div class="bento">{bento}</div>
       </section>
 
       <section class="sec" id="planos">
         <h2 class="disp">Planos</h2>
         <p class="sub">Escolha a recorrência que faz sentido. Renova automaticamente até você cancelar.</p>
-        {vagas_html}
         <div class="plans">{planos}</div>
-        <div style="margin-top:28px"><a class="btn solid" href="{_cta()}">Quero assinar</a>
+        <div style="margin-top:28px;text-align:center"><a class="btn solid" href="{_cta()}">Quero assinar</a>
         <a class="btn ghost" href="/entrar" style="margin-left:10px">Já sou assinante</a></div>
       </section>
 
       <section class="sec">
         <div class="auth">
-          <div class="big">"Leio a literatura para que você não precise abrir <em>vinte abas</em> — e chego com o que muda a conduta."</div>
+          <div class="big">"Filtro os artigos relevantes para que você não perca tempo abrindo <em>vinte abas</em> — e chego com o que atualiza a sua conduta."</div>
           <div class="sig">curadoria e revisão<b>{_esc(MARCA)}</b>{_esc(CRM)}</div>
         </div>
       </section>
@@ -501,7 +510,7 @@ def pagina_entrar(etapa="numero", whatsapp="", erro="", via="whatsapp"):
             <input type="hidden" name="{campo}" value="{_esc(whatsapp)}">
             <label>Código</label>
             <input type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" autofocus>
-            <button class="cta" type="submit">Entrar</button>
+            {ui.btn('Entrar')}
           </form>
           <p class="hint" style="margin-top:16px"><a href="{action}" style="color:var(--ouro2)">{recomecar_txt}</a> &nbsp;·&nbsp; <a href="{senha_href}" style="color:var(--suave)">Entrar com senha</a></p>
         </div></div>"""
@@ -521,9 +530,9 @@ def pagina_entrar(etapa="numero", whatsapp="", erro="", via="whatsapp"):
             <input type="hidden" name="etapa" value="numero">
             <label>{label}</label>
             <input type="text" name="{campo}" inputmode="{imode}" placeholder="{ph}" autofocus>
-            <button class="cta" type="submit">Enviar código</button>
+            {ui.btn('Enviar código')}
           </form>
-          <p class="hint" style="margin-top:16px"><a href="{senha_href}" style="color:var(--ouro2)">← Entrar com senha</a></p>
+          {ui.btn('Entrar com senha', href=senha_href, variant='ghost', extra='margin-top:12px')}
         </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
 
@@ -549,15 +558,18 @@ def pagina_login(erro="", sem_senha=False, whatsapp="", via="whatsapp"):
             erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
                           '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
     if cpf_mode:
-        aux = (f'<p class="hint" style="margin-top:16px"><a href="{codigo_href}" style="color:var(--ouro2)">Sem senha? Entrar com código no WhatsApp</a></p>'
-               f'<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar" style="color:var(--suave)">← Entrar com WhatsApp</a></p>')
+        aux = (ui.btn('Sem senha? Entrar com código', href=codigo_href, variant='ghost',
+                      extra='margin-top:12px')
+               + '<p class="hint" style="margin-top:12px;font-size:13px">'
+                 '<a href="/entrar" style="color:var(--suave)">← Entrar com WhatsApp</a></p>')
     else:
-        aux = ('<p class="hint" style="margin-top:16px">'
-               '<a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>'
-               '&nbsp;·&nbsp;'
-               '<a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a></p>'
-               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>'
-               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-cpf" style="color:var(--suave)">Assinante fora do Brasil / sem WhatsApp brasileiro? Entrar com CPF</a></p>')
+        aux = (ui.btn('Entrar com código no WhatsApp', href='/entrar-codigo', variant='ghost',
+                      extra='margin-top:12px')
+               + '<p class="hint" style="margin-top:16px">'
+                 '<a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>'
+                 '&nbsp;·&nbsp;'
+                 '<a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a></p>'
+                 '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-cpf" style="color:var(--suave)">Assinante fora do Brasil / sem WhatsApp brasileiro? Entrar com CPF</a></p>')
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Área do assinante</h2>
@@ -568,7 +580,7 @@ def pagina_login(erro="", sem_senha=False, whatsapp="", via="whatsapp"):
         <input type="text" name="{campo}" inputmode="{imode}" value="{_esc(whatsapp)}" placeholder="{ph}" autofocus>
         <label>Senha</label>
         <input type="password" name="senha" placeholder="sua senha">
-        <button class="cta" type="submit">Entrar</button>
+        {ui.btn('Entrar')}
       </form>
       {aux}
       <p class="hint" style="margin-top:14px">Ainda não assina? <a href="/" style="color:var(--ouro2)">Conheça o plano</a>.</p>
@@ -682,15 +694,26 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
     nome_af = {a.get("id"): a.get("nome") for a in (afiliados or [])}
 
     def row_com(c):
+        """Comissão estornada (venda devolvida) NÃO some da lista — fica marcada (etiqueta +
+        riscado + esmaecida), sem botão de pagar e sem entrar em nenhum total: o agregado
+        `comissao_pendente` (tabela acima) já vem sem ela direto do db.listar_afiliados."""
+        estornada = bool(c.get("estornada_em"))
+        etiqueta = ('<span style="font-family:system-ui;font-size:10px;font-weight:700;'
+                    'letter-spacing:.06em;padding:3px 9px;border-radius:100px;background:#c0562f22;'
+                    'color:#c0562f;border:1px solid #c0562f66;margin-left:8px">ESTORNADA</span>'
+                    ) if estornada else ""
+        conteudo_style = ' style="text-decoration:line-through;opacity:.55"' if estornada else ""
+        acao = ('' if estornada else
+                '<form method="post" action="/admin/afiliados" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="marcar_comissao_paga">'
+                f'<input type="hidden" name="id" value="{_esc(c.get("id"))}">'
+                '<button class="actbtn" style="padding:6px 13px;font-size:12px">marcar como paga</button></form>')
         return (
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid rgba(233,225,198,.1)">'
-            f'<div><span style="color:var(--creme)">{_esc(nome_af.get(c.get("afiliado_id"), "—"))}</span>'
+            f'<div{conteudo_style}><span style="color:var(--creme)">{_esc(nome_af.get(c.get("afiliado_id"), "—"))}</span>{etiqueta}'
             f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("plano") or "—")} · venda {_esc(pricing.fmt_brl(c.get("valor_venda", 0)))} · '
             f'comissão <b style="color:var(--ouro2)">{_esc(pricing.fmt_brl(c.get("valor_comissao", 0)))}</b></div></div>'
-            f'<form method="post" action="/admin/afiliados" style="margin:0">'
-            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="marcar_comissao_paga">'
-            f'<input type="hidden" name="id" value="{_esc(c.get("id"))}">'
-            f'<button class="actbtn" style="padding:6px 13px;font-size:12px">marcar como paga</button></form></div>')
+            f'{acao}</div>')
 
     comis_lista = "".join(row_com(c) for c in (comissoes or [])) or \
         '<p class="hint" style="margin-top:8px">Nenhuma comissão pendente.</p>'
@@ -750,7 +773,7 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
         </div>
         <div class="panel" style="max-width:none;margin:0;flex:1;min-width:300px">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Comissões pendentes</h3>
-          <p class="hint" style="margin-bottom:6px">Pague por fora e clique em "marcar como paga" pra dar baixa.</p>
+          <p class="hint" style="margin-bottom:6px">Pague por fora e clique em "marcar como paga" pra dar baixa. Vendas estornadas (cancelamento no arrependimento) aparecem aqui só como registro — marcadas, sem entrar em pendente nem poder ser pagas.</p>
           <div style="margin-top:10px">{comis_lista}</div>
         </div>
       </div>
@@ -789,13 +812,79 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_admin_mensagens(wa, email_assunto, email_corpo, token="", msg=""):
-    """Editor das mensagens de boas-vindas (WhatsApp + e-mail)."""
+def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="",
+                           email_renov_corpo="", token="", msg="", automacoes=None,
+                           bonus_resgate_dias=30):
+    """Editor das mensagens de boas-vindas (WhatsApp + e-mail), da confirmação de
+    renovação/recontratação (só e-mail — texto único pros dois casos) e da régua de
+    renovação (automações por dias-do-vencimento, criadas/editadas/removidas aqui —
+    sem depender de programador — e o bônus de resgate em dias)."""
     tk = _esc(token)
     aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
              if msg else "")
     ta = ("width:100%;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.5;"
           "padding:12px;border-radius:10px;box-sizing:border-box")
+
+    # Uma <form> por automação existente (id oculto identifica qual linha o POST atualiza)
+    # mais uma <form> extra de criação (id vazio → db.salvar_automacao gera um id novo).
+    linhas_auto = "".join(
+        f'<form method="post" action="/admin/mensagens" style="border:1px solid #2a4a3c;'
+        f'border-radius:10px;padding:12px;margin:10px 0">'
+        f'<input type="hidden" name="token" value="{tk}">'
+        f'<input type="hidden" name="id" value="{_esc(a["id"])}">'
+        f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+        f'<label>Dias <input type="number" name="dias" value="{int(a["dias"])}" '
+        f'style="width:80px"></label>'
+        f'<label>Canal <select name="canal">'
+        f'<option value="whatsapp"{" selected" if a["canal"] == "whatsapp" else ""}>WhatsApp</option>'
+        f'<option value="email"{" selected" if a["canal"] == "email" else ""}>E-mail</option>'
+        f'</select></label>'
+        f'<label><input type="checkbox" name="ativo" value="1"'
+        f'{" checked" if a["ativo"] else ""}> ativa</label>'
+        f'</div>'
+        f'<textarea name="texto" rows="3" style="width:100%;margin-top:8px">{_esc(a["texto"])}</textarea>'
+        f'<button class="cta" type="submit" name="acao" value="salvar_automacao">Salvar</button> '
+        f'<button type="submit" name="acao" value="remover_automacao" '
+        f'onclick="return confirm(\'Remover esta automação?\')">Remover</button>'
+        f'</form>' for a in (automacoes or []))
+
+    nova_auto = (
+        f'<form method="post" action="/admin/mensagens" style="border:1px dashed #2a4a3c;'
+        f'border-radius:10px;padding:12px;margin:10px 0">'
+        f'<input type="hidden" name="token" value="{tk}">'
+        f'<input type="hidden" name="id" value="">'
+        f'<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+        f'<label>Dias <input type="number" name="dias" value="-7" style="width:80px"></label>'
+        f'<label>Canal <select name="canal">'
+        f'<option value="whatsapp">WhatsApp</option><option value="email">E-mail</option>'
+        f'</select></label>'
+        f'<label><input type="checkbox" name="ativo" value="1" checked> ativa</label></div>'
+        f'<textarea name="texto" rows="3" style="width:100%;margin-top:8px" '
+        f'placeholder="Texto da mensagem"></textarea>'
+        f'<button class="cta" type="submit" name="acao" value="salvar_automacao">Adicionar</button>'
+        f'</form>')
+
+    secao_bonus = (
+        f'<form method="post" action="/admin/mensagens" style="border:1px solid #2a4a3c;'
+        f'border-radius:10px;padding:12px;margin:10px 0 18px">'
+        f'<input type="hidden" name="token" value="{tk}">'
+        f'<input type="hidden" name="acao" value="salvar_bonus_resgate">'
+        f'<label>🎁 Bônus de resgate <input type="number" min="0" name="bonus_resgate_dias" '
+        f'value="{int(bonus_resgate_dias)}" style="width:90px"> dias</label>'
+        f'<p class="hint" style="margin-top:6px">Só vale pra quem paga <b>depois</b> de já ter '
+        f'perdido o acesso — esses dias são somados ao período comprado. Quem renova em dia '
+        f'não ganha nada.</p>'
+        f'<button class="cta" type="submit">Salvar bônus</button>'
+        f'</form>')
+
+    secao_auto = (
+        f'<h3 style="color:var(--creme);margin-top:28px">Régua de renovação</h3>'
+        f'<p class="hint">Só alcança o plano anual sem renovação automática (Pix e cartão '
+        f'parcelado). <b>Dias</b>: negativo antes do vencimento (-7 = sete dias antes), '
+        f'0 no dia, positivo depois (+15 = quinze dias depois). '
+        f'Marcadores: <code>{{nome}}</code>, <code>{{ate}}</code>, <code>{{link}}</code>.</p>'
+        f'{secao_bonus}'
+        f'{linhas_auto}{nova_auto}')
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "mensagens")}
@@ -812,13 +901,25 @@ def pagina_admin_mensagens(wa, email_assunto, email_corpo, token="", msg=""):
           <textarea name="wa" rows="13" style="{ta}">{_esc(wa)}</textarea>
         </div>
         <div class="panel" style="max-width:none;margin:14px 0">
-          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail</h3>
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail — boas-vindas (cliente novo)</h3>
           <label>Assunto</label><input type="text" name="email_assunto" value="{_esc(email_assunto)}">
           <label style="margin-top:12px">Corpo (o <code>{{link}}</code> vira um botão)</label>
           <textarea name="email_corpo" rows="9" style="{ta}">{_esc(email_corpo)}</textarea>
         </div>
+        <div class="panel" style="max-width:none;margin:14px 0">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:8px">✉️ E-mail — confirmação de renovação/recontratação</h3>
+          <p class="hint">Enviado quando um pagamento renova sozinho (cartão à vista) ou quando um assinante cujo
+            acesso já tinha expirado paga de novo — nos dois casos o mesmo texto. <strong>Nunca</strong> vai por
+            WhatsApp. Marcadores: <code>{{nome}}</code> · <code>{{ate}}</code> = data até quando o acesso vale
+            (<strong>obrigatório</strong> — se remover, é re-adicionado sozinho) ·
+            <code>{{link}}</code> = link de entrar na conta (<strong>obrigatório</strong>, também re-adicionado sozinho).</p>
+          <label>Assunto</label><input type="text" name="email_renov_assunto" value="{_esc(email_renov_assunto)}">
+          <label style="margin-top:12px">Corpo (o <code>{{link}}</code> vira um botão)</label>
+          <textarea name="email_renov_corpo" rows="9" style="{ta}">{_esc(email_renov_corpo)}</textarea>
+        </div>
         <button class="actbtn" type="submit" style="margin-top:6px">Salvar mensagens</button>
       </form>
+      {secao_auto}
     </div>"""
     return _pagina("Mensagens · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
@@ -868,9 +969,10 @@ def pagina_whatsapp(info_dict, conn, token=""):
 
 
 def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
-                 reenviar_id=None, sucesso=""):
-    """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
+                 reenviar_id=None, sucesso="", contagem_slots=None):
+    """Tela de Assinantes no padrão do site (verde/dourado, cards com filtros)."""
     import phone
+    import subscribers
     tk = _esc(token)
     admins = {phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])}
     erro_html = f'<div class="erro" style="margin:14px 0">{_esc(erro)}</div>' if erro else ""
@@ -938,22 +1040,36 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                 f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="reenviar">'
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px" type="submit">📨 Reenviar</button></form>')
-    linhas = "".join(
-        '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
-        f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--suave)">{_esc(s.get("whatsapp") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-size:13px;color:var(--suave)">{_esc(s.get("email") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-size:13px;color:var(--ouro2)">{_esc(s.get("plano") or "—")}</td>'
-        f'<td style="padding:13px 10px">{badge(s.get("status"))}</td>'
-        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--suave)">{_esc(s.get("proximo_vencimento") or "—")}</td>'
-        f'<td style="padding:13px 10px">{cel_curador(s)}</td>'
-        f'<td style="padding:13px 10px">{cel_editar_numero(s)}</td>'
-        f'<td style="padding:13px 10px">{cel_reenviar(s)}</td>'
-        f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
-        f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
-        f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
-        f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px">remover</button></form></td></tr>'
-        for s in assinantes)
+    def cel_horario(s):
+        import subscribers
+        atual = subscribers.slot_de(s)
+        opts = "".join(f'<option value="{sl}"{" selected" if sl == atual else ""}>{sl}</option>'
+                       for sl in config.SLOTS)
+        return (f'<form method="post" action="/admin" style="display:flex;gap:5px;align-items:center">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="definir_slot">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<select name="slot" style="padding:5px 8px;font-size:12px;background:#0e211a;color:var(--creme);border:1px solid rgba(233,225,198,.2);border-radius:8px">{opts}</select>'
+                f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px;white-space:nowrap;flex-shrink:0" type="submit">Salvar</button></form>')
+    def _cel_remover(s):
+        return (f'<form method="post" action="/admin" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px">remover</button></form>')
+
+    def card(s):
+        atual = subscribers.slot_de(s)
+        return (
+            f'<div class="subcard" data-nome="{_esc((s.get("nome") or "").lower())}" data-slot="{_esc(atual)}" data-status="{_esc(s.get("status") or "")}">'
+            f'<div class="subcard-top"><span class="subcard-nome">{_esc(s.get("nome") or "—")}</span>{badge(s.get("status"))}</div>'
+            f'<div class="subrow"><span class="k">WhatsApp</span><span class="v mono">{_esc(s.get("whatsapp") or "—")}</span></div>'
+            f'<details class="edit-num"><summary>✏️ editar número</summary>{cel_editar_numero(s)}</details>'
+            f'<div class="subrow"><span class="k">E-mail</span><span class="v">{_esc(s.get("email") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Plano</span><span class="v gold">{_esc(s.get("plano") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Vencimento</span><span class="v mono">{_esc(s.get("proximo_vencimento") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Horário</span><span class="v">{cel_horario(s)}</span></div>'
+            f'<div class="subcard-actions">{cel_curador(s)}{cel_reenviar(s)}{_cel_remover(s)}</div>'
+            '</div>')
+    cards = "".join(card(s) for s in assinantes)
     ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
     n_cur = sum(1 for s in assinantes if s.get("curador"))
     def _cupom_row(c):
@@ -966,37 +1082,118 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                 f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {dur} · {c.get("usos", 0)} uso(s)</div></div>'
                 f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{"ATIVO" if on else "USADO"}</span></div>')
     cupons_lista = "".join(_cupom_row(c) for c in (cupons or [])) or '<p class="hint" style="margin-top:8px">Nenhum cupom gerado ainda.</p>'
+    resumo_slots = ""
+    if contagem_slots:
+        itens = " · ".join(f"{sl}: {contagem_slots.get(sl, 0)}" for sl in config.SLOTS)
+        resumo_slots = f'<p class="hint" style="margin-top:2px">Envio por horário — {itens}</p>'
+    # contador de vendas ativas por plano (mensal vs anual; o resto vira "Outros")
+    _pl = {"Mensal": 0, "Anual": 0, "Outros": 0}
+    for s in assinantes:
+        if s.get("status") != "ATIVO":
+            continue
+        sl = (s.get("plano") or "").strip()
+        _pl["Mensal" if sl == "mensal" else "Anual" if sl == "anual" else "Outros"] += 1
+    plano_cont = f'Ativos por plano — Mensal: {_pl["Mensal"]} · Anual: {_pl["Anual"]}'
+    if _pl["Outros"]:
+        plano_cont += f' · Outros: {_pl["Outros"]}'
+    plano_cont_html = f'<p class="hint" style="margin-top:2px">{plano_cont}</p>'
+    # filtros client-side: busca por nome + chips de status + chips de horário (rótulos com contagem)
+    n_total = len(assinantes)
+    slot_chips = ['<button type="button" class="f-slot on" data-slot="">Todos</button>']
+    for sl in config.SLOTS:
+        n = (contagem_slots or {}).get(sl)
+        rotulo = sl + (f" ({n})" if n is not None else "")
+        slot_chips.append(f'<button type="button" class="f-slot" data-slot="{sl}">{rotulo}</button>')
+    _st = {"ATIVO": 0, "INADIMPLENTE": 0, "CANCELADO": 0}
+    for s in assinantes:
+        if s.get("status") in _st:
+            _st[s.get("status")] += 1
+    st_defs = [("", "Todos", n_total), ("ATIVO", "Ativos", _st["ATIVO"]),
+               ("INADIMPLENTE", "Inadimplentes", _st["INADIMPLENTE"]), ("CANCELADO", "Cancelados", _st["CANCELADO"])]
+    st_chips = "".join(
+        f'<button type="button" class="f-status{" on" if v == "" else ""}" data-status="{v}">{lbl} ({n})</button>'
+        for v, lbl, n in st_defs)
+    filtros_html = (
+        '<div class="subtools">'
+        '<input id="f-nome" class="f-busca" type="search" placeholder="buscar por nome…" autocomplete="off">'
+        f'<span id="f-count" class="f-count">mostrando {n_total} de {n_total}</span>'
+        '</div>'
+        f'<div class="subtools tight"><span class="f-lbl">Status</span><div class="f-chips">{st_chips}</div></div>'
+        f'<div class="subtools tight"><span class="f-lbl">Horário</span><div class="f-chips">{"".join(slot_chips)}</div></div>')
+    card_css = """<style>
+    .subtools{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:16px 0}
+    .f-busca{flex:1;min-width:220px;background:var(--verde2);border:1px solid rgba(233,225,198,.2);border-radius:10px;
+      color:var(--creme);font-family:system-ui,sans-serif;font-size:14px;padding:9px 13px}
+    .f-busca:focus{outline:2px solid var(--ouro2);outline-offset:1px}
+    .f-chips{display:flex;flex-wrap:wrap;gap:6px}
+    .subtools.tight{margin:2px 0;gap:8px 10px}
+    .f-lbl{font-family:system-ui,sans-serif;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--suave);min-width:52px}
+    .f-count{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave);white-space:nowrap}
+    .f-slot,.f-status{cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:700;letter-spacing:.03em;
+      padding:6px 12px;border-radius:100px;background:transparent;color:var(--suave);border:1px solid rgba(233,225,198,.24)}
+    .f-slot.on,.f-status.on{background:#c9a22722;color:var(--ouro2);border-color:#c9a22766}
+    .subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin:6px 0 24px}
+    .subcard{background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:14px;padding:15px 16px}
+    .subcard.hide{display:none}
+    .subcard-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+    .subcard-nome{font-family:"Cormorant Garamond",Georgia,serif;font-size:22px;color:var(--creme);line-height:1.12;word-break:break-word}
+    .subcard .subrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;
+      border-top:1px solid rgba(233,225,198,.08);font-family:system-ui,sans-serif;font-size:13px}
+    .subcard .subrow .k{color:var(--suave);text-transform:uppercase;font-size:10px;letter-spacing:.09em;white-space:nowrap}
+    .subcard .subrow .v{color:var(--texto);text-align:right;word-break:break-word;min-width:0}
+    .subcard .subrow .v.gold{color:var(--ouro2)}
+    .subcard .subrow .v.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--suave)}
+    .edit-num{margin:2px 0}
+    .edit-num>summary{cursor:pointer;list-style:none;color:var(--ouro2);font-family:system-ui,sans-serif;font-size:12.5px;padding:2px 0}
+    .edit-num>summary::-webkit-details-marker{display:none}
+    .edit-num[open]>summary{margin-bottom:8px}
+    .subcard-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(233,225,198,.14)}
+    </style>"""
+    filtro_js = """<script>
+    (function(){
+      var busca=document.getElementById('f-nome');
+      var cnt=document.getElementById('f-count');
+      var slotChips=document.querySelectorAll('.f-slot');
+      var stChips=document.querySelectorAll('.f-status');
+      var cards=document.querySelectorAll('.subcard');
+      var slot='',status='';
+      function apply(){
+        var q=((busca&&busca.value)||'').toLowerCase().trim();
+        var vis=0;
+        cards.forEach(function(c){
+          var ok=(!q||(c.getAttribute('data-nome')||'').indexOf(q)>=0)
+               &&(!slot||c.getAttribute('data-slot')===slot)
+               &&(!status||c.getAttribute('data-status')===status);
+          c.classList.toggle('hide',!ok); if(ok)vis++;
+        });
+        if(cnt)cnt.textContent='mostrando '+vis+' de '+cards.length;
+      }
+      function wire(list,set){list.forEach(function(ch){ch.addEventListener('click',function(){
+        list.forEach(function(x){x.classList.remove('on')});ch.classList.add('on');set(ch);apply();
+      });});}
+      if(busca)busca.addEventListener('input',apply);
+      wire(slotChips,function(ch){slot=ch.getAttribute('data-slot')||'';});
+      wire(stChips,function(ch){status=ch.getAttribute('data-status')||'';});
+    })();
+    </script>"""
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "assinantes")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      {plano_cont_html}
+      {resumo_slots}
       {erro_html}
       {sucesso_html}
       {confirm_html}
       {reenviar_html}
       <div class="infobox" style="margin:14px 0"><strong>Curadoria:</strong> quem estiver marcado como <strong>curador</strong> recebe, todo dia útil às <strong>18h</strong>, o resumo do dia com o link para revisar/aprovar antes do envio das 8h. Você (admin) recebe <em>sempre</em>. Marque um médico convidado aqui para ele ajudar na revisão.</div>
-      <div style="overflow-x:auto;margin:18px 0">
-        <table style="width:100%;border-collapse:collapse;min-width:990px">
-          <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
-            <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
-            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th style="padding:8px 10px">Editar número</th><th style="padding:8px 10px">Boas-vindas</th><th></th></tr></thead>
-          <tbody>{linhas or '<tr><td colspan="10" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
-        </table>
-      </div>
+      {card_css}
+      {filtros_html}
+      <div class="subgrid">{cards or '<p class="hint" style="grid-column:1/-1">Nenhum assinante ainda.</p>'}</div>
+      {filtro_js}
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
-        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
-          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Adicionar cortesia</h3>
-          <p class="hint" style="margin-bottom:12px">Cadastra a pessoa direto como assinante ativo (sem cupom).</p>
-          <form method="post" action="/admin">
-            <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
-            <label>Nome</label><input type="text" name="nome">
-            <label>País</label>{_seletor_pais()}
-            <label>WhatsApp</label><input type="text" name="whatsapp" placeholder="número (com DDD, se BR)">
-            <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
-          </form>
-        </div>
         <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Cupons de cortesia</h3>
           <p class="hint" style="margin-bottom:12px">Gere um cupom de <strong>uso único</strong>. Quem digitar no cadastro entra grátis; depois de 1 uso, ele desativa sozinho.</p>
@@ -1247,10 +1444,14 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
                if cl_banco else ""))
     else:
         vis = [c for c in candidatos if not tema or c.get("tema") == tema]
+        # Filtro de tema ativo e vazio => aponta pro ajuste da busca DAQUELE tema
+        # (mensagem preservada da versão anterior da tela, que tinha abas por tema).
+        vazio = ('<p class="hint">Nenhum candidato neste tema. Rode a varredura ou '
+                 'ajuste a busca deste tema.</p>' if tema else
+                 '<p class="hint">Nada aguardando triagem aqui. A máquina segue '
+                 'escolhendo e enviando sozinha — você decide às 18h.</p>')
         corpo_aba = (_curadoria_chips(candidatos, token, tema)
-                     + ("".join(_curadoria_item(c, token, "triagem", tema) for c in vis)
-                        or '<p class="hint">Nada aguardando triagem aqui. A máquina segue '
-                           'escolhendo e enviando sozinha — você decide às 18h.</p>'))
+                     + ("".join(_curadoria_item(c, token, "triagem", tema) for c in vis) or vazio))
 
     corpo = f"""
     <div class="wrap">
@@ -1647,7 +1848,7 @@ def pagina_assinar(plano_slug=None, erro=""):
                        meta_extra='<meta name="robots" content="noindex">')
     base = float(plano["base"])
     erro_html = f'<div class="erro" style="margin-bottom:16px">{_esc(erro)}</div>' if erro else ""
-    pix_desc = f"{pricing.fmt_brl(base)} à vista"
+    pix_desc = f"{pricing.fmt_brl(pricing.base_cobrada(plano, 'PIX', base))} à vista"
     if plano.get("recorrente_pix"):   # mensal (sem parcelamento)
         cartao_desc = f"{pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês · renova"
         parcelas_html = '<input type="hidden" name="parcelas" value="1">'
@@ -1660,9 +1861,17 @@ def pagina_assinar(plano_slug=None, erro=""):
                          f'<select name="parcelas">{opts}</select></div>')
     inclui = "".join(f'<li><b>✓</b><span>{v}</span></li>' for v in (
         "1 estudo por dia útil, no seu WhatsApp",
-        "Curadoria por IA + revisão médica",
-        "PDF elegante de cada edição",
+        "Curadoria criteriosa + revisão médica",
+        "PDF Objetivo de cada edição",
         "Arquivo completo no portal do assinante"))
+    # mensal saiu do Pix (2026-07-26): sem o tile, o rádio do cartão precisa vir
+    # `checked` — senão o formulário abriria sem forma de pagamento selecionada.
+    sem_pix = plano.get("aceita_pix") is False
+    tile_pix = ("" if sem_pix else
+                f'<label class="paytile"><input type="radio" name="metodo" value="PIX" checked>'
+                f'<span class="pt-ico">⚡</span><span class="pt-nome">Pix</span>'
+                f'<span class="pt-desc">{_esc(pix_desc)}</span></label>')
+    cartao_checked = " checked" if sem_pix else ""
     corpo = f"""
     <div class="wrap">
       <div class="sectag" style="margin-top:8px">Finalizar assinatura</div>
@@ -1673,7 +1882,7 @@ def pagina_assinar(plano_slug=None, erro=""):
           <div class="sum-plan">Plano {_esc(plano["nome"])}</div>
           <div class="sum-price">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
           <ul class="sum-list">{inclui}</ul>
-          <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>Cancele quando quiser, sem multa.</div>
+          <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>7 dias de garantia com reembolso integral.</div>
         </aside>
         <div class="form-side">
           {erro_html}
@@ -1687,13 +1896,17 @@ def pagina_assinar(plano_slug=None, erro=""):
               <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
             <label class="section-label">Forma de pagamento</label>
             <div class="paytiles">
-              <label class="paytile"><input type="radio" name="metodo" value="PIX" checked>
-                <span class="pt-ico">⚡</span><span class="pt-nome">Pix</span><span class="pt-desc">{_esc(pix_desc)}</span></label>
-              <label class="paytile"><input type="radio" name="metodo" value="CARTAO">
+              {tile_pix}
+              <label class="paytile"><input type="radio" name="metodo" value="CARTAO"{cartao_checked}>
                 <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
             </div>
             {parcelas_html}
             <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" style="text-transform:uppercase" placeholder="cortesia ou afiliado"></div>
+            <label class="check-termos">
+              <input type="checkbox" name="aceito" value="1" required>
+              <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Assinatura</a>
+                e a <a href="/privacidade" target="_blank" rel="noopener">Política de Privacidade</a>.</span>
+            </label>
             <button class="btn-pay" type="submit">Continuar para o pagamento →</button>
             <div class="securow">🔒 Ambiente de pagamento seguro</div>
           </form>
@@ -1736,6 +1949,25 @@ def _data_br(iso):
         return iso
 
 
+def _sem_html(texto):
+    """Texto plano a partir do corpo HTML — WhatsApp não renderiza tags (o corpo da
+    confirmação de renovação foi escrito para e-mail; mandar HTML cru pro WhatsApp
+    entrega tags cruas na cara do assinante).
+
+    ACHADO 1 (revisão): o fim de QUALQUER elemento de bloco vira quebra de parágrafo
+    — não só `</p>`. O corpo real (mensagens.email_renovacao) começa com um `<h1>`
+    seguido de `<p>`; tratando só `</p>` o título ficava colado no primeiro parágrafo
+    ("Pagamento confirmadoOlá, João!"). `<a>`/`<span>` (inline) não geram quebra —
+    já vêm cercados de `<br>` no template quando precisam de uma."""
+    import re
+    t = re.sub(r"<br\s*/?>", "\n", texto or "", flags=re.IGNORECASE)
+    t = re.sub(r"</(p|div|h[1-6]|li|ul|ol|table|tr|blockquote|section|article|header|footer)\s*>",
+               "\n\n", t, flags=re.IGNORECASE)
+    t = _html.unescape(re.sub(r"<[^>]+>", "", t))
+    t = re.sub(r"\n{3,}", "\n\n", t)   # nunca 3+ quebras seguidas
+    return t.strip()
+
+
 def _mes_nome(m):
     try:
         return _MESES_LONGO[int(m)]
@@ -1746,6 +1978,36 @@ def _mes_nome(m):
 def _data_br_curto(dt):
     """date -> '10 jul · sex'."""
     return f"{dt.day:02d} {_MESES[dt.month]} · {_DIAS_ABREV[dt.weekday()]}"
+
+
+def pagina_renovar(sub, plano, preco_pix, preco_cartao, vencimento, bonus=False, erro=""):
+    """Tela de renovação do assinante logado. Sem campo de cupom de propósito: o desconto de
+    afiliado vale só na 1ª venda. O bônus de +1 mês só aparece para quem já perdeu o acesso."""
+    erro_html = f'<div class="erro" style="margin-bottom:16px">{_esc(erro)}</div>' if erro else ""
+    bonus_html = ('<p class="hint" style="color:var(--ouro2)"><strong>Volte agora e ganhe '
+                  '1 mês extra</strong> — 13 meses pelo preço de 12.</p>') if bonus else ""
+    corpo = f"""
+    <div class="wrap"><div class="panel" style="max-width:520px">
+      <h2 class="disp">Renovar assinatura</h2>
+      {erro_html}
+      <p class="hint">Plano <strong>{_esc(plano.get("nome") or "")}</strong> ·
+         {"acesso encerrado em" if bonus else "vence em"}
+         <strong>{_esc(_data_br(vencimento))}</strong></p>
+      {bonus_html}
+      <form method="post" action="/renovar">
+        <label class="section-label">Forma de pagamento</label>
+        <div class="paytiles">
+          <label class="paytile"><input type="radio" name="metodo" value="PIX" checked>
+            <span class="pt-ico">⚡</span><span class="pt-nome">Pix</span>
+            <span class="pt-desc">{_esc(pricing.fmt_brl(preco_pix))}</span></label>
+          <label class="paytile"><input type="radio" name="metodo" value="CARTAO">
+            <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span>
+            <span class="pt-desc">{_esc(pricing.fmt_brl(preco_cartao))}</span></label>
+        </div>
+        <button class="btn-pay" type="submit">Continuar para o pagamento →</button>
+      </form>
+    </div></div>"""
+    return _pagina(f"Renovar · {PRODUTO}", corpo, logado=True)
 
 
 def _semana_label(seg):
