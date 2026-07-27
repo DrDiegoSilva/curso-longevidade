@@ -1045,17 +1045,6 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
       {filtro_js}
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
         <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
-          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Adicionar cortesia</h3>
-          <p class="hint" style="margin-bottom:12px">Cadastra a pessoa direto como assinante ativo (sem cupom).</p>
-          <form method="post" action="/admin">
-            <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
-            <label>Nome</label><input type="text" name="nome">
-            <label>País</label>{_seletor_pais()}
-            <label>WhatsApp</label><input type="text" name="whatsapp" placeholder="número (com DDD, se BR)">
-            <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
-          </form>
-        </div>
-        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Cupons de cortesia</h3>
           <p class="hint" style="margin-bottom:12px">Gere um cupom de <strong>uso único</strong>. Quem digitar no cadastro entra grátis; depois de 1 uso, ele desativa sozinho.</p>
           <form method="post" action="/admin">

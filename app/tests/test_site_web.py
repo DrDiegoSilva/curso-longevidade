@@ -239,11 +239,12 @@ class TestSeletorPais(unittest.TestCase):
         self.assertIn('value="55" selected', html)
         self.assertIn("Estados Unidos", html)   # tem opção internacional
 
-    def test_pagina_admin_traz_seletor_no_form_de_cortesia(self):
+    def test_pagina_admin_traz_seletor_no_editar_numero(self):
         import site_web
-        h = site_web.pagina_admin([], token="tk")
-        self.assertIn('name="pais_dial"', h)
-        self.assertIn("Adicionar cortesia", h)
+        h = site_web.pagina_admin(
+            [{"id": 1, "nome": "X", "whatsapp": "5544999998888", "status": "ATIVO"}], token="tk")
+        self.assertIn('name="pais_dial"', h)        # seletor de país no "editar número" do card
+        self.assertIn('value="editar_numero"', h)
 
 
 if __name__ == "__main__":
