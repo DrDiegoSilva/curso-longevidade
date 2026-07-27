@@ -398,6 +398,27 @@ class TestPlanejarComMapa(unittest.TestCase):
         plano = ap.planejar_agenda(dias, cands, {}, None)
         self.assertEqual(plano["2026-07-28"]["ref_id"], "h")
 
+    def test_dia_bloqueado_nao_desloca_os_seguintes(self):
+        # A regressão que originou esta feature: no mecanismo antigo (contador que só
+        # avançava ao preencher, indexando a lista de temas por POSIÇÃO em vez do mapa
+        # dia-da-semana), um dia bloqueado no meio da semana deslocava o tema de todos
+        # os seguintes. Com o mapa por dia isso não pode mais acontecer.
+        # O candidato de Longevidade existe pra provar isso: sob o mecanismo antigo,
+        # a posição 0 (tema de segunda) vaza pro primeiro dia preenchível (terça) —
+        # só um candidato competindo por esse tema deslocado expõe a diferença.
+        dias = [("2026-07-28", None, False),          # terça
+                ("2026-07-29", "Hormonal", True),     # quarta BLOQUEADA
+                ("2026-07-30", None, False),          # quinta
+                ("2026-07-31", None, False)]          # sexta
+        cands = [_cand("Longevidade", ref_id="lo"),
+                 _cand("Obesidade", ref_id="ob1"), _cand("Obesidade", ref_id="ob2"),
+                 _cand("Lipedema", ref_id="li")]
+        plano = ap.planejar_agenda(dias, cands, self.MAPA, None)
+        self.assertNotIn("2026-07-29", plano)                      # bloqueado não recebe plano
+        self.assertEqual(plano["2026-07-28"]["tema"], "Obesidade")
+        self.assertEqual(plano["2026-07-30"]["tema"], "Obesidade")  # quinta NÃO deslocou
+        self.assertEqual(plano["2026-07-31"]["tema"], "Lipedema")   # sexta NÃO deslocou
+
 
 if __name__ == "__main__":
     unittest.main()

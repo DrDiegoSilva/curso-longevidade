@@ -102,7 +102,7 @@ def _temas_por_dia():
 
 def materializar_agenda(n_semanas=4, datas=None):
     """Preenche os dias úteis FUTUROS (>= amanhã) das próximas `n_semanas` semanas
-    seg–sex na agenda (rotação + variedade, reserva pronta antes de fila fresca).
+    seg–sex na agenda (tema do dia + variedade, reserva pronta antes de fila fresca).
     `datas` pode ser passado (lista YYYY-MM-DD) p/ testar com uma janela fixa.
     Reabastece se o estoque não cobre o horizonte. Retorna quantos slots preencheu.
     Fail-safe por slot (um slot ruim não aborta os outros); erros de config propagam."""

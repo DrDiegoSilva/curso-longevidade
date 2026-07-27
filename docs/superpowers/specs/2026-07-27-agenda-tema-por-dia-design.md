@@ -153,6 +153,28 @@ Os testes que passavam `["A"]` passam a `_todo_dia("A")`. O único que precisa d
 | `app/daily.py` | `_rotacao()` → `_temas_por_dia()`; chamada em `materializar_agenda` |
 | `app/tests/test_agenda_plan.py` | testes de `tema_do_dia` + migração dos 10 call sites |
 
+## Rollout
+
+**O deploy sozinho não muda a grade que já está em produção.** Dois motivos:
+
+1. `materializar_agenda` (`daily.py:158`) trata qualquer slot não-vazio (`reserva`, `fila`, `pulado`, `candidato`, `classico` — fixado ou não) como bloqueado e não o reescreve. Os dias que a rotação antiga já materializou continuam com o tema antigo até o slot em questão passar por um ciclo de esvaziar-e-preencher.
+2. `semanas_do_mes` (`agenda_plan.py:41`) ancora sempre na segunda-feira da semana de `hoje` — o horizonte de `n_semanas` só avança quando `hoje` cruza pra uma nova segunda-feira.
+
+Combinados: a grade converge sozinha pro mapa novo em 3–4 semanas, e nesse meio tempo a verificação que este documento propõe ("abrir `/agenda` e conferir Obesidade na terça") dá **falso negativo** — o dia observado ainda carrega o tema da rotação antiga, não porque o código novo esteja errado.
+
+**Passo a passo pós-deploy** (decisão do dono do produto: limpar os dias futuros manualmente em vez de esperar a convergência):
+
+1. Para cada dia futuro **não-fixado** dentro da janela materializada (dias com `data >= amanhã` visíveis em `/agenda`), disparar `POST /agenda acao=pular` seguido de `POST /agenda acao=despular`.
+   - `acao=pular` chama `db.agenda_pular(data, True)`, que chama `db.agenda_devolver` (`db.py:1023`): tira o item do slot, devolve a reserva ao estoque (`marcar_reserva_pronto`) ou o item de fila à fila (`queue_store.devolver`), e marca o slot como `pulado`.
+   - `acao=despular` chama `db.agenda_pular(data, False)`, que zera o slot pra `vazio`.
+   - Candidatos e clássicos órfãos — que não passam pelo `agenda_devolver` porque não têm um status "consumível" como reserva/fila — são recuperados pela reconciliação no topo de `materializar_agenda` (`daily.py:120-138`): assim que o `ref_id` deles deixa de estar preso a algum slot, voltam a ficar elegíveis.
+2. Depois de zerar os dias, disparar `POST /agenda acao=rematerializar` — chama `daily.materializar_agenda()`, que preenche os slots vazios usando `tema_do_dia` (o mapa novo).
+3. **Preservar o dia seguinte (D+1) se o rascunho dele já foi preparado às 18h.** O preparo das 18h já escolheu e processou o estudo daquele slot (resumo, áudio) e o médico pode já ter revisado. Pular+despular devolveria o item ao estoque e descartaria esse trabalho. Deixar D+1 fora do sweep — ele se resolve sozinho quando a agenda avançar e ele deixar de ser D+1.
+
+**Correção à afirmação do plano** (`docs/superpowers/plans/2026-07-27-agenda-tema-por-dia.md:371`, "não há migração de banco nem de estado"): verdadeira para **schema** — nenhuma tabela nova, nenhuma coluna nova. Falsa para **efeito**: a grade já materializada é estado, e o deploy não a reprocessa sozinho. Esse estado exige o sweep acima pra convergir; sem ele, a grade em produção mistura tema antigo e novo por semanas.
+
 ## Verificação que só o Diego pode fazer
 
-Depois do deploy, abrir `/agenda` no admin e conferir que a grade das próximas semanas mostra Obesidade na terça e na quinta, e que a segunda alterna entre Longevidade e Performance de uma semana para a outra.
+**Só é válida depois do sweep de rollout acima.** Antes do sweep, `/agenda` ainda mostra o tema atribuído pela rotação antiga nos dias já materializados — checar Obesidade na terça dá falso negativo até os dias futuros serem limpos e rematerializados.
+
+Depois do sweep, abrir `/agenda` no admin e conferir que a grade das próximas semanas mostra Obesidade na terça e na quinta, e que a segunda alterna entre Longevidade e Performance de uma semana para a outra.
