@@ -1064,6 +1064,38 @@ def _curadoria_abas(aba, contagens, token, tema=""):
     return f'<div class="tabs">{"".join(out)}</div>'
 
 
+def _curadoria_item(c, token, aba="triagem", tema=""):
+    """Um candidato da triagem: título linkado pro estudo, pergunta, meta e as ações
+    imediatas (priorizar/descartar, ou desfazer se já priorizado)."""
+    tk, cid = _esc(token), _esc(c.get("id"))
+    alvo = c.get("url") or (f"https://doi.org/{c.get('doi')}" if c.get("doi") else "")
+    tit = _esc(c.get("titulo"))
+    titulo = (f'<a class="ctitle" href="{_esc(alvo)}" target="_blank" rel="noopener">{tit} ↗</a>'
+              if alvo else f'<span class="ctitle">{tit}</span>')
+
+    def _acao(acao, label):
+        return (f'<form method="post" action="/curadoria" style="display:inline">'
+                f'<input type="hidden" name="token" value="{tk}">'
+                f'<input type="hidden" name="acao" value="{acao}">'
+                f'<input type="hidden" name="id" value="{cid}">'
+                f'<input type="hidden" name="aba" value="{_esc(aba)}">'
+                f'<input type="hidden" name="tema" value="{_esc(tema)}">'
+                f'<button class="slot-btn" type="submit">{label}</button></form>')
+
+    if c.get("status") == "selecionado":
+        acoes = ('<span class="badge badge-fila">⏳ gera hoje à noite</span>'
+                 + _acao("desfazer", "↩️ Desfazer"))
+    else:
+        acoes = _acao("priorizar", "⬆️ Priorizar") + _acao("descartar", "🗑️ Descartar")
+    return (f'<div class="candi" id="cand-{cid}"><span class="cbody">'
+            f'<span style="display:flex;align-items:center;gap:8px;justify-content:space-between">'
+            f'{titulo}{_chip_score(c.get("score"))}</span>'
+            f'<span class="cperg">❓ {_esc(c.get("pergunta") or "—")}</span>'
+            f'<span class="cmeta">{_esc(c.get("fonte", ""))} · {_esc(c.get("data", ""))}'
+            f'{" · DOI " + _esc(c.get("doi")) if c.get("doi") else ""}</span>'
+            f'<span class="cacts">{acoes}</span></span></div>')
+
+
 def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
     from collections import OrderedDict
     tok = _esc(token)

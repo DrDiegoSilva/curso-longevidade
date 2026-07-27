@@ -297,5 +297,57 @@ class TestCuradoriaCabecalho(unittest.TestCase):
         self.assertNotIn("Perda&peso", html)              # nem o espaço cru
 
 
+class TestCuradoriaItem(unittest.TestCase):
+    def setUp(self):
+        import site_web
+        self.s = site_web
+        self.c = {"id": "c1", "titulo": "Tirzepatida 72 semanas", "pergunta": "Sustenta a perda?",
+                  "score": 8, "fonte": "Lancet", "data": "2026-07-12",
+                  "doi": "10.1016/x", "url": "", "status": "novo"}
+
+    def test_mostra_titulo_pergunta_e_meta(self):
+        html = self.s._curadoria_item(self.c, "tok")
+        self.assertIn("Tirzepatida 72 semanas", html)
+        self.assertIn("Sustenta a perda?", html)
+        self.assertIn("Lancet", html)
+        self.assertIn("2026-07-12", html)
+
+    def test_titulo_vira_link_pelo_doi(self):
+        html = self.s._curadoria_item(self.c, "tok")
+        self.assertIn('href="https://doi.org/10.1016/x"', html)
+        self.assertIn('target="_blank"', html)
+
+    def test_titulo_prefere_url_quando_existe(self):
+        html = self.s._curadoria_item({**self.c, "url": "https://ex.com/a"}, "tok")
+        self.assertIn('href="https://ex.com/a"', html)
+
+    def test_sem_doi_e_sem_url_nao_vira_link(self):
+        html = self.s._curadoria_item({**self.c, "doi": "", "url": ""}, "tok")
+        self.assertNotIn("<a class=\"ctitle\"", html)
+        self.assertIn("Tirzepatida 72 semanas", html)
+
+    def test_novo_oferece_priorizar_e_descartar(self):
+        html = self.s._curadoria_item(self.c, "tok")
+        self.assertIn('value="priorizar"', html)
+        self.assertIn('value="descartar"', html)
+        self.assertNotIn('value="desfazer"', html)
+
+    def test_selecionado_mostra_badge_e_desfazer(self):
+        html = self.s._curadoria_item({**self.c, "status": "selecionado"}, "tok")
+        self.assertIn("gera hoje à noite", html)
+        self.assertIn('value="desfazer"', html)
+        self.assertNotIn('value="priorizar"', html)
+
+    def test_ancora_do_item(self):
+        self.assertIn('id="cand-c1"', self.s._curadoria_item(self.c, "tok"))
+
+    def test_preserva_aba_e_tema_no_form(self):
+        html = self.s._curadoria_item(self.c, "tok", aba="triagem", tema="Obesidade")
+        self.assertIn('name="tema" value="Obesidade"', html)
+
+    def test_nao_tem_mais_checkbox(self):
+        self.assertNotIn("<input type=\"checkbox\"", self.s._curadoria_item(self.c, "tok"))
+
+
 if __name__ == "__main__":
     unittest.main()

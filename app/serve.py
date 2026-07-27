@@ -554,10 +554,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             acao, msg = g("acao"), ""
-            if acao == "selecionar":
-                ids = form.get("sel", [])
-                db.definir_selecao(ids)
-                msg = f"Seleção salva ({len(ids)} marcados)."
+            aba, tema = g("aba") or "triagem", g("tema")
+            ancora = ""
+            if acao in ("priorizar", "descartar", "desfazer"):
+                novo = {"priorizar": "selecionado", "descartar": "descartado",
+                        "desfazer": "novo"}[acao]
+                cid = g("id")
+                db.marcar_candidatos([cid], novo)
+                msg = {"priorizar": "Priorizado — o resumo é gerado hoje à noite.",
+                       "descartar": "Estudo descartado.",
+                       "desfazer": "Prioridade removida."}[acao]
+                ancora = f"#cand-{up.quote(cid)}" if acao == "desfazer" else ""
             elif acao == "varrer":
                 try:
                     msg = f"Varredura concluída: {curadoria.rodar_varredura()} novos candidatos."
@@ -579,7 +586,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif acao == "remover_reserva":
                 db.remover_reserva(g("id"))
                 msg = "Item removido da reserva."
-            return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
+            destino = (f"/curadoria?token={config.ADMIN_TOKEN}&aba={up.quote(aba)}"
+                       f"&tema={up.quote(tema)}&msg={up.quote(msg)}{ancora}")
+            return self._redirect(destino)
         if path == "/entrar":
             if not self._rate_ok("login", 15, 300):   # 15 tentativas / 5 min por IP
                 return
