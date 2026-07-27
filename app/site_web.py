@@ -931,7 +931,7 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
     def card(s):
         atual = subscribers.slot_de(s)
         return (
-            f'<div class="subcard" data-nome="{_esc((s.get("nome") or "").lower())}" data-slot="{_esc(atual)}">'
+            f'<div class="subcard" data-nome="{_esc((s.get("nome") or "").lower())}" data-slot="{_esc(atual)}" data-status="{_esc(s.get("status") or "")}">'
             f'<div class="subcard-top"><span class="subcard-nome">{_esc(s.get("nome") or "—")}</span>{badge(s.get("status"))}</div>'
             f'<div class="subrow"><span class="k">WhatsApp</span><span class="v mono">{_esc(s.get("whatsapp") or "—")}</span></div>'
             f'<details class="edit-num"><summary>✏️ editar número</summary>{cel_editar_numero(s)}</details>'
@@ -969,26 +969,41 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
     if _pl["Outros"]:
         plano_cont += f' · Outros: {_pl["Outros"]}'
     plano_cont_html = f'<p class="hint" style="margin-top:2px">{plano_cont}</p>'
-    # filtros client-side: busca por nome + chips de horário (o rótulo mostra a contagem)
-    chips = ['<button type="button" class="f-slot on" data-slot="">Todos</button>']
+    # filtros client-side: busca por nome + chips de status + chips de horário (rótulos com contagem)
+    n_total = len(assinantes)
+    slot_chips = ['<button type="button" class="f-slot on" data-slot="">Todos</button>']
     for sl in config.SLOTS:
         n = (contagem_slots or {}).get(sl)
         rotulo = sl + (f" ({n})" if n is not None else "")
-        chips.append(f'<button type="button" class="f-slot" data-slot="{sl}">{rotulo}</button>')
+        slot_chips.append(f'<button type="button" class="f-slot" data-slot="{sl}">{rotulo}</button>')
+    _st = {"ATIVO": 0, "INADIMPLENTE": 0, "CANCELADO": 0}
+    for s in assinantes:
+        if s.get("status") in _st:
+            _st[s.get("status")] += 1
+    st_defs = [("", "Todos", n_total), ("ATIVO", "Ativos", _st["ATIVO"]),
+               ("INADIMPLENTE", "Inadimplentes", _st["INADIMPLENTE"]), ("CANCELADO", "Cancelados", _st["CANCELADO"])]
+    st_chips = "".join(
+        f'<button type="button" class="f-status{" on" if v == "" else ""}" data-status="{v}">{lbl} ({n})</button>'
+        for v, lbl, n in st_defs)
     filtros_html = (
         '<div class="subtools">'
         '<input id="f-nome" class="f-busca" type="search" placeholder="buscar por nome…" autocomplete="off">'
-        f'<div class="f-chips">{"".join(chips)}</div>'
-        '</div>')
+        f'<span id="f-count" class="f-count">mostrando {n_total} de {n_total}</span>'
+        '</div>'
+        f'<div class="subtools tight"><span class="f-lbl">Status</span><div class="f-chips">{st_chips}</div></div>'
+        f'<div class="subtools tight"><span class="f-lbl">Horário</span><div class="f-chips">{"".join(slot_chips)}</div></div>')
     card_css = """<style>
     .subtools{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:16px 0}
     .f-busca{flex:1;min-width:220px;background:var(--verde2);border:1px solid rgba(233,225,198,.2);border-radius:10px;
       color:var(--creme);font-family:system-ui,sans-serif;font-size:14px;padding:9px 13px}
     .f-busca:focus{outline:2px solid var(--ouro2);outline-offset:1px}
     .f-chips{display:flex;flex-wrap:wrap;gap:6px}
-    .f-slot{cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:700;letter-spacing:.03em;
+    .subtools.tight{margin:2px 0;gap:8px 10px}
+    .f-lbl{font-family:system-ui,sans-serif;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--suave);min-width:52px}
+    .f-count{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave);white-space:nowrap}
+    .f-slot,.f-status{cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:700;letter-spacing:.03em;
       padding:6px 12px;border-radius:100px;background:transparent;color:var(--suave);border:1px solid rgba(233,225,198,.24)}
-    .f-slot.on{background:#c9a22722;color:var(--ouro2);border-color:#c9a22766}
+    .f-slot.on,.f-status.on{background:#c9a22722;color:var(--ouro2);border-color:#c9a22766}
     .subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin:6px 0 24px}
     .subcard{background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:14px;padding:15px 16px}
     .subcard.hide{display:none}
@@ -1009,21 +1024,28 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
     filtro_js = """<script>
     (function(){
       var busca=document.getElementById('f-nome');
-      var chips=document.querySelectorAll('.f-slot');
-      var slot='';
+      var cnt=document.getElementById('f-count');
+      var slotChips=document.querySelectorAll('.f-slot');
+      var stChips=document.querySelectorAll('.f-status');
+      var cards=document.querySelectorAll('.subcard');
+      var slot='',status='';
       function apply(){
         var q=((busca&&busca.value)||'').toLowerCase().trim();
-        document.querySelectorAll('.subcard').forEach(function(c){
-          var okN=!q||(c.getAttribute('data-nome')||'').indexOf(q)>=0;
-          var okS=!slot||c.getAttribute('data-slot')===slot;
-          c.classList.toggle('hide',!(okN&&okS));
+        var vis=0;
+        cards.forEach(function(c){
+          var ok=(!q||(c.getAttribute('data-nome')||'').indexOf(q)>=0)
+               &&(!slot||c.getAttribute('data-slot')===slot)
+               &&(!status||c.getAttribute('data-status')===status);
+          c.classList.toggle('hide',!ok); if(ok)vis++;
         });
+        if(cnt)cnt.textContent='mostrando '+vis+' de '+cards.length;
       }
+      function wire(list,set){list.forEach(function(ch){ch.addEventListener('click',function(){
+        list.forEach(function(x){x.classList.remove('on')});ch.classList.add('on');set(ch);apply();
+      });});}
       if(busca)busca.addEventListener('input',apply);
-      chips.forEach(function(ch){ch.addEventListener('click',function(){
-        chips.forEach(function(x){x.classList.remove('on')});ch.classList.add('on');
-        slot=ch.getAttribute('data-slot')||'';apply();
-      });});
+      wire(slotChips,function(ch){slot=ch.getAttribute('data-slot')||'';});
+      wire(stChips,function(ch){status=ch.getAttribute('data-status')||'';});
     })();
     </script>"""
     corpo = f"""

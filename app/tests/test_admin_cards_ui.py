@@ -61,6 +61,21 @@ class TestAdminCards(unittest.TestCase):
         self.assertIn("data-nome=", html)        # atributos p/ o filtro client-side
         self.assertIn("data-slot=", html)
 
+    def test_filtro_status_e_contador(self):
+        subs = [self._sub(id=1, status="ATIVO"), self._sub(id=2, status="INADIMPLENTE")]
+        html = self.sw.pagina_admin(subs, token="tk")
+        self.assertIn('id="f-count"', html)           # contador "mostrando X de Y"
+        self.assertIn("mostrando 2 de 2", html)
+        self.assertIn('class="f-status', html)        # chips de status
+        self.assertIn('data-status="ATIVO"', html)    # chip de Ativos
+        self.assertIn("Ativos (1)", html)             # contagem por status no rótulo
+        self.assertIn('data-status="ATIVO"', html)
+        self.assertIn("Inadimplentes (1)", html)
+
+    def test_card_tem_data_status(self):
+        html = self.sw.pagina_admin([self._sub(status="INADIMPLENTE")], token="tk")
+        self.assertIn('data-status="INADIMPLENTE"', html)
+
     def test_vazio(self):
         html = self.sw.pagina_admin([], token="tk")
         self.assertIn("Nenhum assinante ainda", html)
