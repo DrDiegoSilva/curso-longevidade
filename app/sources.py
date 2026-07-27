@@ -109,14 +109,11 @@ def reconstruir_abstract(inv):
     return " ".join(pos[i] for i in sorted(pos))
 
 
-def _openalex_normalizado(query, desde, ate):
-    """OpenAlex: 250M+ trabalhos, abstract + citações, sem chave. Só artigos COM abstract."""
-    filtro = f"from_publication_date:{desde},to_publication_date:{ate},type:article,has_abstract:true"
-    url = ("https://api.openalex.org/works?search=" + urllib.parse.quote(query)
-           + "&filter=" + urllib.parse.quote(filtro)
-           + "&per-page=40&sort=relevance_score:desc&mailto=" + urllib.parse.quote(_MAILTO))
+def parse_openalex(data):
+    """Normaliza a resposta do OpenAlex. Só artigos COM abstract. Puro/testável.
+    Inclui 'citacoes' (cited_by_count) p/ ranquear clássicos."""
     out = []
-    for w in _get(url).get("results", []):
+    for w in (data or {}).get("results", []) or []:
         ab = reconstruir_abstract(w.get("abstract_inverted_index"))
         if len(ab) < 120:
             continue
@@ -130,9 +127,19 @@ def _openalex_normalizado(query, desde, ate):
             "url": w.get("doi") or w.get("id") or "",
             "data": w.get("publication_date", ""),
             "tipo": w.get("type", ""),
+            "citacoes": int(w.get("cited_by_count", 0) or 0),
             "banco": "openalex",
         })
     return out
+
+
+def _openalex_normalizado(query, desde, ate):
+    """OpenAlex: 250M+ trabalhos, abstract + citações, sem chave. Só artigos COM abstract."""
+    filtro = f"from_publication_date:{desde},to_publication_date:{ate},type:article,has_abstract:true"
+    url = ("https://api.openalex.org/works?search=" + urllib.parse.quote(query)
+           + "&filter=" + urllib.parse.quote(filtro)
+           + "&per-page=40&sort=relevance_score:desc&mailto=" + urllib.parse.quote(_MAILTO))
+    return parse_openalex(_get(url))
 
 
 def parse_semanticscholar(data):

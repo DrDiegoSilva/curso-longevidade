@@ -1,8 +1,10 @@
 """Planejamento puro da agenda de envios — sem I/O (testável em memória).
 
-Regras: preencher só os dias VAZIOS; rotação de tema como guia + variedade
-(não repetir o tema do dia anterior quando houver alternativa) + preferência
-reserva pronta > fila fresca. Não consome candidato duas vezes.
+Regras: preencher só os dias VAZIOS; variedade (não repetir o tema do dia
+anterior quando houver alternativa) > rotação de tema como guia da vez >
+fresh-first (candidato fresco, ≤30d) > TIER de curadoria (curada/reserva >
+crua/candidato-fila > clássico como PISO, só entra quando não há melhor) >
+nota (score, só desempata dentro do mesmo tier). Não consome candidato duas vezes.
 """
 from datetime import datetime, timedelta
 
@@ -39,11 +41,21 @@ def semanas_do_mes(hoje, dias_envio, n_semanas=4):
     return out
 
 
+def _tier(cand):
+    """Camada de curadoria: clássico é o piso; entre o resto, curada (reserva, revisada por
+    humano) bate crua (candidato/fila, direto da varredura, sem revisão)."""
+    if cand.get("classico"):
+        return 0                       # clássico é o piso
+    return 2 if cand.get("tipo") == "reserva" else 1   # curada(reserva)=2 > crua(candidato/fila)=1
+
+
 def _rank(cand, preferido, prev):
     return (
-        1 if cand["tema"] != prev else 0,           # variedade (regra forte)
-        1 if cand["tipo"] == "reserva" else 0,      # reserva pronta > fila fresca
-        1 if cand["tema"] == preferido else 0,      # rotação: só guia/desempate
+        1 if cand["tema"] != prev else 0,            # variedade (regra forte)
+        1 if cand["tema"] == preferido else 0,       # rotação = tema do dia (guia da vez)
+        1 if cand.get("fresco") else 0,              # fresh-first (≤30d)
+        _tier(cand),                                 # curada(2) > crua(1) > clássico(0)
+        cand.get("score", 0),                        # nota (score) só desempata dentro da mesma camada
     )
 
 
@@ -86,6 +98,10 @@ def classificar_slot(slot):
         return ("pulado", None)
     if t == "reserva" and slot.get("ref_id"):
         return ("reserva", slot["ref_id"])
+    if t == "candidato" and slot.get("ref_id"):
+        return ("candidato", slot["ref_id"])
+    if t == "classico" and slot.get("ref_id"):
+        return ("classico", slot["ref_id"])
     if t == "fila" and slot.get("payload"):
         return ("fila", slot["payload"])
     return ("fallback", None)

@@ -172,14 +172,21 @@ def init():
                 id TEXT PRIMARY KEY,
                 tema TEXT, titulo TEXT, fonte TEXT, data TEXT, doi TEXT, url TEXT,
                 abstract TEXT, pergunta TEXT, score REAL, chave TEXT UNIQUE,
+                citacoes INTEGER DEFAULT 0, tipo TEXT DEFAULT 'varredura',
                 status TEXT DEFAULT 'novo', criado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS classicos (
+                id TEXT PRIMARY KEY, tema TEXT, titulo_pt TEXT, resumo TEXT,
+                gancho TEXT, grafico TEXT, doi TEXT, fonte TEXT, url TEXT, data TEXT,
+                citacoes INTEGER DEFAULT 0, ultimo_envio TEXT, criado_em TEXT
             );
             CREATE TABLE IF NOT EXISTS reserva_resumos (
                 id TEXT PRIMARY KEY, candidato_id TEXT,
                 tema TEXT, titulo_pt TEXT, resumo TEXT, gancho TEXT, grafico TEXT,
                 doi TEXT, fonte TEXT, url TEXT, data TEXT,
                 status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
-                origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT
+                origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT,
+                score REAL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS daily_drafts (
                 data TEXT PRIMARY KEY,
@@ -223,7 +230,7 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
-            "automacoes_renovacao", "avisos_renovacao"]
+            "automacoes_renovacao", "avisos_renovacao", "classicos"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -251,6 +258,7 @@ def _migrar_colunas():
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
+        _add_coluna(c, "reserva_resumos", "score", "REAL DEFAULT 0")
         _add_coluna(c, "pending_signups", "afiliado_codigo", "TEXT")
         _add_coluna(c, "subscribers", "termos_versao", "TEXT")
         _add_coluna(c, "subscribers", "termos_aceito_em", "TEXT")
@@ -267,6 +275,8 @@ def _migrar_colunas():
         # guarda de parcela não distingue uma parcela atrasada do contrato antigo da parcela 1
         # de um contrato NOVO — e o ex-assinante que voltava no anual em 12x pagava sem receber.
         _add_coluna(c, "subscribers", "asaas_installment_id", "TEXT")
+        _add_coluna(c, "curadoria_candidatos", "citacoes", "INTEGER DEFAULT 0")
+        _add_coluna(c, "curadoria_candidatos", "tipo", "TEXT DEFAULT 'varredura'")
 
 
 def _habilitar_rls():
@@ -787,25 +797,28 @@ def salvar_candidatos(cands):
                 continue
             cur = c.execute(
                 """INSERT INTO curadoria_candidatos
-                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,status,criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
+                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,citacoes,tipo,status,criado_em)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
                    ON CONFLICT (chave) DO NOTHING""",
                 (secrets.token_hex(8), x.get("tema", ""), x.get("titulo", ""), x.get("fonte", ""),
                  x.get("data", ""), x.get("doi", ""), x.get("url", ""), x.get("abstract", ""),
                  x.get("pergunta", ""), float(x.get("score", 0) or 0), x.get("chave"),
+                 int(x.get("citacoes", 0) or 0), x.get("tipo", "varredura"),
                  datetime.now().isoformat()))
             if cur.rowcount and cur.rowcount > 0:
                 novos += 1
     return novos
 
 
-def listar_candidatos(status=None, tema=None):
+def listar_candidatos(status=None, tema=None, tipo=None):
     q = "SELECT * FROM curadoria_candidatos"
     conds, params = [], []
     if status:
         conds.append("status=?"); params.append(status)
     if tema:
         conds.append("tema=?"); params.append(tema)
+    if tipo:
+        conds.append("tipo=?"); params.append(tipo)
     if conds:
         q += " WHERE " + " AND ".join(conds)
     q += " ORDER BY tema, score DESC, criado_em DESC"
@@ -831,6 +844,18 @@ def marcar_candidatos(ids, status):
             c.execute("UPDATE curadoria_candidatos SET status=? WHERE id=?", (status, i))
 
 
+def marcar_candidato_agendado(cid):
+    """Prende um candidato na agenda (sai do pool 'novo' até enviar/soltar)."""
+    with _conn() as c:
+        c.execute("UPDATE curadoria_candidatos SET status='agendado' WHERE id=?", (cid,))
+
+
+def marcar_candidato_pronto(cid):
+    """Devolve um candidato agendado ao pool (reconciliação de órfão)."""
+    with _conn() as c:
+        c.execute("UPDATE curadoria_candidatos SET status='novo' WHERE id=?", (cid,))
+
+
 def contar_candidatos():
     with _conn() as c:
         rows = c.execute("SELECT status, COUNT(*) n FROM curadoria_candidatos GROUP BY status").fetchall()
@@ -846,12 +871,13 @@ def salvar_reserva(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO reserva_resumos
-               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?)""",
+               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?)""",
             (rid, reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
              reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
              reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""),
-             int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat()))
+             int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat(),
+             float(reg.get("score", 0) or 0)))
     return rid
 
 
@@ -860,7 +886,7 @@ def listar_reserva(status=None):
     params = []
     if status:
         q += " WHERE status=?"; params.append(status)
-    q += " ORDER BY prioridade DESC, criado_em DESC"
+    q += " ORDER BY prioridade DESC, score DESC, criado_em DESC"
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
 
@@ -873,11 +899,12 @@ def contar_reserva_pronto():
 
 
 def proximo_da_reserva():
-    """Próximo resumo a enviar da fila: prioridade (artigos do Diego) primeiro, depois
-    os mais antigos. Só 'pronto'. Retorna dict ou None (não marca — o envio confirma)."""
+    """Próximo resumo a enviar da fila: prioridade (artigos do Diego) primeiro, depois nota
+    (score) maior, depois os mais antigos. Só 'pronto'. Retorna dict ou None (não marca —
+    o envio confirma)."""
     with _conn() as c:
         r = c.execute("SELECT * FROM reserva_resumos WHERE status='pronto' "
-                      "ORDER BY prioridade DESC, criado_em ASC LIMIT 1").fetchone()
+                      "ORDER BY prioridade DESC, score DESC, criado_em ASC LIMIT 1").fetchone()
     return dict(r) if r else None
 
 
@@ -905,6 +932,54 @@ def marcar_reserva_pronto(rid):
     """Devolve o resumo agendado ao estoque 'pronto'."""
     with _conn() as c:
         c.execute("UPDATE reserva_resumos SET status='pronto' WHERE id=?", (rid,))
+
+
+# ── Clássicos (estudos-marco evergreen, reusáveis — NÃO são consumidos no envio) ──
+def salvar_classico(reg):
+    """Banca um estudo-marco (evergreen, reusável). Retorna o id."""
+    import secrets
+    from datetime import datetime
+    cid = secrets.token_hex(8)
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO classicos
+               (id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (cid, reg.get("tema", ""), reg.get("titulo_pt", ""), reg.get("resumo", ""),
+             reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""), reg.get("fonte", ""),
+             reg.get("url", ""), reg.get("data", ""), int(reg.get("citacoes", 0) or 0),
+             datetime.now().isoformat()))
+    return cid
+
+
+def obter_classico(cid):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM classicos WHERE id=?", (cid,)).fetchone()
+    return dict(r) if r else None
+
+
+def listar_classicos(tema=None, elegiveis=True):
+    """Clássicos do banco. elegiveis=True filtra por ciclo: nunca-enviado OU ultimo_envio mais
+    antigo que config.CLASSICO_REUSO_MESES; ordena nunca-enviado/mais-antigo primeiro, + citado."""
+    q = "SELECT * FROM classicos"
+    conds, params = [], []
+    if tema:
+        conds.append("tema=?"); params.append(tema)
+    if elegiveis:
+        from datetime import datetime, timedelta
+        corte = (datetime.now() - timedelta(days=30 * config.CLASSICO_REUSO_MESES)).isoformat()
+        conds.append("(ultimo_envio IS NULL OR ultimo_envio < ?)"); params.append(corte)
+    if conds:
+        q += " WHERE " + " AND ".join(conds)
+    q += " ORDER BY (ultimo_envio IS NOT NULL), ultimo_envio ASC, citacoes DESC"
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+def marcar_classico_enviado(cid, data):
+    """Marca o envio de um clássico (NÃO deleta — reusável no próximo ciclo)."""
+    with _conn() as c:
+        c.execute("UPDATE classicos SET ultimo_envio=? WHERE id=?", (data, cid))
 
 
 # ── Agenda (data -> estudo) ──
@@ -997,6 +1072,13 @@ def agenda_ref_ids_reserva():
     Usado pela reconciliação do materializar (evita agendar o mesmo item 2x)."""
     with _conn() as c:
         rows = c.execute("SELECT ref_id FROM agenda WHERE tipo='reserva' AND ref_id IS NOT NULL").fetchall()
+    return {r["ref_id"] for r in rows}
+
+
+def agenda_ref_ids(tipo):
+    """ref_ids de um tipo de slot (reserva/candidato/classico) — p/ a reconciliação."""
+    with _conn() as c:
+        rows = c.execute("SELECT ref_id FROM agenda WHERE tipo=? AND ref_id IS NOT NULL", (tipo,)).fetchall()
     return {r["ref_id"] for r in rows}
 
 

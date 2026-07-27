@@ -28,7 +28,7 @@ def _chave(a):
     return (a.get("doi") or a.get("url") or a.get("titulo") or "").strip().lower()
 
 
-def _normalizar(a, tema):
+def _normalizar(a, tema, tipo="varredura"):
     return {
         "tema": tema,
         "titulo": (a.get("titulo") or "").strip(),
@@ -38,6 +38,8 @@ def _normalizar(a, tema):
         "url": a.get("url") or "",
         "abstract": (a.get("resumo") or "")[:2500],
         "score": float(a.get("score", 5) or 0),
+        "citacoes": int(a.get("citacoes", 0) or 0),
+        "tipo": tipo,
         "chave": _chave(a),
     }
 
@@ -74,6 +76,48 @@ def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None):
                 continue
             vistos.add(k)
             out.append(_normalizar(a, nome))
+            n += 1
+            if n >= cap:
+                break
+    return out
+
+
+def varrer_classicos(caps=None, buscar_fn=None, triar_fn=None, anos=10):
+    """Estudos-marco por tema: busca numa janela ampla (anos) -> triagem (corta LIXO) ->
+    top(cap) por CITAÇÕES desc, dedup global. Candidatos marcados tipo='classico'.
+    buscar_fn/triar_fn injetáveis (teste sem rede)."""
+    from datetime import timedelta
+    caps = caps or CAPS
+    if buscar_fn is None:
+        import sources
+        buscar_fn = sources.search_all
+    if triar_fn is None:
+        import triage
+        triar_fn = triage.triar
+    cfg = _cfg()
+    desde = (date.today() - timedelta(days=365 * anos)).isoformat()
+    ate = date.today().isoformat()
+    vistos, out = set(), []
+    for nome, meta in cfg["temas"].items():
+        cap = int(caps.get(nome, 6))
+        if cap <= 0:
+            continue
+        try:
+            arts = buscar_fn(meta.get("query", ""), desde, ate)
+            bons = []
+            for k in range(0, len(arts), 20):
+                bons += triar_fn(arts[k:k + 20], nome)
+        except Exception as e:
+            print(f"[classicos] {nome} falhou: {e}", flush=True)
+            continue
+        bons.sort(key=lambda x: x.get("citacoes", 0), reverse=True)
+        n = 0
+        for a in bons:
+            k = _chave(a)
+            if not k or k in vistos:
+                continue
+            vistos.add(k)
+            out.append(_normalizar(a, nome, tipo="classico"))
             n += 1
             if n >= cap:
                 break
@@ -166,9 +210,12 @@ def extrair_texto_pdf(pdf_bytes):
             pass
 
 
-def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet", **geradores):
+def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet",
+                         triar_fn=None, **geradores):
     """Gera o resumo de um estudo do Diego (texto do PDF ou colado) e coloca na fila
-    COM PRIORIDADE (fura a fila). Retorna (id_reserva, titulo_pt)."""
+    COM PRIORIDADE (fura a fila). A nota (score) vem da MESMA triagem por IA usada na
+    varredura, pra o manual competir na fila por qualidade (não só furar por prioridade).
+    Retorna (id_reserva, titulo_pt). triar_fn injetável p/ teste (sem rede)."""
     import json
     import db
     db.init()
@@ -178,6 +225,12 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
                          "Envie um PDF com texto selecionável ou cole o resumo do estudo.")
     cand = {"titulo": titulo, "fonte": fonte, "doi": doi, "url": url, "data": data,
             "abstract": corpo[:14000]}              # corta p/ caber no prompt
+    if triar_fn is None:
+        import triage
+        triar_fn = triage.triar
+    tema_triagem = "Meus estudos"
+    triados = triar_fn([{"titulo": titulo or "", "resumo": corpo, "fonte": fonte}], tema_triagem)
+    score = triados[0].get("score", 0) if triados else 7   # LIXO/no-return -> default 7 (Diego escolheu)
     # Sem título informado -> gerar o título a partir do TEXTO. Senão a IA de título é
     # instruída a reescrever um "título em inglês" vazio e devolve um recado de erro.
     if not (titulo or "").strip() and "gerar_titulo" not in geradores:
@@ -190,7 +243,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
         "gancho": r.get("gancho", ""),
         "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
         "doi": doi, "fonte": fonte, "url": url, "data": data,
-        "prioridade": 1, "origem": "manual"})
+        "prioridade": 1, "origem": "manual", "score": score})
     return rid, r["titulo_pt"]
 
 
@@ -208,25 +261,44 @@ def rodar_varredura(desde=None, ate=None, caps=None):
     return n
 
 
-def gerar_selecionados():
-    """Gera o resumo (padrão) de cada candidato 'selecionado' -> reserva. Retorna quantos."""
+def rodar_varredura_classicos(caps=None):
+    """Varre clássicos (por citações) + gera perguntas (Haiku) + salva candidatos tipo='classico'."""
     import db
-    db.init()                       # garante as tabelas (deploy novo / CLI)
+    db.init()
+    cands = varrer_classicos(caps=caps)
+    gerar_perguntas(cands)
+    n = db.salvar_candidatos(cands)
+    print(f"[classicos] varredura: {len(cands)} candidatos, {n} novos salvos", flush=True)
+    return n
+
+
+def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
+    """Gera o resumo (padrão) de cada candidato 'selecionado'. tipo='classico' -> banco de
+    clássicos; senão -> reserva. Retorna quantos. db_mod/gerar_resumo_fn injetáveis p/ teste."""
+    if db_mod is None:
+        import db as db_mod
+    db_mod.init()                   # garante as tabelas (deploy novo / CLI)
+    _gera = gerar_resumo_fn or gerar_resumo
     feitos = 0
-    for c in db.listar_candidatos(status="selecionado"):
+    for c in db_mod.listar_candidatos(status="selecionado"):
         try:
-            r = gerar_resumo(c)
-            db.salvar_reserva({
-                "candidato_id": c["id"], "tema": c["tema"], "titulo_pt": r["titulo_pt"],
-                "resumo": r["resumo"], "gancho": r.get("gancho", ""),
-                "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
-                "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
-                "data": c.get("data", "")})
-            db.marcar_candidatos([c["id"]], "resumido")
+            r = _gera(c)
+            reg = {"tema": c["tema"], "titulo_pt": r["titulo_pt"], "resumo": r["resumo"],
+                   "gancho": r.get("gancho", ""),
+                   "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
+                   "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
+                   "data": c.get("data", ""), "score": c.get("score", 0)}
+            if c.get("tipo") == "classico":
+                reg["citacoes"] = c.get("citacoes", 0)
+                db_mod.salvar_classico(reg)
+            else:
+                reg["candidato_id"] = c["id"]
+                db_mod.salvar_reserva(reg)
+            db_mod.marcar_candidatos([c["id"]], "resumido")
             feitos += 1
         except Exception as e:
             print(f"[curadoria] gerar resumo falhou ({c.get('titulo','')[:40]}): {e}", flush=True)
-    print(f"[curadoria] {feitos} resumo(s) gerado(s) para a reserva", flush=True)
+    print(f"[curadoria] {feitos} resumo(s) gerado(s)", flush=True)
     return feitos
 
 
@@ -235,7 +307,9 @@ if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "varrer"
     if cmd == "varrer":
         rodar_varredura()
+    elif cmd == "classicos":
+        rodar_varredura_classicos()
     elif cmd == "gerar":
         gerar_selecionados()
     else:
-        print("uso: python curadoria.py [varrer|gerar]")
+        print("uso: python curadoria.py [varrer|classicos|gerar]")

@@ -68,7 +68,8 @@ def agendador():
     def _prep_e_18h():
         daily.enviar_slot("18h")   # envia HOJE 1º (independente da preparação de amanhã, que pode falhar)
         daily.preparar_18h()       # prepara amanhã (o try/except do loop do agendador cobre se falhar)
-    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h}
+    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h,
+               "varredura_semanal": daily.varredura_semanal}
     for s in config.SLOTS:
         if s not in ("08h", "18h"):
             tarefas[f"slot:{s}"] = (lambda sl=s: daily.enviar_slot(sl))
@@ -82,6 +83,7 @@ def agendador():
             horarios.append((h, "prep18"))
         else:
             horarios.append((h, f"slot:{s}"))
+    horarios.append((config.HORA_VARREDURA, "varredura_semanal"))   # self-gate: só domingo, 1x/semana
     while True:
         now = _now().replace(tzinfo=None)
         alvo, nome = proximo_disparo(now, horarios)
@@ -258,7 +260,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.init()
             return self._html(site_web.pagina_admin(
                 subscribers.listar(), config.ADMIN_TOKEN or "", db.listar_cupons(),
-                confirmar_id=q.get("confirmar", [""])[0] or None), 200)
+                confirmar_id=q.get("confirmar", [""])[0] or None,
+                erro=q.get("erro", [""])[0],
+                reenviar_id=q.get("reenviar", [""])[0] or None,
+                sucesso=q.get("sucesso", [""])[0],
+                contagem_slots=subscribers.contar_por_slot()), 200)
         if path.startswith("/agenda"):
             import config, db, daily, agenda_plan, site_web, auth_web
             from datetime import datetime, timedelta
@@ -333,6 +339,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_login())
         if path == "/entrar-codigo":
             return self._html(site_web.pagina_entrar("numero"))
+        if path == "/entrar-cpf":
+            return self._html(site_web.pagina_login(via="cpf"))
+        if path == "/entrar-cpf-codigo":
+            return self._html(site_web.pagina_entrar("numero", via="cpf"))
         if path == "/primeiro-acesso":
             return self._html(site_web.pagina_recuperar("primeiro"))
         if path == "/esqueci":
@@ -540,18 +550,71 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg=Dias+salvos"
                                   if token_ok else "/admin/envio?msg=Dias+salvos")
         if path == "/admin":
-            import config, subscribers, auth_web, db
+            import config, subscribers, auth_web, db, phone
             sess = self._sessao()
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             acao = g("acao")
             if acao == "adicionar":
-                subscribers.adicionar(g("nome"), g("whatsapp"))
+                wa_input = g("whatsapp").strip()
+                if not wa_input:
+                    erro = up.quote("Número de WhatsApp é obrigatório.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = phone.montar_e164(g("pais_dial") or "55", wa_input)
+                subscribers.adicionar(g("nome"), novo)
             elif acao == "remover":
                 return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&confirmar={g('id')}" if token_ok else "/admin")
             elif acao == "remover_confirmar":
                 subscribers.remover(g("id"))
+            elif acao == "editar_numero":
+                num_input = g("numero").strip()
+                if not num_input:
+                    erro = up.quote("Número é obrigatório.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = phone.montar_e164(g("pais_dial") or "55", num_input)
+                outro = subscribers.por_whatsapp(novo)
+                if outro and str(outro["id"]) != str(g("id")):
+                    erro = up.quote("Esse número já é de outro assinante.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                subscribers.atualizar_whatsapp(g("id"), novo)
+            elif acao == "reenviar":
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&reenviar={g('id')}"
+                                      if token_ok else f"/admin?reenviar={g('id')}")
+            elif acao == "reenviar_confirmar":
+                sub = subscribers.por_id(g("id"))
+                if not sub:
+                    erro = up.quote("Assinante não encontrado.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                ok, detalhe = auth_web.reenviar_boas_vindas_wa(sub)
+                if ok:
+                    msg = up.quote("✅ Boas-vindas reenviadas por WhatsApp.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&sucesso={msg}"
+                                          if token_ok else f"/admin?sucesso={msg}")
+                erro = up.quote(f"❌ Falha ao reenviar: {detalhe}")
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                      if token_ok else f"/admin?erro={erro}")
+            elif acao == "definir_slot":
+                import daily as _daily
+                sub = subscribers.por_id(g("id"))
+                if not sub:
+                    erro = up.quote("Assinante não encontrado.")
+                    return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&erro={erro}"
+                                          if token_ok else f"/admin?erro={erro}")
+                novo = g("slot")
+                subscribers.definir_slot(sub["id"], novo)   # valida ∈ SLOTS; SEM teto (admin fura)
+                if novo in config.SLOTS and db.slot_ja_enviou(_daily._hoje_iso(), novo):
+                    try:
+                        _daily.enviar_catch_up(subscribers.por_id(sub["id"]))
+                    except Exception as e:
+                        print(f"[admin] catch-up de slot falhou: {e}", flush=True)
+                msg = up.quote("✅ Horário atualizado.")
+                return self._redirect(f"/admin?token={config.ADMIN_TOKEN}&sucesso={msg}"
+                                      if token_ok else f"/admin?sucesso={msg}")
             elif acao == "curador":
                 subscribers.definir_curador(g("id"), g("on") == "1")
             elif acao == "gerar_cupom":
@@ -607,9 +670,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"Varredura concluída: {curadoria.rodar_varredura()} novos candidatos."
                 except Exception as e:
                     print(f"[curadoria] varredura erro: {e}", flush=True); msg = "Falha na varredura (ver logs)."
+            elif acao == "varrer_classicos":
+                try:
+                    msg = f"Varredura de clássicos: {curadoria.rodar_varredura_classicos()} novos candidatos."
+                except Exception as e:
+                    print(f"[classicos] varredura erro: {e}", flush=True); msg = "Falha na varredura de clássicos (ver logs)."
             elif acao == "gerar":
                 try:
-                    msg = f"{curadoria.gerar_selecionados()} resumo(s) gerado(s) para a reserva."
+                    msg = f"Resumos gerados: {curadoria.gerar_selecionados()}."
                 except Exception as e:
                     print(f"[curadoria] gerar erro: {e}", flush=True); msg = "Falha ao gerar resumos (ver logs)."
             elif acao == "editar_reserva":
@@ -643,6 +711,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                   erro="Código inválido ou expirado. Tente novamente."))
             auth_web.iniciar_login(wpp)  # neutro: só envia se for assinante ATIVO
             return self._html(site_web.pagina_entrar("codigo", whatsapp=wpp))
+        if path == "/entrar-cpf":
+            if not self._rate_ok("login", 15, 300):
+                return
+            import site_web, auth_web
+            doc = g("cpf")
+            status, token = auth_web.login_senha_cpf(doc, g("senha"))
+            if status == "ok":
+                return self._redirect("/artigos", token=token)
+            if status == "sem_senha":
+                return self._html(site_web.pagina_login(sem_senha=True, whatsapp=doc, via="cpf"))
+            return self._html(site_web.pagina_login(erro="CPF ou senha incorretos.", whatsapp=doc, via="cpf"))
+        if path == "/entrar-cpf-codigo":
+            if not self._rate_ok("otp", 5, 600):
+                return
+            import site_web, auth_web
+            doc = g("cpf")
+            if g("etapa") == "codigo":
+                token = auth_web.verificar_cpf(doc, g("codigo"))
+                if token:
+                    return self._redirect("/artigos", token=token)
+                return self._html(site_web.pagina_entrar("codigo", whatsapp=doc, via="cpf",
+                                  erro="Código inválido ou expirado. Tente novamente."))
+            auth_web.iniciar_login_cpf(doc)  # neutro: só envia se achar assinante ativo
+            return self._html(site_web.pagina_entrar("codigo", whatsapp=doc, via="cpf"))
         if path in ("/primeiro-acesso", "/esqueci"):
             if not self._rate_ok("recover", 5, 600):   # 5 pedidos / 10 min por IP
                 return
@@ -1048,12 +1140,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval
+        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
+        # Validar número local antes de montar E.164 (evita que "+55" vazio passe)
+        local_whatsapp = g("whatsapp").strip()
         dados = {"nome": g("nome").strip(), "email": g("email").strip(),
-                 "cpf": g("cpf").strip(), "whatsapp": g("whatsapp").strip()}
+                 "cpf": g("cpf").strip(),
+                 "whatsapp": phone.montar_e164(g("pais_dial") or "55", local_whatsapp) if local_whatsapp else ""}
         if not (dados["nome"] and dados["whatsapp"] and dados["email"] and dados["cpf"]):
             return self._html(site_web.pagina_assinar(plano["slug"], "Preencha nome, e-mail, WhatsApp e CPF."))
         if not cpfval.valida(dados["cpf"]):

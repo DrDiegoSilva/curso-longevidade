@@ -64,6 +64,19 @@ def _hoje_iso():
     return datetime.now().strftime("%Y-%m-%d")
 
 
+def _e_fresco(data_pub, ref=None):
+    """True se o paper foi publicado nos últimos config.FRESCO_DIAS dias (medido em `ref`,
+    default hoje). Tolera data vazia/parcial/inválida (retorna False). Publicação futura conta."""
+    from datetime import date
+    ref = ref or date.today()
+    try:
+        pub = date.fromisoformat((data_pub or "")[:10])
+    except (ValueError, TypeError):
+        return False
+    idade = (ref - pub).days
+    return idade <= config.FRESCO_DIAS       # idade negativa (futuro) também é fresco
+
+
 def reabastecer():
     """Busca a semana em TODOS os temas, tria por IA e põe os ENTRA na fila.
     Retorna quantos artigos entraram."""
@@ -108,10 +121,15 @@ def materializar_agenda(n_semanas=4, datas=None):
     #  - ref_ids/chaves = itens já presos a algum slot;
     #  - devolve a 'pronto' qualquer reserva 'agendado' que NENHUM slot referencia (órfão);
     #  - mais abaixo, exclui dos candidatos o que já está referenciado (evita double-book).
-    ref_ids = db.agenda_ref_ids_reserva()
+    ref_ids = db.agenda_ref_ids("reserva")
     for r in db.listar_reserva(status="agendado"):
         if r["id"] not in ref_ids:
             db.marcar_reserva_pronto(r["id"])
+    cand_ref_ids = db.agenda_ref_ids("candidato")
+    for c in db.listar_candidatos(status="agendado", tipo="varredura"):
+        if c["id"] not in cand_ref_ids:
+            db.marcar_candidato_pronto(c["id"])
+    classico_ref_ids = db.agenda_ref_ids("classico")   # p/ não repetir o mesmo clássico no horizonte
     fila_chaves = set()
     for p in db.agenda_payloads_fila():
         try:
@@ -121,9 +139,14 @@ def materializar_agenda(n_semanas=4, datas=None):
 
     fila_n = queue_store.tamanho()
     reserva_n = db.contar_reserva_pronto()
-    if agenda_plan.precisa_reabastecer(fila_n, reserva_n, horizonte):
+    # Estoque TOTAL (não só reserva+fila) — senão o reabastecer (rede) dispara mesmo com o
+    # pool cheio de candidatos crus/clássicos elegíveis, que também cobrem o horizonte.
+    cand_n = len(db.listar_candidatos(status="novo", tipo="varredura"))
+    classico_n = len(db.listar_classicos(elegiveis=True))
+    estoque_n = reserva_n + cand_n + classico_n
+    if agenda_plan.precisa_reabastecer(fila_n, estoque_n, horizonte):
         try:
-            print(f"[agenda] estoque {fila_n+reserva_n}<{horizonte} — reabastecendo", flush=True)
+            print(f"[agenda] estoque {fila_n+estoque_n}<{horizonte} — reabastecendo", flush=True)
             reabastecer()
         except Exception as e:
             print(f"[agenda] reabastecer falhou (segue): {e}", flush=True)
@@ -132,7 +155,7 @@ def materializar_agenda(n_semanas=4, datas=None):
     ordenados = []
     for d in datas:
         s = slots.get(d)
-        if s and (s.get("fixado") or s.get("tipo") in ("reserva", "fila", "pulado")):
+        if s and (s.get("fixado") or s.get("tipo") in ("reserva", "fila", "pulado", "candidato", "classico")):
             tema = None if s.get("tipo") == "pulado" else s.get("tema")
             ordenados.append((d, tema, True))
         else:
@@ -143,7 +166,23 @@ def materializar_agenda(n_semanas=4, datas=None):
         if r["id"] in ref_ids:          # já preso a um slot (consume meio-falho) -> não re-agenda
             continue
         cands.append({"tipo": "reserva", "tema": r.get("tema", ""), "titulo": r.get("titulo_pt", ""),
-                      "ref_id": r["id"], "payload": None})
+                      "ref_id": r["id"], "payload": None,
+                      "fresco": _e_fresco(r.get("data", "")), "classico": False,
+                      "score": float(r.get("score", 0) or 0)})
+    for c in db.listar_candidatos(status="novo", tipo="varredura"):
+        if c["id"] in cand_ref_ids:      # já preso a um slot -> não re-agenda
+            continue
+        cands.append({"tipo": "candidato", "tema": c.get("tema", ""), "titulo": c.get("titulo", ""),
+                      "ref_id": c["id"], "payload": None,
+                      "fresco": _e_fresco(c.get("data", "")), "classico": False,
+                      "score": float(c.get("score", 0) or 0)})
+    for cl in db.listar_classicos(elegiveis=True):
+        if cl["id"] in classico_ref_ids:
+            continue
+        cands.append({"tipo": "classico", "tema": cl.get("tema", ""), "titulo": cl.get("titulo_pt", ""),
+                      "ref_id": cl["id"], "payload": None,
+                      "fresco": False, "classico": True,
+                      "score": float(cl.get("citacoes", 0) or 0)})
     for a in queue_store.listar():
         if queue_store._chave(a) in fila_chaves:   # já preso a um slot de fila
             continue
@@ -158,6 +197,14 @@ def materializar_agenda(n_semanas=4, datas=None):
                 db.agenda_upsert(data, tipo="reserva", ref_id=cand["ref_id"], payload=None,
                                  tema=cand["tema"], titulo=cand["titulo"], fixado=0)
                 db.marcar_reserva_agendado(cand["ref_id"])   # consome só APÓS gravar o slot
+            elif cand["tipo"] == "candidato":
+                db.agenda_upsert(data, tipo="candidato", ref_id=cand["ref_id"], payload=None,
+                                 tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+                db.marcar_candidato_agendado(cand["ref_id"])   # consome só APÓS gravar o slot
+            elif cand["tipo"] == "classico":
+                db.agenda_upsert(data, tipo="classico", ref_id=cand["ref_id"], payload=None,
+                                 tema=cand["tema"], titulo=cand["titulo"], fixado=0)
+                # clássico NÃO é consumido (reusável); o ref na agenda já evita repetir no horizonte
             else:
                 payload = json.dumps(cand["payload"], ensure_ascii=False)
                 db.agenda_upsert(data, tipo="fila", ref_id=None, payload=payload,
@@ -319,6 +366,58 @@ def _preparar_de_artigo(art):
     return r
 
 
+def _preparar_de_candidato(cand_id):
+    """Monta o rascunho de amanhã de um CANDIDATO cru (resumo JIT). Mira _preparar_de_artigo."""
+    import db
+    c = next((x for x in db.listar_candidatos() if x["id"] == cand_id), None)
+    if not c:
+        return None
+    art = {"titulo": c.get("titulo", ""), "tema": c.get("tema", ""), "fonte": c.get("fonte", ""),
+           "doi": c.get("doi", ""), "url": c.get("url", ""), "data": c.get("data", ""),
+           "resumo": c.get("abstract", "")}
+    r = _preparar_de_artigo(art)          # gera conteúdo, cria draft, manda preview + áudio
+    if r:
+        r["candidato_id"] = cand_id
+        draft_store.salvar(r)
+    return r
+
+
+def _preparar_de_classico(classico_id):
+    """Monta o rascunho de amanhã de um CLÁSSICO já bancado (usa o resumo pronto, sem regenerar).
+    Mira _preparar_da_reserva."""
+    import db
+    cl = db.obter_classico(classico_id)
+    if not cl:
+        return None
+    art = {"titulo": cl.get("titulo_pt", ""), "tema": cl.get("tema", ""), "fonte": cl.get("fonte", ""),
+           "doi": cl.get("doi", ""), "url": cl.get("url", ""), "data": cl.get("data", "")}
+    try:
+        grafico = json.loads(cl.get("grafico") or "null")
+    except Exception:
+        grafico = None
+    c = {"titulo_pt": cl.get("titulo_pt", ""), "resumo": cl.get("resumo", ""),
+         "gancho": cl.get("gancho", ""), "grafico": grafico}
+    alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    os.makedirs(config.drafts_dir(), exist_ok=True)
+    preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
+    try:
+        pdfmod.gerar_pdf(pdfmod.montar_html(art, c, _tema_meta(art.get("tema", ""))), preview)
+    except Exception as e:
+        print(f"[preparar] PDF preview (clássico) falhou (segue sem): {e}", flush=True)
+        preview = None
+    r = draft_store.novo_rascunho(alvo, art, c["resumo"], preview)
+    r["gancho"] = c["gancho"]; r["grafico"] = c["grafico"]; r["titulo_pt"] = c["titulo_pt"]
+    r["classico_id"] = classico_id
+    draft_store.salvar(r)
+    link = f"{config.PUBLIC_URL}/revisar/{r['review_token']}"
+    extra = "\n🎧 O áudio do estudo chega logo abaixo pra você escutar." if config.audio_ligado() else ""
+    deliver.enviar_curador(f"📋 Amanhã (clássico) · {art.get('tema','')}:\n*{c['titulo_pt']}*\n{art.get('fonte','')}\n"
+                           f"Assinantes: {len(subscribers.ativos())}\n\n👉 Revisar/editar: {link}\n"
+                           f"(se não mexer, envio automático às 08h){extra}")
+    enviar_audio_preview(r)
+    return r
+
+
 def _preparar_fallback():
     """Comportamento original: fila fresca (gera conteúdo) e, se vazia, reserva."""
     if queue_store.tamanho() < REFILL_MINIMO:
@@ -350,6 +449,16 @@ def preparar_18h(amanha=None):
             if r:
                 return r
             print("[preparar] item da reserva sumiu — fallback", flush=True)
+        elif fonte == "candidato":
+            r = _preparar_de_candidato(ref)
+            if r:
+                return r
+            print("[preparar] candidato sumiu — fallback", flush=True)
+        elif fonte == "classico":
+            r = _preparar_de_classico(ref)
+            if r:
+                return r
+            print("[preparar] clássico sumiu — fallback", flush=True)
         elif fonte == "fila":
             r = _preparar_de_artigo(json.loads(ref))
             if r:
@@ -378,13 +487,35 @@ def rotina_08h():
     enviar_slot("08h")
 
 
-def montar_texto_resumo(titulo, resumo, tmeta):
-    """Texto do WhatsApp p/ o assinante: badge do tema (emoji + rótulo) no topo,
-    depois o título do estudo e o resumo — assim o leitor já sabe o tema do dia."""
+def varredura_semanal(hoje=None, rodar_fn=None):
+    """Roda a varredura geral 1x por semana ISO, só no DIA_VARREDURA (domingo de manhã).
+    Idempotente via db.registrar_envio_slot(chave-semana, 'varredura'). Retorna True se rodou."""
+    from datetime import date
+    hoje = hoje or date.today()
+    if DIAS[hoje.weekday()] != config.DIA_VARREDURA:
+        return False
+    import db
+    ano, semana, _ = hoje.isocalendar()
+    chave = f"{ano}-W{semana:02d}"
+    if not db.registrar_envio_slot(chave, "varredura"):   # já rodou esta semana
+        return False
+    rodar_fn = rodar_fn or (lambda: __import__("curadoria").rodar_varredura())
+    try:
+        n = rodar_fn()
+        print(f"[varredura-semanal] {chave}: {n} novos candidatos", flush=True)
+    except Exception as e:
+        print(f"[varredura-semanal] erro: {e}", flush=True)
+    return True
+
+
+def montar_texto_resumo(titulo, resumo, tmeta, fresco=False):
+    """Texto do WhatsApp p/ o assinante: selo de recência (se fresco) + badge do tema
+    (emoji + rótulo) + título + resumo."""
     rot = (tmeta or {}).get("rotulo", "")
     emoji = (tmeta or {}).get("emoji", "")
+    selo = "🆕 *Estudo recente*\n" if fresco else ""
     hdr = f"{emoji} *{rot}*\n".lstrip() if rot else ""
-    return f"{hdr}🔬 *{titulo}*\n\n{resumo}"
+    return f"{selo}{hdr}🔬 *{titulo}*\n\n{resumo}"
 
 
 def _audio_master(hoje, art, conteudo):
@@ -444,6 +575,16 @@ def _finalizar_dia(hoje, r, art, conteudo, tmeta):
             db.marcar_reserva_enviado(r["reserva_id"])
         except Exception as e:
             print(f"[enviar] marcar reserva enviado falhou: {e}", flush=True)
+    if r.get("candidato_id"):
+        try:
+            db.marcar_candidatos([r["candidato_id"]], "resumido")
+        except Exception as e:
+            print(f"[enviar] marcar candidato falhou: {e}", flush=True)
+    if r.get("classico_id"):
+        try:
+            db.marcar_classico_enviado(r["classico_id"], hoje)
+        except Exception as e:
+            print(f"[enviar] marcar clássico falhou: {e}", flush=True)
     rd.registrar([art["doi"]] if art.get("doi") else [])
     try:
         avisar_estoque_baixo()   # avisa o curador se a reserva ficou abaixo do mínimo
@@ -459,6 +600,7 @@ def _montar_ctx(hoje, r):
     conteudo = {"titulo_pt": titulo, "resumo": r["resumo"], "gancho": r.get("gancho", ""), "grafico": r.get("grafico")}
     tmeta = _tema_meta(art.get("tema", ""))
     return {"r": r, "art": art, "titulo": titulo, "conteudo": conteudo, "tmeta": tmeta,
+            "fresco": _e_fresco(art.get("data", "")),
             "audio_bytes": _audio_master(hoje, art, conteudo),
             "master_pdf": _pdf_master(hoje, art, conteudo, tmeta)}
 
@@ -479,7 +621,9 @@ def _enviar_estudo_para(whatsapp, nome, ctx):
     import phone
     whatsapp = phone.normalizar(whatsapp)
     link = f"{config.PUBLIC_URL}/entrar"
-    msg = deliver.personalizar_rodape(montar_texto_resumo(ctx["titulo"], ctx["r"]["resumo"], ctx["tmeta"]), nome, link)
+    msg = deliver.personalizar_rodape(
+        montar_texto_resumo(ctx["titulo"], ctx["r"]["resumo"], ctx["tmeta"], fresco=ctx.get("fresco", False)),
+        nome, link)
     deliver.enviar_texto(whatsapp, msg)
     if ctx["master_pdf"]:
         try:

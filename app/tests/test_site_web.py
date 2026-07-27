@@ -292,5 +292,33 @@ class TestRender(unittest.TestCase):
         self.assertIn('placeholder="000.000.000-00"', h)                   # CPF padronizado
 
 
+class TestCheckoutSeletor(unittest.TestCase):
+    def setUp(self):
+        import site_web
+        self.s = site_web
+
+    def test_pagina_assinar_tem_seletor(self):
+        html = self.s.pagina_assinar("anual")
+        self.assertIn('name="pais_dial"', html)
+        self.assertIn('name="cpf"', html)        # CPF continua no form
+
+
+class TestSeletorPais(unittest.TestCase):
+    def test_renderiza_com_br_selecionado(self):
+        import site_web
+        html = site_web._seletor_pais()
+        self.assertIn('name="pais_dial"', html)
+        self.assertIn("Brasil", html)
+        self.assertIn('value="55" selected', html)
+        self.assertIn("Estados Unidos", html)   # tem opção internacional
+
+    def test_pagina_admin_traz_seletor_no_editar_numero(self):
+        import site_web
+        h = site_web.pagina_admin(
+            [{"id": 1, "nome": "X", "whatsapp": "5544999998888", "status": "ATIVO"}], token="tk")
+        self.assertIn('name="pais_dial"', h)        # seletor de país no "editar número" do card
+        self.assertIn('value="editar_numero"', h)
+
+
 if __name__ == "__main__":
     unittest.main()

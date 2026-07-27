@@ -12,6 +12,7 @@ import base64
 import urllib.request
 import urllib.error
 import config
+import phone
 
 
 def personalizar_rodape(msg, nome, link):
@@ -19,6 +20,14 @@ def personalizar_rodape(msg, nome, link):
 
 
 # ── Z-API (legado) ──
+def _zapi_texto_payload(whatsapp, msg):
+    return {"phone": phone.para_api(whatsapp), "message": msg}
+
+
+def _zapi_pdf_payload(whatsapp, pdf_path, caption):
+    return {"phone": phone.para_api(whatsapp), "document": pdf_path, "caption": caption}
+
+
 def _zapi_post(caminho, payload):
     z = config.zapi()
     url = f"https://api.z-api.io/instances/{z['instanceId']}/token/{z['instanceToken']}/{caminho}"
@@ -31,14 +40,19 @@ def _zapi_post(caminho, payload):
 
 # ── Evolution API (self-hosted) ──
 def _evolution_texto_payload(whatsapp, msg):
-    return {"number": whatsapp, "text": msg}
+    return {"number": phone.para_api(whatsapp), "text": msg}
 
 
 def _evolution_media_payload(whatsapp, pdf_path, caption):
     b64 = base64.b64encode(open(pdf_path, "rb").read()).decode("ascii")
     nome = (re.sub(r"[^\w-]", "_", caption)[:40] or "documento") + ".pdf"
-    return {"number": whatsapp, "mediatype": "document", "mimetype": "application/pdf",
+    return {"number": phone.para_api(whatsapp), "mediatype": "document", "mimetype": "application/pdf",
             "media": b64, "fileName": nome, "caption": caption}
+
+
+def _evolution_audio_payload(whatsapp, mp3_bytes):
+    b64 = base64.b64encode(mp3_bytes).decode("ascii")
+    return {"number": phone.para_api(whatsapp), "audio": b64}
 
 
 def _evolution_post(caminho, payload):
@@ -59,21 +73,20 @@ def _evolution_post(caminho, payload):
 def enviar_texto(whatsapp, msg):
     if config.WHATSAPP_BACKEND == "evolution":
         return _evolution_post("message/sendText", _evolution_texto_payload(whatsapp, msg))
-    return _zapi_post("send-text", {"phone": whatsapp, "message": msg})
+    return _zapi_post("send-text", _zapi_texto_payload(whatsapp, msg))
 
 
 def enviar_pdf(whatsapp, pdf_path, caption=""):
     """pdf_path = arquivo LOCAL. Evolution manda em base64; Z-API precisaria de URL."""
     if config.WHATSAPP_BACKEND == "evolution":
         return _evolution_post("message/sendMedia", _evolution_media_payload(whatsapp, pdf_path, caption))
-    return _zapi_post("send-document/pdf", {"phone": whatsapp, "document": pdf_path, "caption": caption})
+    return _zapi_post("send-document/pdf", _zapi_pdf_payload(whatsapp, pdf_path, caption))
 
 
 def numeros_curadores():
     """Números que recebem a revisão das 18h: o(s) admin(s) (Dr. Diego, sempre) +
     assinantes marcados como 'curador' na tela de Assinantes. Normalizado e sem
     repetição. NÃO usa mais a env WHATSAPP_DESTINO (apontava p/ o nº automático)."""
-    import phone
     nums = [phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])]
     try:
         import subscribers
@@ -92,8 +105,7 @@ def enviar_audio(whatsapp, mp3_bytes):
     """Envia o mp3 como mensagem de voz (WhatsApp PTT) via Evolution."""
     if config.WHATSAPP_BACKEND != "evolution":
         return None
-    b64 = base64.b64encode(mp3_bytes).decode("ascii")
-    return _evolution_post("message/sendWhatsAppAudio", {"number": whatsapp, "audio": b64})
+    return _evolution_post("message/sendWhatsAppAudio", _evolution_audio_payload(whatsapp, mp3_bytes))
 
 
 def enviar_curador(msg):
@@ -111,7 +123,6 @@ def enviar_curador(msg):
 def enviar_admin(msg):
     """Aviso SÓ pro(s) admin(s) (Dr. Diego) — não vai pros curadores convidados.
     Usado p/ alertas operacionais (ex.: estoque de estudos baixo)."""
-    import phone
     res, vistos = None, set()
     for w in (config.ADMIN_WHATSAPPS or []):
         n = phone.normalizar(w)

@@ -332,6 +332,15 @@ def _esc(s):
     return _html.escape(str(s or ""))
 
 
+def _seletor_pais(selecionado="BR"):
+    """<select name="pais_dial"> com paises.PAISES; opção de `selecionado` marcada."""
+    import paises
+    opts = "".join(
+        f'<option value="{dial}"{" selected" if iso == selecionado else ""}>{bandeira} {nome} (+{dial})</option>'
+        for iso, nome, bandeira, dial in paises.PAISES)
+    return f'<select name="pais_dial">{opts}</select>'
+
+
 def _cta():
     return _esc(config.cta_url())
 
@@ -454,7 +463,14 @@ def landing():
 
 
 # ── Login OTP ──
-def pagina_entrar(etapa="numero", whatsapp="", erro=""):
+def pagina_entrar(etapa="numero", whatsapp="", erro="", via="whatsapp"):
+    """Login por código (OTP). via='whatsapp' (padrão) ou 'cpf'.
+    `whatsapp` = valor do identificador a repreencher/embutir (é o CPF quando via='cpf')."""
+    cpf_mode = (via == "cpf")
+    campo = "cpf" if cpf_mode else "whatsapp"
+    action = "/entrar-cpf-codigo" if cpf_mode else "/entrar-codigo"
+    senha_href = "/entrar-cpf" if cpf_mode else "/entrar"
+    recomecar_txt = "Usar outro CPF" if cpf_mode else "Usar outro número"
     erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
     if etapa == "codigo":
         corpo = f"""
@@ -462,56 +478,81 @@ def pagina_entrar(etapa="numero", whatsapp="", erro=""):
           <h2 class="disp">Digite o código</h2>
           <p class="hint">Enviamos um código de 6 dígitos no seu WhatsApp. Ele vale por 10 minutos.</p>
           {erro_html}
-          <form method="post" action="/entrar-codigo">
+          <form method="post" action="{action}">
             <input type="hidden" name="etapa" value="codigo">
-            <input type="hidden" name="whatsapp" value="{_esc(whatsapp)}">
+            <input type="hidden" name="{campo}" value="{_esc(whatsapp)}">
             <label>Código</label>
             <input type="text" name="codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" autofocus>
             {ui.btn('Entrar')}
           </form>
-          <p class="hint" style="margin-top:16px"><a href="/entrar-codigo" style="color:var(--ouro2)">Usar outro número</a> &nbsp;·&nbsp; <a href="/entrar" style="color:var(--suave)">Entrar com senha</a></p>
+          <p class="hint" style="margin-top:16px"><a href="{action}" style="color:var(--ouro2)">{recomecar_txt}</a> &nbsp;·&nbsp; <a href="{senha_href}" style="color:var(--suave)">Entrar com senha</a></p>
         </div></div>"""
     else:
+        label = "CPF" if cpf_mode else "WhatsApp (com DDD)"
+        imode = "numeric" if cpf_mode else "tel"
+        ph = "000.000.000-00" if cpf_mode else "(43) 99999-0000"
+        hint = ("Informe o CPF do seu cadastro e enviamos um código de acesso ao WhatsApp da assinatura."
+                if cpf_mode else
+                "Sem acesso à senha? Informe o WhatsApp da sua assinatura e enviamos um código de acesso.")
         corpo = f"""
         <div class="wrap"><div class="panel">
           <h2 class="disp">Entrar com código</h2>
-          <p class="hint">Sem acesso à senha? Informe o WhatsApp da sua assinatura e enviamos um código de acesso.</p>
+          <p class="hint">{hint}</p>
           {erro_html}
-          <form method="post" action="/entrar-codigo">
+          <form method="post" action="{action}">
             <input type="hidden" name="etapa" value="numero">
-            <label>WhatsApp (com DDD)</label>
-            <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" autofocus>
-            {ui.btn('Enviar código')}
+            <label>{label}</label>
+            <input type="text" name="{campo}" inputmode="{imode}" placeholder="{ph}" autofocus>
+            <button class="cta" type="submit">Enviar código</button>
           </form>
-          {ui.btn('Entrar com senha', href='/entrar', variant='ghost', extra='margin-top:12px')}
+          <p class="hint" style="margin-top:16px"><a href="{senha_href}" style="color:var(--ouro2)">← Entrar com senha</a></p>
         </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_login(erro="", sem_senha=False, whatsapp=""):
-    """Tela de login principal: WhatsApp + senha (não depende do WhatsApp p/ entrar)."""
+def pagina_login(erro="", sem_senha=False, whatsapp="", via="whatsapp"):
+    """Tela de login principal: identificador + senha. via='whatsapp' (padrão) ou 'cpf'.
+    `whatsapp` = valor do identificador a repreencher (é o CPF quando via='cpf')."""
+    cpf_mode = (via == "cpf")
+    label = "CPF" if cpf_mode else "WhatsApp (com DDD)"
+    campo = "cpf" if cpf_mode else "whatsapp"
+    imode = "numeric" if cpf_mode else "tel"
+    ph = "000.000.000-00" if cpf_mode else "(43) 99999-0000"
+    action = "/entrar-cpf" if cpf_mode else "/entrar"
+    codigo_href = "/entrar-cpf-codigo" if cpf_mode else "/entrar-codigo"
+    titulo_hint = ("Entre com o CPF do seu cadastro e sua senha." if cpf_mode
+                   else "Entre com o WhatsApp da sua assinatura e sua senha.")
     erro_html = f'<div class="erro">{_esc(erro)}</div>' if erro else ""
     if sem_senha:
-        erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
-                      '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
+        if cpf_mode:
+            erro_html += ('<div class="infobox">Você ainda não criou sua senha. Use '
+                          '<strong>Entrar com código no WhatsApp</strong> abaixo (ou peça seu link de acesso).</div>')
+        else:
+            erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
+                          '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
+    if cpf_mode:
+        aux = (f'<p class="hint" style="margin-top:16px"><a href="{codigo_href}" style="color:var(--ouro2)">Sem senha? Entrar com código no WhatsApp</a></p>'
+               f'<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar" style="color:var(--suave)">← Entrar com WhatsApp</a></p>')
+    else:
+        aux = ('<p class="hint" style="margin-top:16px">'
+               '<a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>'
+               '&nbsp;·&nbsp;'
+               '<a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a></p>'
+               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>'
+               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-cpf" style="color:var(--suave)">Assinante fora do Brasil / sem WhatsApp brasileiro? Entrar com CPF</a></p>')
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Área do assinante</h2>
-      <p class="hint">Entre com o WhatsApp da sua assinatura e sua senha.</p>
+      <p class="hint">{titulo_hint}</p>
       {erro_html}
-      <form method="post" action="/entrar">
-        <label>WhatsApp (com DDD)</label>
-        <input type="text" name="whatsapp" inputmode="tel" value="{_esc(whatsapp)}" placeholder="(43) 99999-0000" autofocus>
+      <form method="post" action="{action}">
+        <label>{label}</label>
+        <input type="text" name="{campo}" inputmode="{imode}" value="{_esc(whatsapp)}" placeholder="{ph}" autofocus>
         <label>Senha</label>
         <input type="password" name="senha" placeholder="sua senha">
         {ui.btn('Entrar')}
       </form>
-      {ui.btn('Entrar com código', href='/entrar-codigo', variant='ghost', extra='margin-top:12px')}
-      <p class="hint" style="margin-top:16px">
-        <a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>
-        &nbsp;·&nbsp;
-        <a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a>
-      </p>
+      {aux}
       <p class="hint" style="margin-top:14px">Ainda não assina? <a href="/" style="color:var(--ouro2)">Conheça o plano</a>.</p>
     </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
@@ -897,11 +938,16 @@ def pagina_whatsapp(info_dict, conn, token=""):
     return _pagina("WhatsApp · Admin", corpo, logado=True, meta_extra=refresh + '<meta name="robots" content="noindex">')
 
 
-def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
-    """Tela de Assinantes no padrão do site (verde/dourado, tabela com status)."""
+def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
+                 reenviar_id=None, sucesso="", contagem_slots=None):
+    """Tela de Assinantes no padrão do site (verde/dourado, cards com filtros)."""
     import phone
+    import subscribers
     tk = _esc(token)
     admins = {phone.normalizar(w) for w in (config.ADMIN_WHATSAPPS or [])}
+    erro_html = f'<div class="erro" style="margin:14px 0">{_esc(erro)}</div>' if erro else ""
+    sucesso_html = (f'<div class="infobox" style="border-color:#2f9e6b66;background:#2f9e6b18;margin:14px 0">'
+                    f'{_esc(sucesso)}</div>') if sucesso else ""
     alvo = next((s for s in assinantes if str(s.get("id")) == str(confirmar_id)), None) if confirmar_id else None
     confirm_html = ""
     if alvo:
@@ -914,6 +960,21 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
             f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover_confirmar">'
             f'<input type="hidden" name="id" value="{_esc(alvo.get("id"))}">'
             '<button class="actbtn" style="background:#c0562f;color:#fff;padding:8px 16px">Confirmar remoção</button></form>'
+            f'<a class="actbtn ghost" href="/admin?token={tk}" style="padding:8px 16px;text-decoration:none">Cancelar</a>'
+            '</div></div>')
+    alvo_re = next((s for s in assinantes if str(s.get("id")) == str(reenviar_id)), None) if reenviar_id else None
+    reenviar_html = ""
+    if alvo_re:
+        reenviar_html = (
+            '<div class="infobox" style="border-color:#c9a22766;background:#c9a22718;margin:14px 0">'
+            f'<strong>Reenviar boas-vindas (WhatsApp) para '
+            f'{_esc(alvo_re.get("nome") or alvo_re.get("whatsapp") or "este assinante")}?</strong> '
+            f'Vai um link novo de criar-senha para {_esc(alvo_re.get("whatsapp") or "—")}.'
+            '<div style="display:flex;gap:10px;margin-top:12px">'
+            '<form method="post" action="/admin" style="margin:0">'
+            f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="reenviar_confirmar">'
+            f'<input type="hidden" name="id" value="{_esc(alvo_re.get("id"))}">'
+            '<button class="actbtn" style="background:#2f9e6b;color:#fff;padding:8px 16px">Confirmar reenvio</button></form>'
             f'<a class="actbtn ghost" href="/admin?token={tk}" style="padding:8px 16px;text-decoration:none">Cancelar</a>'
             '</div></div>')
     def badge(st):
@@ -936,20 +997,49 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'<input type="hidden" name="on" value="{prox}">'
                 f'<button class="{cls}" style="padding:6px 13px;font-size:12px">{rotulo}</button></form>')
-    linhas = "".join(
-        '<tr style="border-top:1px solid rgba(233,225,198,.1)">'
-        f'<td style="padding:13px 10px;font-family:\'Cormorant Garamond\',Georgia,serif;font-size:18px;color:var(--creme)">{_esc(s.get("nome") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--suave)">{_esc(s.get("whatsapp") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-size:13px;color:var(--suave)">{_esc(s.get("email") or "—")}</td>'
-        f'<td style="padding:13px 10px;font-size:13px;color:var(--ouro2)">{_esc(s.get("plano") or "—")}</td>'
-        f'<td style="padding:13px 10px">{badge(s.get("status"))}</td>'
-        f'<td style="padding:13px 10px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--suave)">{_esc(s.get("proximo_vencimento") or "—")}</td>'
-        f'<td style="padding:13px 10px">{cel_curador(s)}</td>'
-        f'<td style="padding:13px 10px"><form method="post" action="/admin" style="margin:0">'
-        f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
-        f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
-        f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px">remover</button></form></td></tr>'
-        for s in assinantes)
+    def cel_editar_numero(s):
+        return (f'<form method="post" action="/admin" '
+                f'style="display:flex;flex-direction:column;gap:5px;min-width:170px">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="editar_numero">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'{_seletor_pais()}'
+                f'<input type="text" name="numero" placeholder="novo número" required>'
+                f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px" type="submit">✏️ Salvar número</button></form>')
+    def cel_reenviar(s):
+        return (f'<form method="post" action="/admin" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="reenviar">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<button class="actbtn ghost" style="padding:6px 13px;font-size:12px" type="submit">📨 Reenviar</button></form>')
+    def cel_horario(s):
+        import subscribers
+        atual = subscribers.slot_de(s)
+        opts = "".join(f'<option value="{sl}"{" selected" if sl == atual else ""}>{sl}</option>'
+                       for sl in config.SLOTS)
+        return (f'<form method="post" action="/admin" style="display:flex;gap:5px;align-items:center">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="definir_slot">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<select name="slot" style="padding:5px 8px;font-size:12px;background:#0e211a;color:var(--creme);border:1px solid rgba(233,225,198,.2);border-radius:8px">{opts}</select>'
+                f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px;white-space:nowrap;flex-shrink:0" type="submit">Salvar</button></form>')
+    def _cel_remover(s):
+        return (f'<form method="post" action="/admin" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
+                f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
+                f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px">remover</button></form>')
+
+    def card(s):
+        atual = subscribers.slot_de(s)
+        return (
+            f'<div class="subcard" data-nome="{_esc((s.get("nome") or "").lower())}" data-slot="{_esc(atual)}" data-status="{_esc(s.get("status") or "")}">'
+            f'<div class="subcard-top"><span class="subcard-nome">{_esc(s.get("nome") or "—")}</span>{badge(s.get("status"))}</div>'
+            f'<div class="subrow"><span class="k">WhatsApp</span><span class="v mono">{_esc(s.get("whatsapp") or "—")}</span></div>'
+            f'<details class="edit-num"><summary>✏️ editar número</summary>{cel_editar_numero(s)}</details>'
+            f'<div class="subrow"><span class="k">E-mail</span><span class="v">{_esc(s.get("email") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Plano</span><span class="v gold">{_esc(s.get("plano") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Vencimento</span><span class="v mono">{_esc(s.get("proximo_vencimento") or "—")}</span></div>'
+            f'<div class="subrow"><span class="k">Horário</span><span class="v">{cel_horario(s)}</span></div>'
+            f'<div class="subcard-actions">{cel_curador(s)}{cel_reenviar(s)}{_cel_remover(s)}</div>'
+            '</div>')
+    cards = "".join(card(s) for s in assinantes)
     ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
     n_cur = sum(1 for s in assinantes if s.get("curador"))
     def _cupom_row(c):
@@ -962,33 +1052,118 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None):
                 f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {dur} · {c.get("usos", 0)} uso(s)</div></div>'
                 f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{"ATIVO" if on else "USADO"}</span></div>')
     cupons_lista = "".join(_cupom_row(c) for c in (cupons or [])) or '<p class="hint" style="margin-top:8px">Nenhum cupom gerado ainda.</p>'
+    resumo_slots = ""
+    if contagem_slots:
+        itens = " · ".join(f"{sl}: {contagem_slots.get(sl, 0)}" for sl in config.SLOTS)
+        resumo_slots = f'<p class="hint" style="margin-top:2px">Envio por horário — {itens}</p>'
+    # contador de vendas ativas por plano (mensal vs anual; o resto vira "Outros")
+    _pl = {"Mensal": 0, "Anual": 0, "Outros": 0}
+    for s in assinantes:
+        if s.get("status") != "ATIVO":
+            continue
+        sl = (s.get("plano") or "").strip()
+        _pl["Mensal" if sl == "mensal" else "Anual" if sl == "anual" else "Outros"] += 1
+    plano_cont = f'Ativos por plano — Mensal: {_pl["Mensal"]} · Anual: {_pl["Anual"]}'
+    if _pl["Outros"]:
+        plano_cont += f' · Outros: {_pl["Outros"]}'
+    plano_cont_html = f'<p class="hint" style="margin-top:2px">{plano_cont}</p>'
+    # filtros client-side: busca por nome + chips de status + chips de horário (rótulos com contagem)
+    n_total = len(assinantes)
+    slot_chips = ['<button type="button" class="f-slot on" data-slot="">Todos</button>']
+    for sl in config.SLOTS:
+        n = (contagem_slots or {}).get(sl)
+        rotulo = sl + (f" ({n})" if n is not None else "")
+        slot_chips.append(f'<button type="button" class="f-slot" data-slot="{sl}">{rotulo}</button>')
+    _st = {"ATIVO": 0, "INADIMPLENTE": 0, "CANCELADO": 0}
+    for s in assinantes:
+        if s.get("status") in _st:
+            _st[s.get("status")] += 1
+    st_defs = [("", "Todos", n_total), ("ATIVO", "Ativos", _st["ATIVO"]),
+               ("INADIMPLENTE", "Inadimplentes", _st["INADIMPLENTE"]), ("CANCELADO", "Cancelados", _st["CANCELADO"])]
+    st_chips = "".join(
+        f'<button type="button" class="f-status{" on" if v == "" else ""}" data-status="{v}">{lbl} ({n})</button>'
+        for v, lbl, n in st_defs)
+    filtros_html = (
+        '<div class="subtools">'
+        '<input id="f-nome" class="f-busca" type="search" placeholder="buscar por nome…" autocomplete="off">'
+        f'<span id="f-count" class="f-count">mostrando {n_total} de {n_total}</span>'
+        '</div>'
+        f'<div class="subtools tight"><span class="f-lbl">Status</span><div class="f-chips">{st_chips}</div></div>'
+        f'<div class="subtools tight"><span class="f-lbl">Horário</span><div class="f-chips">{"".join(slot_chips)}</div></div>')
+    card_css = """<style>
+    .subtools{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin:16px 0}
+    .f-busca{flex:1;min-width:220px;background:var(--verde2);border:1px solid rgba(233,225,198,.2);border-radius:10px;
+      color:var(--creme);font-family:system-ui,sans-serif;font-size:14px;padding:9px 13px}
+    .f-busca:focus{outline:2px solid var(--ouro2);outline-offset:1px}
+    .f-chips{display:flex;flex-wrap:wrap;gap:6px}
+    .subtools.tight{margin:2px 0;gap:8px 10px}
+    .f-lbl{font-family:system-ui,sans-serif;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--suave);min-width:52px}
+    .f-count{font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave);white-space:nowrap}
+    .f-slot,.f-status{cursor:pointer;font-family:system-ui,sans-serif;font-size:12px;font-weight:700;letter-spacing:.03em;
+      padding:6px 12px;border-radius:100px;background:transparent;color:var(--suave);border:1px solid rgba(233,225,198,.24)}
+    .f-slot.on,.f-status.on{background:#c9a22722;color:var(--ouro2);border-color:#c9a22766}
+    .subgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin:6px 0 24px}
+    .subcard{background:rgba(255,255,255,.04);border:1px solid rgba(233,225,198,.14);border-radius:14px;padding:15px 16px}
+    .subcard.hide{display:none}
+    .subcard-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+    .subcard-nome{font-family:"Cormorant Garamond",Georgia,serif;font-size:22px;color:var(--creme);line-height:1.12;word-break:break-word}
+    .subcard .subrow{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 0;
+      border-top:1px solid rgba(233,225,198,.08);font-family:system-ui,sans-serif;font-size:13px}
+    .subcard .subrow .k{color:var(--suave);text-transform:uppercase;font-size:10px;letter-spacing:.09em;white-space:nowrap}
+    .subcard .subrow .v{color:var(--texto);text-align:right;word-break:break-word;min-width:0}
+    .subcard .subrow .v.gold{color:var(--ouro2)}
+    .subcard .subrow .v.mono{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--suave)}
+    .edit-num{margin:2px 0}
+    .edit-num>summary{cursor:pointer;list-style:none;color:var(--ouro2);font-family:system-ui,sans-serif;font-size:12.5px;padding:2px 0}
+    .edit-num>summary::-webkit-details-marker{display:none}
+    .edit-num[open]>summary{margin-bottom:8px}
+    .subcard-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid rgba(233,225,198,.14)}
+    </style>"""
+    filtro_js = """<script>
+    (function(){
+      var busca=document.getElementById('f-nome');
+      var cnt=document.getElementById('f-count');
+      var slotChips=document.querySelectorAll('.f-slot');
+      var stChips=document.querySelectorAll('.f-status');
+      var cards=document.querySelectorAll('.subcard');
+      var slot='',status='';
+      function apply(){
+        var q=((busca&&busca.value)||'').toLowerCase().trim();
+        var vis=0;
+        cards.forEach(function(c){
+          var ok=(!q||(c.getAttribute('data-nome')||'').indexOf(q)>=0)
+               &&(!slot||c.getAttribute('data-slot')===slot)
+               &&(!status||c.getAttribute('data-status')===status);
+          c.classList.toggle('hide',!ok); if(ok)vis++;
+        });
+        if(cnt)cnt.textContent='mostrando '+vis+' de '+cards.length;
+      }
+      function wire(list,set){list.forEach(function(ch){ch.addEventListener('click',function(){
+        list.forEach(function(x){x.classList.remove('on')});ch.classList.add('on');set(ch);apply();
+      });});}
+      if(busca)busca.addEventListener('input',apply);
+      wire(slotChips,function(ch){slot=ch.getAttribute('data-slot')||'';});
+      wire(stChips,function(ch){status=ch.getAttribute('data-status')||'';});
+    })();
+    </script>"""
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "assinantes")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Assinantes</h2>
       <p class="hint">{len(assinantes)} no total · {ativos} ativos · {n_cur} curador(es) &nbsp;·&nbsp; <a href="/curadoria" style="color:var(--ouro2)">🔬 ir para a Curadoria</a></p>
+      {plano_cont_html}
+      {resumo_slots}
+      {erro_html}
+      {sucesso_html}
       {confirm_html}
+      {reenviar_html}
       <div class="infobox" style="margin:14px 0"><strong>Curadoria:</strong> quem estiver marcado como <strong>curador</strong> recebe, todo dia útil às <strong>18h</strong>, o resumo do dia com o link para revisar/aprovar antes do envio das 8h. Você (admin) recebe <em>sempre</em>. Marque um médico convidado aqui para ele ajudar na revisão.</div>
-      <div style="overflow-x:auto;margin:18px 0">
-        <table style="width:100%;border-collapse:collapse;min-width:820px">
-          <thead><tr style="font-family:system-ui;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);text-align:left">
-            <th style="padding:8px 10px">Nome</th><th style="padding:8px 10px">WhatsApp</th><th style="padding:8px 10px">E-mail</th>
-            <th style="padding:8px 10px">Plano</th><th style="padding:8px 10px">Status</th><th style="padding:8px 10px">Vencimento</th><th style="padding:8px 10px">Curadoria</th><th></th></tr></thead>
-          <tbody>{linhas or '<tr><td colspan="8" style="padding:22px;color:var(--suave)">Nenhum assinante ainda.</td></tr>'}</tbody>
-        </table>
-      </div>
+      {card_css}
+      {filtros_html}
+      <div class="subgrid">{cards or '<p class="hint" style="grid-column:1/-1">Nenhum assinante ainda.</p>'}</div>
+      {filtro_js}
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:10px 0">
-        <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
-          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Adicionar cortesia</h3>
-          <p class="hint" style="margin-bottom:12px">Cadastra a pessoa direto como assinante ativo (sem cupom).</p>
-          <form method="post" action="/admin">
-            <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="adicionar">
-            <label>Nome</label><input type="text" name="nome">
-            <label>WhatsApp (com DDD)</label><input type="text" name="whatsapp" placeholder="(43) 99999-0000">
-            <button class="actbtn" type="submit" style="margin-top:14px">Adicionar</button>
-          </form>
-        </div>
         <div class="panel" style="max-width:none;margin:0;flex:1;min-width:280px">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;color:var(--ouro2);margin-bottom:6px">Cupons de cortesia</h3>
           <p class="hint" style="margin-bottom:12px">Gere um cupom de <strong>uso único</strong>. Quem digitar no cadastro entra grátis; depois de 1 uso, ele desativa sozinho.</p>
@@ -1595,6 +1770,7 @@ def pagina_assinar(plano_slug=None, erro=""):
             <div class="field"><label>Nome completo</label><input type="text" name="nome" style="text-transform:uppercase" required></div>
             <div class="field"><label>E-mail</label><input type="text" name="email" inputmode="email" required></div>
             <div class="field"><label>CPF</label><input type="text" name="cpf" inputmode="numeric" placeholder="000.000.000-00" maxlength="14" required></div>
+            <div class="field"><label>País</label>{_seletor_pais()}</div>
             <div class="field"><label>WhatsApp (com DDD) — onde você recebe os estudos e faz login</label>
               <input type="text" name="whatsapp" inputmode="tel" placeholder="(43) 99999-0000" required></div>
             <label class="section-label">Forma de pagamento</label>

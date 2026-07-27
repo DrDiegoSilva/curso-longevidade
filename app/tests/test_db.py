@@ -121,6 +121,17 @@ class TestDb(unittest.TestCase):
         self.assertEqual(res[0]["titulo_pt"], "Título")
         self.assertEqual(self.db.contar_candidatos().get("resumido"), 1)
 
+    def test_reserva_guarda_e_ordena_por_nota(self):
+        # a reserva persiste a nota (score da triagem/curadoria) e usa como desempate
+        # depois da prioridade — a mesma nota que soterrava a curadoria antes do fix.
+        rid_baixa = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Nota baixa", "score": 3})
+        rid_alta = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Nota alta", "score": 8})
+        res = self.db.obter_reserva(rid_alta)
+        self.assertEqual(res["score"], 8.0)                             # score persistido
+        self.assertEqual(self.db.obter_reserva(rid_baixa)["score"], 3.0)
+        # mesma prioridade (0) -> nota maior sai primeiro
+        self.assertEqual(self.db.proximo_da_reserva()["id"], rid_alta)
+
     def test_fila_prioridade_e_proximo(self):
         self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "A (varredura)"})
         self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "B (varredura)"})
@@ -147,6 +158,42 @@ class TestDb(unittest.TestCase):
         self.assertTrue(self.db.cupom_valido("CORTESIA"))
         self.assertFalse(self.db.cupom_valido("naoexiste"))
         del os.environ["DSCURSO_CUPONS"]
+
+
+class TestClassicos(unittest.TestCase):
+    def setUp(self):   # padrão do repo (ver test_agenda_materializar.py)
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ.pop("DATABASE_URL", None)
+        import importlib, config as _cfg; importlib.reload(_cfg)
+        import db as _db; importlib.reload(_db)
+        self.db = _db; _db.init()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_salvar_e_listar_ciclo(self):
+        a = self.db.salvar_classico({"tema": "Obesidade", "titulo_pt": "STEP", "resumo": "r",
+                                     "data": "2021-01-01", "citacoes": 4200})
+        b = self.db.salvar_classico({"tema": "Obesidade", "titulo_pt": "SELECT", "resumo": "r",
+                                     "data": "2023-01-01", "citacoes": 3100})
+        # ambos nunca-enviados -> elegíveis, mais citado primeiro
+        elig = self.db.listar_classicos(tema="Obesidade")
+        self.assertEqual([x["id"] for x in elig], [a, b])
+        # envia 'a' hoje -> sai da elegibilidade (piso de meses), 'b' fica
+        self.db.marcar_classico_enviado(a, "2026-07-25")
+        elig2 = self.db.listar_classicos(tema="Obesidade")
+        self.assertEqual([x["id"] for x in elig2], [b])
+        # 'a' não foi deletado
+        self.assertIsNotNone(self.db.obter_classico(a))
+
+    def test_candidato_tipo_e_citacoes(self):
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": "T", "chave": "k1",
+                                    "score": 8, "citacoes": 900, "tipo": "classico", "data": "2020-01-01"}])
+        self.assertEqual(self.db.listar_candidatos(tipo="classico")[0]["citacoes"], 900)
+        self.assertEqual(self.db.listar_candidatos(tipo="varredura"), [])
 
 
 if __name__ == "__main__":

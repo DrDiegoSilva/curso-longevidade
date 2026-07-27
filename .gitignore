@@ -4,3 +4,6 @@ __pycache__/
 app/logs/
 app/Curso_Longevidade_DrDiego.html
 app/resumos_enviados.jsonl
+.claude/
+.playwright-mcp/
+.serena/
