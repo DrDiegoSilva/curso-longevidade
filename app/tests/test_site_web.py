@@ -283,10 +283,18 @@ class TestCuradoriaCabecalho(unittest.TestCase):
     def test_abas_marcam_a_ativa_e_mostram_contador(self):
         html = self.s._curadoria_abas(
             "triagem", {"triagem": 12, "reserva": 8, "classicos": 0}, "tok")
-        self.assertIn('class="tab on"', html)
+        self.assertEqual(html.count('class="tab on"'), 1)   # só UMA aba ativa, não todas
+        self.assertIn('class="tab" href="/curadoria?token=tok&aba=reserva"', html)
+        self.assertIn('class="tab" href="/curadoria?token=tok&aba=classicos"', html)
         self.assertIn(">12<", html)
-        self.assertIn("aba=reserva", html)
-        self.assertIn("aba=classicos", html)
+
+    def test_abas_codifica_tema_apenas_no_link_da_triagem(self):
+        html = self.s._curadoria_abas(
+            "triagem", {"triagem": 1, "reserva": 1, "classicos": 1}, "tok",
+            tema="Perda & peso")
+        self.assertIn("tema=Perda%20%26%20peso", html)   # percent-encoded no link da triagem
+        self.assertNotIn("Perda & peso", html)           # '&' cru não pode vazar pro href
+        self.assertNotIn("Perda&peso", html)              # nem o espaço cru
 
 
 if __name__ == "__main__":

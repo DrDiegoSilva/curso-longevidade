@@ -192,11 +192,11 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .am-rod{display:flex;align-items:center;justify-content:space-between;gap:10px;
         font-family:var(--ui);font-size:12.5px;color:var(--muted)}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 14px}
-.chip{font-family:var(--ui);font-size:12.5px;color:var(--muted);background:rgba(255,255,255,.05);
+.temachip{font-family:var(--ui);font-size:12.5px;color:var(--muted);background:rgba(255,255,255,.05);
       border:1px solid var(--line);border-radius:100px;padding:6px 13px;text-decoration:none;transition:.15s}
-.chip:hover{color:var(--creme);border-color:rgba(201,162,39,.35)}
-.chip.on{color:var(--ouro2);background:rgba(201,162,39,.15);border-color:rgba(201,162,39,.38)}
-.chip b{font-family:var(--mono);font-weight:700}
+.temachip:hover{color:var(--creme);border-color:rgba(201,162,39,.35)}
+.temachip.on{color:var(--ouro2);background:rgba(201,162,39,.15);border-color:rgba(201,162,39,.38)}
+.temachip b{font-family:var(--mono);font-weight:700}
 .cacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .scorechip{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 9px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
 .scorechip.hi{background:linear-gradient(180deg,var(--score-hi-bg1),var(--score-hi-bg2));color:var(--score-hi-tx);border:1px solid var(--score-hi-bd)}
@@ -1051,13 +1051,13 @@ def _curadoria_amanha(amanha):
 
 def _curadoria_abas(aba, contagens, token, tema=""):
     """Abas de 1º nível (triagem/reserva/classicos) por querystring — sem JS."""
+    from urllib.parse import quote
     tk = _esc(token)
     out = []
     for chave, rotulo in (("triagem", "Triagem"), ("reserva", "Reserva"), ("classicos", "Clássicos")):
         on = " on" if chave == aba else ""
         q = f"?token={tk}&aba={chave}"
         if chave == "triagem" and tema:
-            from urllib.parse import quote
             q += f"&tema={quote(tema)}"
         out.append(f'<a class="tab{on}" href="/curadoria{q}" style="text-decoration:none">'
                    f'{rotulo} <span class="cnt">{contagens.get(chave, 0)}</span></a>')
