@@ -4,7 +4,11 @@
 **Status:** aprovado (brainstorming) → aguardando plano
 **Branch:** feat/trocar-estudo-aprovacao (base 6b72d25 = main local: curadoria + SYS_ESTUDO)
 **Backlog:** item 23
-**Coordenação:** outro agente ativo no worktree `agenda-tema` (`feat/agenda-tema-por-dia`) mexendo em agenda/rotação. **Este design NÃO toca agenda/rotação/materializar** — só lê `_rank` p/ ordenar. Deploy é **sequenciado** (entra depois que a mudança de datas dele aterrissar).
+**Coordenação:** outro agente ativo no worktree `agenda-tema` (`feat/agenda-tema-por-dia`) mexendo em agenda/rotação. **Este design NÃO toca a LÓGICA de rotação/planejamento** (`agenda_plan.planejar_agenda`/`_rank`/`materializar_agenda`/`temas_config.json`). Deploy é **sequenciado** (entra depois que a mudança de datas dele aterrissar).
+
+## Emenda 2026-07-27 (Opção A — aprovada pelo Diego, após review da Task 2)
+
+O review da Task 2 pegou um **risco real de envio duplicado**: o pipeline normal "consome" um estudo gravando o slot da agenda E marcando-o `agendado` **juntos** (e há auto-heal que devolve ao pool todo `agendado` que nenhum slot referencia). Se a troca refaz o rascunho **sem** gravar o slot, o estudo escolhido continua no pool → a máquina pode **re-enviá-lo** num dia seguinte. **Correção (Opção A):** `trocar_estudo_amanha` passa a **gravar o slot de amanhã no escolhido** (`db.agenda_upsert` + `db.marcar_reserva_agendado`/`marcar_candidato_agendado`, exatamente como o `materializar_agenda`) e **devolve o estudo atual ao pool** (`marcar_candidato_pronto`/`marcar_reserva_pronto`). Isso mexe **só na TABELA `agenda` (dado)** — não na lógica de rotação do agente `agenda-tema`. Bônus: a grade da `/agenda` deixa de ficar desatualizada (não é mais "cosmético fora de escopo").
 
 ## Objetivo
 
@@ -66,7 +70,7 @@ Origem: "não tenho a opção de trocar o estudo pro próximo da lista caso eu n
 - **Async fail-safe:** exceção na thread → aviso ao curador; rascunho antigo intacto (as `_preparar_*` só sobrescrevem no fim do caminho feliz).
 - **Idempotência/concorrência:** mira sempre o rascunho de **amanhã** (mesma data). Duas trocas → a última vence (draft keyed por data). Sem colisão com 08h (envia hoje) nem com o 18h (prepara amanhã, mas roda depois).
 - **Pressuposto de data:** a troca assume `r["data"] == amanhã` (contexto real da revisão da véspera). As `_preparar_*` já miram `now()+1`. Fora desse contexto o botão não é oferecido.
-- **Cosmético conhecido:** a grade da `/agenda` pode continuar mostrando o estudo antigo em amanhã — o **ENVIO usa o rascunho** (correto). Reconciliar a grade fica **fora do MVP** (evita tocar na agenda/área do outro agente).
+- **Grade consistente (Opção A):** a troca grava o slot de amanhã no escolhido (`db.agenda_upsert`), então a grade da `/agenda` reflete o estudo novo — e o escolhido é consumido (não re-enviado). Toca só a tabela `agenda` (dado), não a lógica de rotação do agente `agenda-tema`.
 
 ## Testes (TDD, `app/tests/test_trocar_estudo.py` + ajustes)
 
@@ -100,5 +104,4 @@ Origem: "não tenho a opção de trocar o estudo pro próximo da lista caso eu n
 - Descartar-de-vez / sinal de treino p/ score (item 23 futuro).
 - Clássicos no picker (add trivial depois).
 - Limite de trocas/dia.
-- Reconciliar a grade da `/agenda` com a troca (cosmético).
 - Trocar em dias que não sejam "amanhã".

@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **NÃO tocar** em agenda/rotação: `agenda_plan.planejar_agenda`/`_rank`/`materializar_agenda`, `temas_config.json`. Só chamar `_preparar_*` e ler `db.listar_*`. (verbatim da spec)
+- **NÃO tocar** na LÓGICA de rotação/planejamento: `agenda_plan.planejar_agenda`/`_rank`/`materializar_agenda`, `temas_config.json`. A troca PODE gravar o slot de amanhã via `db.agenda_upsert` (tabela `agenda` = dado, não a lógica) — Opção A da emenda. Reusar `_preparar_*`; ler `db.listar_*`.
 - **Assíncrono:** a geração roda em `threading.Thread(..., daemon=True)`; o POST responde na hora.
 - **HTML sempre escapado** (`html.escape`) — conteúdo vem do banco.
 - **Reusar** `daily._preparar_de_candidato(cand_id)` e `daily._preparar_da_reserva(reserva_id=...)` — não reimplementar preparo.
@@ -182,8 +182,8 @@ git commit -m "feat(trocar): montar_alternativas + alternativa_valida (reserva n
 - Test: `app/tests/test_trocar_estudo.py` (nova classe)
 
 **Interfaces:**
-- Produces: `trocar_estudo_amanha(token: str, tipo: str, cid: str) -> dict | None` — devolve o estudo atual ao pool (candidato→`novo`) e refaz o rascunho de amanhã do escolhido via `_preparar_de_candidato`/`_preparar_da_reserva`. Roda em thread (chamado pelo serve).
-- Consumes: `draft_store.por_token`, `db.marcar_candidato_pronto`, `_preparar_de_candidato`, `_preparar_da_reserva`, `deliver.enviar_curador`.
+- Produces: `trocar_estudo_amanha(token: str, tipo: str, cid: str) -> dict | None` — refaz o rascunho de amanhã do escolhido via `_preparar_de_candidato`/`_preparar_da_reserva`, **grava o slot de amanhã no escolhido** (`db.agenda_upsert` + `marcar_*_agendado`, igual ao materialize) e **devolve o estudo atual ao pool** (`marcar_candidato_pronto`/`marcar_reserva_pronto`). Roda em thread (chamado pelo serve). **(Opção A — ver Emenda na spec.)**
+- Consumes: `draft_store.por_token`, `db.agenda_upsert`, `db.marcar_reserva_agendado`, `db.marcar_candidato_agendado`, `db.marcar_candidato_pronto`, `db.marcar_reserva_pronto`, `_preparar_de_candidato`, `_preparar_da_reserva`, `deliver.enviar_curador`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -196,46 +196,75 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         importlib.reload(daily)
         self.daily = daily
 
-    def test_candidato_atual_volta_ao_pool_e_prepara_escolhido(self):
+    def test_rascunho_nao_encontrado_avisa(self):
+        daily = self.daily
+        with mock.patch.object(daily.draft_store, "por_token", return_value=None), \
+             mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
+            out = daily.trocar_estudo_amanha("tok", "reserva", "x")
+        self.assertIsNone(out)
+        m_cur.assert_called_once()
+
+    def test_candidato_atual_volta_ao_pool_grava_slot_e_prepara_escolhido(self):
         daily = self.daily
         import db
-        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Perf"}}
+        novo = {"review_token": "novo", "data": "2026-07-28",
+                "artigo": {"tema": "Obesidade", "titulo": "Ret"}, "titulo_pt": "Ret PT"}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
-             mock.patch.object(daily, "_preparar_da_reserva", return_value={"review_token": "novo"}) as m_res, \
+             mock.patch.object(db, "marcar_reserva_pronto") as m_res_pool, \
+             mock.patch.object(db, "agenda_upsert") as m_up, \
+             mock.patch.object(db, "marcar_reserva_agendado") as m_res_ag, \
+             mock.patch.object(daily, "_preparar_da_reserva", return_value=novo) as m_res, \
              mock.patch.object(daily, "_preparar_de_candidato") as m_cand, \
              mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
             out = daily.trocar_estudo_amanha("tok", "reserva", "res_escolhida")
-        m_pool.assert_called_once_with("c_velho")          # devolveu o candidato atual ao pool
-        m_res.assert_called_once_with(reserva_id="res_escolhida")  # preparou o escolhido (reserva)
+        m_res.assert_called_once_with(reserva_id="res_escolhida")   # preparou o escolhido
         m_cand.assert_not_called()
-        m_cur.assert_not_called()                          # sucesso: sem aviso de falha
+        m_up.assert_called_once_with("2026-07-28", tipo="reserva", ref_id="res_escolhida",
+                                     payload=None, tema="Obesidade", titulo="Ret PT", fixado=0)
+        m_res_ag.assert_called_once_with("res_escolhida")           # consome o escolhido
+        m_pool.assert_called_once_with("c_velho")                   # devolve o candidato atual ao pool
+        m_res_pool.assert_not_called()
+        m_cur.assert_not_called()
         self.assertEqual(out["review_token"], "novo")
 
-    def test_reserva_atual_nao_e_descartada(self):
+    def test_reserva_atual_volta_ao_pool_e_grava_slot_do_candidato(self):
         daily = self.daily
         import db
         r = {"reserva_id": "res_velha", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        novo = {"review_token": "n", "data": "2026-07-28",
+                "artigo": {"tema": "Perf", "titulo": "Cand"}, "titulo_pt": ""}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
-             mock.patch.object(daily, "_preparar_de_candidato", return_value={"review_token": "n"}) as m_cand, \
+             mock.patch.object(db, "marcar_reserva_pronto") as m_res_pool, \
+             mock.patch.object(db, "agenda_upsert") as m_up, \
+             mock.patch.object(db, "marcar_candidato_agendado") as m_cand_ag, \
+             mock.patch.object(daily, "_preparar_de_candidato", return_value=novo) as m_cand, \
              mock.patch.object(daily, "_preparar_da_reserva"), \
              mock.patch.object(daily.deliver, "enviar_curador"):
             daily.trocar_estudo_amanha("tok", "candidato", "c_escolhido")
-        m_pool.assert_not_called()                         # reserva atual segue 'pronto' (reusável)
         m_cand.assert_called_once_with("c_escolhido")
+        m_up.assert_called_once_with("2026-07-28", tipo="candidato", ref_id="c_escolhido",
+                                     payload=None, tema="Perf", titulo="Cand", fixado=0)
+        m_cand_ag.assert_called_once_with("c_escolhido")            # consome o escolhido
+        m_res_pool.assert_called_once_with("res_velha")            # devolve a reserva atual ao pool
+        m_pool.assert_not_called()
 
-    def test_preparo_falha_avisa_curador(self):
+    def test_preparo_falha_avisa_curador_sem_tocar_agenda(self):
         daily = self.daily
         import db
         r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
-             mock.patch.object(db, "marcar_candidato_pronto"), \
+             mock.patch.object(db, "agenda_upsert") as m_up, \
+             mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
              mock.patch.object(daily, "_preparar_da_reserva", side_effect=RuntimeError("boom")), \
              mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
             out = daily.trocar_estudo_amanha("tok", "reserva", "res_x")
         self.assertIsNone(out)
-        m_cur.assert_called_once()                         # avisou que a troca falhou
+        m_cur.assert_called_once()          # avisou que a troca falhou
+        m_up.assert_not_called()            # não gravou slot no caminho de falha
+        m_pool.assert_not_called()          # nem devolveu nada ao pool
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -250,17 +279,13 @@ Em `app/daily.py`, abaixo de `alternativa_valida`:
 ```python
 def trocar_estudo_amanha(token, tipo, cid):
     """Refaz o rascunho de amanhã a partir do estudo escolhido (roda em thread).
-    Devolve o estudo atual ao pool. Fail-safe: exceção -> avisa o curador, o rascunho antigo fica."""
+    Grava o slot de amanhã no escolhido (consome, igual ao materialize) e devolve o
+    estudo atual ao pool. Fail-safe: exceção no preparo -> avisa o curador, o antigo fica."""
     import db
     r = draft_store.por_token(token)
     if not r:
         deliver.enviar_curador("⚠️ Não consegui trocar o estudo (rascunho não encontrado).")
         return None
-    if r.get("candidato_id"):                 # candidato atual volta pro pool; reserva/clássico ficam
-        try:
-            db.marcar_candidato_pronto(r["candidato_id"])
-        except Exception as e:
-            print(f"[trocar] devolver candidato ao pool falhou (segue): {e}", flush=True)
     try:
         if tipo == "reserva":
             novo = _preparar_da_reserva(reserva_id=cid)
@@ -273,6 +298,27 @@ def trocar_estudo_amanha(token, tipo, cid):
         novo = None
     if not novo:
         deliver.enviar_curador("⚠️ Não consegui trocar o estudo; o anterior segue valendo.")
+        return None
+    art = novo.get("artigo", {})                 # grava o slot de amanhã no escolhido e consome (igual ao materialize)
+    tema = art.get("tema", "")
+    titulo = novo.get("titulo_pt") or art.get("titulo", "")
+    data = novo.get("data")
+    if tipo == "reserva":
+        db.agenda_upsert(data, tipo="reserva", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
+        db.marcar_reserva_agendado(cid)
+    else:
+        db.agenda_upsert(data, tipo="candidato", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
+        db.marcar_candidato_agendado(cid)
+    if r.get("candidato_id"):                    # devolve o estudo ATUAL ao pool (o slot já aponta pro novo)
+        try:
+            db.marcar_candidato_pronto(r["candidato_id"])
+        except Exception as e:
+            print(f"[trocar] devolver candidato ao pool falhou (segue): {e}", flush=True)
+    elif r.get("reserva_id"):
+        try:
+            db.marcar_reserva_pronto(r["reserva_id"])
+        except Exception as e:
+            print(f"[trocar] devolver reserva ao pool falhou (segue): {e}", flush=True)
     return novo
 ```
 
