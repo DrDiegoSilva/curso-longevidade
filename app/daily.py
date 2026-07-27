@@ -448,6 +448,34 @@ def alternativa_valida(r, tipo, cid):
     return any(a["tipo"] == tipo and str(a["id"]) == str(cid) for a in montar_alternativas(r))
 
 
+def trocar_estudo_amanha(token, tipo, cid):
+    """Refaz o rascunho de amanhã a partir do estudo escolhido (roda em thread).
+    Devolve o estudo atual ao pool. Fail-safe: exceção -> avisa o curador, o rascunho antigo fica."""
+    import db
+    r = draft_store.por_token(token)
+    if not r:
+        deliver.enviar_curador("⚠️ Não consegui trocar o estudo (rascunho não encontrado).")
+        return None
+    if r.get("candidato_id"):                 # candidato atual volta pro pool; reserva/clássico ficam
+        try:
+            db.marcar_candidato_pronto(r["candidato_id"])
+        except Exception as e:
+            print(f"[trocar] devolver candidato ao pool falhou (segue): {e}", flush=True)
+    try:
+        if tipo == "reserva":
+            novo = _preparar_da_reserva(reserva_id=cid)
+        elif tipo == "candidato":
+            novo = _preparar_de_candidato(cid)
+        else:
+            novo = None
+    except Exception as e:
+        print(f"[trocar] preparo do escolhido falhou: {e}", flush=True)
+        novo = None
+    if not novo:
+        deliver.enviar_curador("⚠️ Não consegui trocar o estudo; o anterior segue valendo.")
+    return novo
+
+
 def _preparar_fallback():
     """Comportamento original: fila fresca (gera conteúdo) e, se vazia, reserva."""
     if queue_store.tamanho() < REFILL_MINIMO:

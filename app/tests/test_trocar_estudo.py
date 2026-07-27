@@ -71,5 +71,53 @@ class TestMontarAlternativas(unittest.TestCase):
             self.assertFalse(daily.alternativa_valida(r, "reserva", "nope"))
 
 
+class TestTrocarEstudoAmanha(unittest.TestCase):
+    def setUp(self):
+        import daily
+        importlib.reload(daily)
+        self.daily = daily
+
+    def test_candidato_atual_volta_ao_pool_e_prepara_escolhido(self):
+        daily = self.daily
+        import db
+        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
+             mock.patch.object(daily, "_preparar_da_reserva", return_value={"review_token": "novo"}) as m_res, \
+             mock.patch.object(daily, "_preparar_de_candidato") as m_cand, \
+             mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
+            out = daily.trocar_estudo_amanha("tok", "reserva", "res_escolhida")
+        m_pool.assert_called_once_with("c_velho")          # devolveu o candidato atual ao pool
+        m_res.assert_called_once_with(reserva_id="res_escolhida")  # preparou o escolhido (reserva)
+        m_cand.assert_not_called()
+        m_cur.assert_not_called()                          # sucesso: sem aviso de falha
+        self.assertEqual(out["review_token"], "novo")
+
+    def test_reserva_atual_nao_e_descartada(self):
+        daily = self.daily
+        import db
+        r = {"reserva_id": "res_velha", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
+             mock.patch.object(daily, "_preparar_de_candidato", return_value={"review_token": "n"}) as m_cand, \
+             mock.patch.object(daily, "_preparar_da_reserva"), \
+             mock.patch.object(daily.deliver, "enviar_curador"):
+            daily.trocar_estudo_amanha("tok", "candidato", "c_escolhido")
+        m_pool.assert_not_called()                         # reserva atual segue 'pronto' (reusável)
+        m_cand.assert_called_once_with("c_escolhido")
+
+    def test_preparo_falha_avisa_curador(self):
+        daily = self.daily
+        import db
+        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(db, "marcar_candidato_pronto"), \
+             mock.patch.object(daily, "_preparar_da_reserva", side_effect=RuntimeError("boom")), \
+             mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
+            out = daily.trocar_estudo_amanha("tok", "reserva", "res_x")
+        self.assertIsNone(out)
+        m_cur.assert_called_once()                         # avisou que a troca falhou
+
+
 if __name__ == "__main__":
     unittest.main()
