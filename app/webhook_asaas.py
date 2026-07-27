@@ -190,8 +190,14 @@ def _executar(event, pay, pid, enviar_fn):
         # por CPF só vale se o valor dele bater com a cobrança que está sendo processada.
         pending = db.obter_pending(pay.get("externalReference"))
         if not pending:
-            candidato = db.obter_pending_por_cpf(cust.get("cpfCnpj") or pay.get("cpfCnpj"))
-            pending = candidato if _pending_plausivel(candidato, pay) else None
+            # Procura o primeiro pending PLAUSÍVEL, não só o mais recente: quem volta no
+            # navegador e refaz o checkout com outro método/plano deixa vários em aberto, e
+            # o abandonado costuma ser o mais novo. Parar no primeiro candidato descartava o
+            # pending certo — o cliente pagava um ano e recebia 30 dias (ou, sem
+            # ASAAS_API_KEY, o pagamento era largado em "sem-whatsapp").
+            pending = next((p for p in db.obter_pendings_por_cpf(
+                                cust.get("cpfCnpj") or pay.get("cpfCnpj"))
+                            if _pending_plausivel(p, pay)), None)
         # Sem ASAAS_API_KEY (ou se a consulta ao Asaas falhar), `cust` fica vazio e uma
         # recompra/recontratação de quem JÁ é assinante ficaria bloqueada aqui por "falta"
         # de WhatsApp — mesmo já tendo o telefone dele gravado. Acha o assinante pelo CPF

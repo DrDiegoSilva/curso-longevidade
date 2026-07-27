@@ -263,6 +263,25 @@ class TestClienteQueVolta(JornadaBase):
         self.assertEqual(e["plano"], "mensal")
         self.assertEqual(e["renovacao_cobraria"], 99.0)
 
+    def test_cliente_novo_que_mexeu_no_checkout_duas_vezes_recebe_o_que_pagou(self):
+        """Em produção o Asaas não devolve o `externalReference`, então o pending é achado
+        pelo CPF. Se o cliente preencher o checkout, voltar e preencher de novo com outro
+        método (Pix -> cartão) e pagar o PRIMEIRO link, o pending mais recente é o do cartão
+        e não bate com a cobrança do Pix. Olhando só o mais recente, o pending certo era
+        descartado: o cliente pagava um ANO e recebia 30 dias, sem plano, sem termos aceitos
+        e sem comissão para o afiliado."""
+        tok_pix, valor_pix, _ = self._checkout(plano="anual", metodo="PIX")
+        self._checkout(plano="anual", metodo="CARTAO", parcelas=12)   # voltou e refez
+        pay = {"id": "pg1", "externalReference": "", "customer": "cus_1",
+               "subscription": None, "dueDate": "2026-07-19", "value": valor_pix,
+               "cpfCnpj": CPF}
+        self.w.processar({"event": "PAYMENT_CONFIRMED", "payment": pay}, "segredo",
+                         enviar_fn=lambda w, m: self.wa.append((w, m)))
+        e = self.estado()
+        self.assertEqual(e["plano"], "anual")
+        self.assert_recebeu_um_ano("pagou anual depois de refazer o checkout")
+        self.assertEqual(e["renovacao_cobraria"], 1099.0)
+
     def test_checkout_abandonado_nao_muda_o_plano_do_que_ele_pagou(self):
         self._venceu(plano="anual", metodo="PIX")
         self.db.criar_pending({"nome": "Dr. A", "whatsapp": WPP, "email": EMAIL, "cpf": CPF,

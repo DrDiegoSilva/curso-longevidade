@@ -316,6 +316,23 @@ def obter_pending(token):
     return dict(r) if r else None
 
 
+def obter_pendings_por_cpf(cpf, limite=10):
+    """Os pendings recentes desse CPF, do mais novo pro mais velho.
+
+    Plural de propósito: o Asaas não devolve o `externalReference`, então o webhook casa o
+    pending pelo CPF — e o cliente que volta no navegador e refaz o checkout com outro
+    método/plano deixa mais de um em aberto. Pegando só o mais recente, o pending CERTO
+    (o do link que ele de fato pagou) ficava enterrado atrás do abandonado.
+    """
+    dig = "".join(ch for ch in (cpf or "") if ch.isdigit())
+    if not dig:
+        return []
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM pending_signups WHERE cpf=? ORDER BY criado_em DESC LIMIT ?",
+                         (dig, int(limite))).fetchall()
+    return [dict(r) for r in rows]
+
+
 def obter_pending_por_cpf(cpf):
     """Pending mais recente para esse CPF (compara só dígitos). Fallback do webhook
     quando o Asaas NÃO propaga o externalReference do checkout — recupera o
