@@ -73,6 +73,12 @@ CLASSICO_REUSO_MESES = int(os.environ.get("DSCURSO_CLASSICO_REUSO_MESES") or 6) 
 HORA_VARREDURA = int(os.environ.get("DSCURSO_HORA_VARREDURA") or 6)   # domingo de manhã
 DIA_VARREDURA = os.environ.get("DSCURSO_DIA_VARREDURA") or "domingo"
 
+# Piso de qualidade da varredura: candidato com nota abaixo de SCORE_PISO não entra na
+# curadoria. Válvula: tema que não alcançar MIN_POR_TEMA acima do piso afrouxa e entrega
+# os melhores que tiver — tema seco não pode zerar.
+SCORE_PISO = float(os.environ.get("DSCURSO_SCORE_PISO") or 6)
+MIN_POR_TEMA = int(os.environ.get("DSCURSO_MIN_POR_TEMA") or 3)
+
 # Planos. base = valor cheio (Pix); cycle = ciclo Asaas; recorrente_pix = mensal (Pix Automático).
 # preco/nota/periodo = exibição na landing. maiores => cartão recorrente OU Pix à vista.
 PLANOS = [

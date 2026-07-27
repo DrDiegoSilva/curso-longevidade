@@ -44,7 +44,17 @@ def _normalizar(a, tema, tipo="varredura"):
     }
 
 
-def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None):
+def aplicar_piso(bons, piso=None, min_por_tema=None):
+    """Corta os de nota baixa. Se sobrar menos que `min_por_tema`, afrouxa e devolve os
+    melhores que houver (tema seco não pode zerar). `bons` já vem ordenado por score desc."""
+    import config
+    piso = config.SCORE_PISO if piso is None else piso
+    min_por_tema = config.MIN_POR_TEMA if min_por_tema is None else min_por_tema
+    acima = [a for a in bons if float(a.get("score", 0) or 0) >= piso]
+    return acima if len(acima) >= min_por_tema else bons[:min_por_tema]
+
+
+def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None, piso=None, min_por_tema=None):
     """Por tema: busca (Europe PMC etc.) -> triagem IA -> top(cap) por score, dedup global.
     Retorna lista de candidatos normalizados. buscar_fn/triar_fn injetáveis (teste sem rede)."""
     caps = caps or CAPS
@@ -69,6 +79,7 @@ def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None):
             print(f"[curadoria] {nome} falhou: {e}", flush=True)
             continue
         bons.sort(key=lambda x: x.get("score", 0), reverse=True)
+        bons = aplicar_piso(bons, piso, min_por_tema)
         n = 0
         for a in bons:
             k = _chave(a)

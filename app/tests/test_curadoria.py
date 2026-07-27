@@ -188,6 +188,41 @@ class TestVarrerClassicos(unittest.TestCase):
         self.assertEqual(obes[0]["citacoes"], 5000)
 
 
+class TestPiso(unittest.TestCase):
+    def test_corta_abaixo_do_piso_quando_ha_fartura(self):
+        bons = [{"score": 9}, {"score": 8}, {"score": 7}, {"score": 3}, {"score": 2}]
+        out = curadoria.aplicar_piso(bons, piso=6, min_por_tema=3)
+        self.assertEqual([b["score"] for b in out], [9, 8, 7])
+
+    def test_valvula_afrouxa_quando_tema_seco(self):
+        # só 1 acima do piso, mas min_por_tema=3 -> entrega os 3 melhores mesmo abaixo
+        bons = [{"score": 9}, {"score": 4}, {"score": 3}]
+        out = curadoria.aplicar_piso(bons, piso=6, min_por_tema=3)
+        self.assertEqual([b["score"] for b in out], [9, 4, 3])
+
+    def test_tema_vazio_continua_vazio(self):
+        self.assertEqual(curadoria.aplicar_piso([], piso=6, min_por_tema=3), [])
+
+    def test_score_ausente_conta_como_zero(self):
+        out = curadoria.aplicar_piso([{"titulo": "x"}], piso=6, min_por_tema=0)
+        self.assertEqual(out, [])
+
+    def test_varrer_aplica_o_piso(self):
+        # _fake_triar dá scores 10,9,8,7,6 por tema; piso=8 e min=1 deixa só 10,9,8
+        out = curadoria.varrer("2026-01-01", "2026-03-01",
+                               caps={"Obesidade": 99}, buscar_fn=_fake_buscar,
+                               triar_fn=_fake_triar, piso=8, min_por_tema=1)
+        obes = [c for c in out if c["tema"] == "Obesidade"]
+        self.assertEqual(len(obes), 3)
+        self.assertTrue(all(c["score"] >= 8 for c in obes))
+
+    def test_varrer_classicos_ignora_o_piso(self):
+        # clássicos ranqueiam por citações — o piso de nota não pode cortá-los
+        out = curadoria.varrer_classicos(caps={"Obesidade": 99}, buscar_fn=_fake_buscar,
+                                         triar_fn=_fake_triar)
+        self.assertTrue([c for c in out if c["tema"] == "Obesidade"])
+
+
 class TestGerarRoteia(unittest.TestCase):
     def test_classico_vai_pro_banco(self):
         chamados = {"classico": 0, "reserva": 0}
