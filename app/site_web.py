@@ -182,6 +182,22 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .statcard .hp{font-family:system-ui,sans-serif;font-size:11.5px;color:var(--suave);margin-top:2px;line-height:1.35}
 .legend{display:flex;gap:12px 18px;flex-wrap:wrap;align-items:center;background:rgba(255,255,255,.03);
   border:1px solid rgba(233,225,198,.14);border-radius:12px;padding:10px 14px;margin:14px 0;font-family:system-ui,sans-serif;font-size:12.5px;color:var(--suave)}
+.faixa{font-family:var(--ui);font-size:13.5px;color:var(--creme);background:rgba(255,255,255,.04);
+       border:1px solid var(--line);border-radius:12px;padding:11px 15px;margin:4px 0 14px}
+.faixa.baixo{color:#eaa982;background:rgba(200,120,60,.13);border-color:rgba(200,120,60,.34)}
+.amanha{background:linear-gradient(180deg,rgba(201,162,39,.10),rgba(255,255,255,.02));
+        border:1px solid rgba(201,162,39,.30);border-radius:14px;padding:13px 16px;margin:0 0 18px}
+.am-t{font-family:var(--ui);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ouro2)}
+.am-tit{font-size:15px;color:var(--creme);line-height:1.35;margin:6px 0 10px}
+.am-rod{display:flex;align-items:center;justify-content:space-between;gap:10px;
+        font-family:var(--ui);font-size:12.5px;color:var(--muted)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0 14px}
+.chip{font-family:var(--ui);font-size:12.5px;color:var(--muted);background:rgba(255,255,255,.05);
+      border:1px solid var(--line);border-radius:100px;padding:6px 13px;text-decoration:none;transition:.15s}
+.chip:hover{color:var(--creme);border-color:rgba(201,162,39,.35)}
+.chip.on{color:var(--ouro2);background:rgba(201,162,39,.15);border-color:rgba(201,162,39,.38)}
+.chip b{font-family:var(--mono);font-weight:700}
+.cacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .scorechip{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 9px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
 .scorechip.hi{background:linear-gradient(180deg,var(--score-hi-bg1),var(--score-hi-bg2));color:var(--score-hi-tx);border:1px solid var(--score-hi-bd)}
 .scorechip.md{background:var(--score-md-bg);color:var(--score-md-tx);border:1px solid var(--score-md-bd)}
@@ -1001,6 +1017,51 @@ def _chip_score(score):
     cls = "hi" if v >= 7 else ("md" if v >= 4 else "lo")
     estrela = "★ " if v >= 7 else ""
     return f'<span class="scorechip {cls}">{estrela}{v:g}</span>'
+
+
+def _curadoria_faixa(estado):
+    """Uma linha respondendo 'vou ficar sem conteúdo?'. Laranja quando o estoque é baixo."""
+    n = estado.get("envios", 0)
+    ate = estado.get("ate")
+    if not n:
+        txt = "Sem estoque — nenhum envio coberto"
+    else:
+        quando = f"{ate[8:10]}/{ate[5:7]}" if ate else "—"
+        txt = f"Conteúdo garantido até {quando} · {n} envio{'s' if n != 1 else ''}"
+    cls = "faixa baixo" if estado.get("baixo") else "faixa"
+    return f'<div class="{cls}">📦 {_esc(txt)}</div>'
+
+
+_AMANHA_ROT = {"APPROVED": "✅ aprovado", "EDITED": "✏️ editado", "SKIPPED": "🚫 bloqueado",
+               "SENT": "📤 enviado"}
+
+
+def _curadoria_amanha(amanha):
+    """Cartão do estudo preparado p/ amanhã, com atalho pra revisão. None => nada."""
+    if not amanha:
+        return ""
+    tok = _esc(amanha.get("review_token") or "")
+    rot = _AMANHA_ROT.get(amanha.get("status"), "aguardando sua revisão")
+    botao = (f'<a class="actbtn ghost" href="/revisar/{tok}" style="text-decoration:none;'
+             f'padding:7px 14px;font-size:12.5px">Revisar</a>') if tok else ""
+    return (f'<div class="amanha"><div class="am-t">📋 Amanhã sai</div>'
+            f'<div class="am-tit">{_esc(amanha.get("titulo") or "—")}</div>'
+            f'<div class="am-rod"><span>{_esc(rot)}</span>{botao}</div></div>')
+
+
+def _curadoria_abas(aba, contagens, token, tema=""):
+    """Abas de 1º nível (triagem/reserva/classicos) por querystring — sem JS."""
+    tk = _esc(token)
+    out = []
+    for chave, rotulo in (("triagem", "Triagem"), ("reserva", "Reserva"), ("classicos", "Clássicos")):
+        on = " on" if chave == aba else ""
+        q = f"?token={tk}&aba={chave}"
+        if chave == "triagem" and tema:
+            from urllib.parse import quote
+            q += f"&tema={quote(tema)}"
+        out.append(f'<a class="tab{on}" href="/curadoria{q}" style="text-decoration:none">'
+                   f'{rotulo} <span class="cnt">{contagens.get(chave, 0)}</span></a>')
+    return f'<div class="tabs">{"".join(out)}</div>'
 
 
 def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):

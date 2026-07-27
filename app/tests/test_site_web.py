@@ -246,5 +246,48 @@ class TestSeletorPais(unittest.TestCase):
         self.assertIn("Adicionar cortesia", h)
 
 
+class TestCuradoriaCabecalho(unittest.TestCase):
+    def setUp(self):
+        import site_web
+        self.s = site_web
+
+    def test_faixa_mostra_envios_e_data(self):
+        html = self.s._curadoria_faixa({"envios": 14, "ate": "2026-08-14", "baixo": False})
+        self.assertIn("14/08", html)
+        self.assertIn("14 envios", html)
+        self.assertNotIn("baixo", html)
+
+    def test_faixa_alerta_quando_baixo(self):
+        html = self.s._curadoria_faixa({"envios": 3, "ate": "2026-07-29", "baixo": True})
+        self.assertIn("baixo", html)
+
+    def test_faixa_sem_estoque(self):
+        html = self.s._curadoria_faixa({"envios": 0, "ate": None, "baixo": True})
+        self.assertIn("Sem estoque", html)
+
+    def test_amanha_mostra_titulo_e_link_de_revisao(self):
+        html = self.s._curadoria_amanha(
+            {"titulo": "Tirzepatida 72 semanas", "status": "DRAFT", "review_token": "abc123"})
+        self.assertIn("Tirzepatida 72 semanas", html)
+        self.assertIn("/revisar/abc123", html)
+        self.assertIn("aguardando sua revisão", html)
+
+    def test_amanha_reflete_status_aprovado(self):
+        html = self.s._curadoria_amanha(
+            {"titulo": "X", "status": "APPROVED", "review_token": "t"})
+        self.assertIn("aprovado", html)
+
+    def test_amanha_vazio_nao_renderiza(self):
+        self.assertEqual(self.s._curadoria_amanha(None), "")
+
+    def test_abas_marcam_a_ativa_e_mostram_contador(self):
+        html = self.s._curadoria_abas(
+            "triagem", {"triagem": 12, "reserva": 8, "classicos": 0}, "tok")
+        self.assertIn('class="tab on"', html)
+        self.assertIn(">12<", html)
+        self.assertIn("aba=reserva", html)
+        self.assertIn("aba=classicos", html)
+
+
 if __name__ == "__main__":
     unittest.main()
