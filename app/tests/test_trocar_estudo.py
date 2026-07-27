@@ -147,6 +147,23 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         m_up.assert_not_called()
         m_pool.assert_not_called()
 
+    def test_agenda_falha_avisa_mas_nao_crasha(self):
+        daily = self.daily
+        import db
+        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        novo = {"review_token": "n", "data": "2026-07-28",
+                "artigo": {"tema": "Obesidade", "titulo": "T"}, "titulo_pt": "T"}
+        with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(db, "agenda_upsert", side_effect=RuntimeError("db lock")), \
+             mock.patch.object(db, "marcar_reserva_agendado"), \
+             mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
+             mock.patch.object(daily, "_preparar_da_reserva", return_value=novo), \
+             mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
+            out = daily.trocar_estudo_amanha("tok", "reserva", "res_x")
+        m_cur.assert_called_once()                     # avisou que a agenda não atualizou
+        m_pool.assert_not_called()                     # bookkeeping abortou junto (não devolveu o antigo)
+        self.assertEqual(out["review_token"], "n")     # não crashou; retornou o novo
+
 
 if __name__ == "__main__":
     unittest.main()

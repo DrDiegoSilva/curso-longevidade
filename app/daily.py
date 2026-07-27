@@ -470,26 +470,24 @@ def trocar_estudo_amanha(token, tipo, cid):
     if not novo:
         deliver.enviar_curador("⚠️ Não consegui trocar o estudo; o anterior segue valendo.")
         return None
-    art = novo.get("artigo", {})                 # grava o slot de amanhã no escolhido e consome (igual ao materialize)
-    tema = art.get("tema", "")
-    titulo = novo.get("titulo_pt") or art.get("titulo", "")
-    data = novo.get("data")
-    if tipo == "reserva":
-        db.agenda_upsert(data, tipo="reserva", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
-        db.marcar_reserva_agendado(cid)
-    else:
-        db.agenda_upsert(data, tipo="candidato", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
-        db.marcar_candidato_agendado(cid)
-    if r.get("candidato_id"):                    # devolve o estudo ATUAL ao pool (o slot já aponta pro novo)
-        try:
+    try:            # grava o slot de amanhã no escolhido, consome e devolve o atual ao pool (igual ao materialize; guarda p/ observabilidade — roda em thread)
+        art = novo.get("artigo", {})
+        tema = art.get("tema", "")
+        titulo = novo.get("titulo_pt") or art.get("titulo", "")
+        data = novo.get("data")
+        if tipo == "reserva":
+            db.agenda_upsert(data, tipo="reserva", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
+            db.marcar_reserva_agendado(cid)
+        else:
+            db.agenda_upsert(data, tipo="candidato", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
+            db.marcar_candidato_agendado(cid)
+        if r.get("candidato_id"):                # devolve o estudo ATUAL ao pool (o slot já aponta pro novo)
             db.marcar_candidato_pronto(r["candidato_id"])
-        except Exception as e:
-            print(f"[trocar] devolver candidato ao pool falhou (segue): {e}", flush=True)
-    elif r.get("reserva_id"):
-        try:
+        elif r.get("reserva_id"):
             db.marcar_reserva_pronto(r["reserva_id"])
-        except Exception as e:
-            print(f"[trocar] devolver reserva ao pool falhou (segue): {e}", flush=True)
+    except Exception as e:                       # não pode crashar a thread nem falhar em silêncio
+        print(f"[trocar] atualizar agenda/pool falhou: {e}", flush=True)
+        deliver.enviar_curador("⚠️ Troquei o estudo de amanhã, mas não consegui atualizar a agenda — confira a /agenda pra não repetir o estudo.")
     return novo
 
 
