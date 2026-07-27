@@ -179,14 +179,14 @@ def gerar_resumo(cand, modelo="sonnet", gerar_resumo=None, gerar_gancho=None,
     art["resumo"] = cand.get("abstract") or cand.get("resumo") or ""
     f_resumo = gerar_resumo
     if f_resumo is None:
-        from resumo_diario import claude, OPUS, SONNET, SYS_APROF
+        from resumo_diario import claude, OPUS, SONNET, SYS_ESTUDO
         mdl = SONNET if (modelo or "").lower() == "sonnet" else OPUS
         def f_resumo(a):
             blob = ("### " + a.get("titulo", "") + "\nData: " + a.get("data", "") +
                     "\nFonte: " + a.get("fonte", "") + " | doi:" + a.get("doi", "") +
                     "\n" + a.get("resumo", ""))
-            return claude(mdl, "Aprofunde ESTE estudo para o médico (abra pela data de publicação):\n\n" + blob,
-                          system=SYS_APROF, max_tokens=3200)
+            return claude(mdl, "Resuma ESTE estudo para o médico:\n\n" + blob,
+                          system=SYS_ESTUDO, max_tokens=3600)
     return content.gerar_conteudo(art, gerar_resumo=f_resumo, gerar_gancho=gerar_gancho,
                                   gerar_grafico_json=gerar_grafico_json, gerar_titulo=gerar_titulo)
 
