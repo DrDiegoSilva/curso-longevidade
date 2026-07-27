@@ -489,6 +489,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 aviso = ("🎧 Novo áudio enviado no seu WhatsApp. Escute e, se aprovar, clique em Aprovar."
                          if ok else "Não consegui gerar o áudio agora — tente de novo em instantes.")
                 return self._html(review_web.pagina_revisao(r2, aviso=aviso, audio_on=config.audio_ligado()))
+            if g("acao") == "trocar":
+                import daily
+                return self._html(review_web.pagina_trocar_estudo(
+                    daily.montar_alternativas(r), r, tok))
+            if g("acao") == "trocar_confirmar":
+                import daily, threading
+                tipo, cid = g("tipo"), g("id")
+                if not daily.alternativa_valida(r, tipo, cid):
+                    return self._html(review_web.pagina_revisao(
+                        r, aviso="Esse estudo saiu da lista — escolha outro.",
+                        audio_on=config.audio_ligado()))
+                threading.Thread(target=daily.trocar_estudo_amanha,
+                                 args=(tok, tipo, cid), daemon=True).start()
+                return self._html(review_web.pagina_trocando())
             draft_store.aplicar(r["data"], g("acao"), g("texto"))
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
         if path == "/admin/whatsapp":
