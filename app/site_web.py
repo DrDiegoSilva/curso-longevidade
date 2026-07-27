@@ -503,9 +503,9 @@ def pagina_entrar(etapa="numero", whatsapp="", erro="", via="whatsapp"):
             <input type="hidden" name="etapa" value="numero">
             <label>{label}</label>
             <input type="text" name="{campo}" inputmode="{imode}" placeholder="{ph}" autofocus>
-            <button class="cta" type="submit">Enviar código</button>
+            {ui.btn('Enviar código')}
           </form>
-          <p class="hint" style="margin-top:16px"><a href="{senha_href}" style="color:var(--ouro2)">← Entrar com senha</a></p>
+          {ui.btn('Entrar com senha', href=senha_href, variant='ghost', extra='margin-top:12px')}
         </div></div>"""
     return _pagina(f"Entrar · {PRODUTO}", corpo, logado=False, meta_extra='<meta name="robots" content="noindex">')
 
@@ -531,15 +531,18 @@ def pagina_login(erro="", sem_senha=False, whatsapp="", via="whatsapp"):
             erro_html += ('<div class="infobox">Você ainda não criou sua senha. Clique em '
                           '<strong>Primeiro acesso / criar senha</strong> abaixo — enviaremos um link por e-mail.</div>')
     if cpf_mode:
-        aux = (f'<p class="hint" style="margin-top:16px"><a href="{codigo_href}" style="color:var(--ouro2)">Sem senha? Entrar com código no WhatsApp</a></p>'
-               f'<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar" style="color:var(--suave)">← Entrar com WhatsApp</a></p>')
+        aux = (ui.btn('Sem senha? Entrar com código', href=codigo_href, variant='ghost',
+                      extra='margin-top:12px')
+               + '<p class="hint" style="margin-top:12px;font-size:13px">'
+                 '<a href="/entrar" style="color:var(--suave)">← Entrar com WhatsApp</a></p>')
     else:
-        aux = ('<p class="hint" style="margin-top:16px">'
-               '<a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>'
-               '&nbsp;·&nbsp;'
-               '<a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a></p>'
-               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-codigo" style="color:var(--suave)">Problemas? Entrar com código no WhatsApp</a></p>'
-               '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-cpf" style="color:var(--suave)">Assinante fora do Brasil / sem WhatsApp brasileiro? Entrar com CPF</a></p>')
+        aux = (ui.btn('Entrar com código no WhatsApp', href='/entrar-codigo', variant='ghost',
+                      extra='margin-top:12px')
+               + '<p class="hint" style="margin-top:16px">'
+                 '<a href="/primeiro-acesso" style="color:var(--ouro2)">Primeiro acesso / criar senha</a>'
+                 '&nbsp;·&nbsp;'
+                 '<a href="/esqueci" style="color:var(--suave)">Esqueci minha senha</a></p>'
+                 '<p class="hint" style="margin-top:8px;font-size:13px"><a href="/entrar-cpf" style="color:var(--suave)">Assinante fora do Brasil / sem WhatsApp brasileiro? Entrar com CPF</a></p>')
     corpo = f"""
     <div class="wrap"><div class="panel">
       <h2 class="disp">Área do assinante</h2>
