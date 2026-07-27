@@ -450,17 +450,13 @@ def alternativa_valida(r, tipo, cid):
 
 def trocar_estudo_amanha(token, tipo, cid):
     """Refaz o rascunho de amanhã a partir do estudo escolhido (roda em thread).
-    Devolve o estudo atual ao pool. Fail-safe: exceção -> avisa o curador, o rascunho antigo fica."""
+    Grava o slot de amanhã no escolhido (consome, igual ao materialize) e devolve o
+    estudo atual ao pool. Fail-safe: exceção no preparo -> avisa o curador, o antigo fica."""
     import db
     r = draft_store.por_token(token)
     if not r:
         deliver.enviar_curador("⚠️ Não consegui trocar o estudo (rascunho não encontrado).")
         return None
-    if r.get("candidato_id"):                 # candidato atual volta pro pool; reserva/clássico ficam
-        try:
-            db.marcar_candidato_pronto(r["candidato_id"])
-        except Exception as e:
-            print(f"[trocar] devolver candidato ao pool falhou (segue): {e}", flush=True)
     try:
         if tipo == "reserva":
             novo = _preparar_da_reserva(reserva_id=cid)
@@ -473,6 +469,27 @@ def trocar_estudo_amanha(token, tipo, cid):
         novo = None
     if not novo:
         deliver.enviar_curador("⚠️ Não consegui trocar o estudo; o anterior segue valendo.")
+        return None
+    art = novo.get("artigo", {})                 # grava o slot de amanhã no escolhido e consome (igual ao materialize)
+    tema = art.get("tema", "")
+    titulo = novo.get("titulo_pt") or art.get("titulo", "")
+    data = novo.get("data")
+    if tipo == "reserva":
+        db.agenda_upsert(data, tipo="reserva", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
+        db.marcar_reserva_agendado(cid)
+    else:
+        db.agenda_upsert(data, tipo="candidato", ref_id=cid, payload=None, tema=tema, titulo=titulo, fixado=0)
+        db.marcar_candidato_agendado(cid)
+    if r.get("candidato_id"):                    # devolve o estudo ATUAL ao pool (o slot já aponta pro novo)
+        try:
+            db.marcar_candidato_pronto(r["candidato_id"])
+        except Exception as e:
+            print(f"[trocar] devolver candidato ao pool falhou (segue): {e}", flush=True)
+    elif r.get("reserva_id"):
+        try:
+            db.marcar_reserva_pronto(r["reserva_id"])
+        except Exception as e:
+            print(f"[trocar] devolver reserva ao pool falhou (segue): {e}", flush=True)
     return novo
 
 

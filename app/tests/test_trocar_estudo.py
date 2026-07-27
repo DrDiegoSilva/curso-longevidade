@@ -77,46 +77,75 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         importlib.reload(daily)
         self.daily = daily
 
-    def test_candidato_atual_volta_ao_pool_e_prepara_escolhido(self):
+    def test_rascunho_nao_encontrado_avisa(self):
+        daily = self.daily
+        with mock.patch.object(daily.draft_store, "por_token", return_value=None), \
+             mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
+            out = daily.trocar_estudo_amanha("tok", "reserva", "x")
+        self.assertIsNone(out)
+        m_cur.assert_called_once()
+
+    def test_candidato_atual_volta_ao_pool_grava_slot_e_prepara_escolhido(self):
         daily = self.daily
         import db
-        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Perf"}}
+        novo = {"review_token": "novo", "data": "2026-07-28",
+                "artigo": {"tema": "Obesidade", "titulo": "Ret"}, "titulo_pt": "Ret PT"}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
-             mock.patch.object(daily, "_preparar_da_reserva", return_value={"review_token": "novo"}) as m_res, \
+             mock.patch.object(db, "marcar_reserva_pronto") as m_res_pool, \
+             mock.patch.object(db, "agenda_upsert") as m_up, \
+             mock.patch.object(db, "marcar_reserva_agendado") as m_res_ag, \
+             mock.patch.object(daily, "_preparar_da_reserva", return_value=novo) as m_res, \
              mock.patch.object(daily, "_preparar_de_candidato") as m_cand, \
              mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
             out = daily.trocar_estudo_amanha("tok", "reserva", "res_escolhida")
-        m_pool.assert_called_once_with("c_velho")          # devolveu o candidato atual ao pool
-        m_res.assert_called_once_with(reserva_id="res_escolhida")  # preparou o escolhido (reserva)
+        m_res.assert_called_once_with(reserva_id="res_escolhida")
         m_cand.assert_not_called()
-        m_cur.assert_not_called()                          # sucesso: sem aviso de falha
+        m_up.assert_called_once_with("2026-07-28", tipo="reserva", ref_id="res_escolhida",
+                                     payload=None, tema="Obesidade", titulo="Ret PT", fixado=0)
+        m_res_ag.assert_called_once_with("res_escolhida")
+        m_pool.assert_called_once_with("c_velho")
+        m_res_pool.assert_not_called()
+        m_cur.assert_not_called()
         self.assertEqual(out["review_token"], "novo")
 
-    def test_reserva_atual_nao_e_descartada(self):
+    def test_reserva_atual_volta_ao_pool_e_grava_slot_do_candidato(self):
         daily = self.daily
         import db
         r = {"reserva_id": "res_velha", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
+        novo = {"review_token": "n", "data": "2026-07-28",
+                "artigo": {"tema": "Perf", "titulo": "Cand"}, "titulo_pt": ""}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
-             mock.patch.object(daily, "_preparar_de_candidato", return_value={"review_token": "n"}) as m_cand, \
+             mock.patch.object(db, "marcar_reserva_pronto") as m_res_pool, \
+             mock.patch.object(db, "agenda_upsert") as m_up, \
+             mock.patch.object(db, "marcar_candidato_agendado") as m_cand_ag, \
+             mock.patch.object(daily, "_preparar_de_candidato", return_value=novo) as m_cand, \
              mock.patch.object(daily, "_preparar_da_reserva"), \
              mock.patch.object(daily.deliver, "enviar_curador"):
             daily.trocar_estudo_amanha("tok", "candidato", "c_escolhido")
-        m_pool.assert_not_called()                         # reserva atual segue 'pronto' (reusável)
         m_cand.assert_called_once_with("c_escolhido")
+        m_up.assert_called_once_with("2026-07-28", tipo="candidato", ref_id="c_escolhido",
+                                     payload=None, tema="Perf", titulo="Cand", fixado=0)
+        m_cand_ag.assert_called_once_with("c_escolhido")
+        m_res_pool.assert_called_once_with("res_velha")
+        m_pool.assert_not_called()
 
-    def test_preparo_falha_avisa_curador(self):
+    def test_preparo_falha_avisa_curador_sem_tocar_agenda(self):
         daily = self.daily
         import db
         r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
-             mock.patch.object(db, "marcar_candidato_pronto"), \
+             mock.patch.object(db, "agenda_upsert") as m_up, \
+             mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
              mock.patch.object(daily, "_preparar_da_reserva", side_effect=RuntimeError("boom")), \
              mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
             out = daily.trocar_estudo_amanha("tok", "reserva", "res_x")
         self.assertIsNone(out)
-        m_cur.assert_called_once()                         # avisou que a troca falhou
+        m_cur.assert_called_once()
+        m_up.assert_not_called()
+        m_pool.assert_not_called()
 
 
 if __name__ == "__main__":
