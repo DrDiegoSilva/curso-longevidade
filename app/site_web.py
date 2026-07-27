@@ -1096,126 +1096,151 @@ def _curadoria_item(c, token, aba="triagem", tema=""):
             f'<span class="cacts">{acoes}</span></span></div>')
 
 
-def pagina_curadoria(candidatos, reserva, contagem, token, msg=""):
-    from collections import OrderedDict
-    tok = _esc(token)
-    grupos = OrderedDict()
-    for c in candidatos:
-        grupos.setdefault(c.get("tema", "—"), []).append(c)
-    prontos = sum(1 for r in reserva if r.get("status") == "pronto")
-    enviados = sum(1 for r in reserva if r.get("status") == "enviado")
+_CUR_EMOJI = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵",
+              "Performance": "🏃", "Longevidade": "🧬"}
+_CUR_ORDEM = ["Obesidade", "Hormonal", "Lipedema", "Performance", "Longevidade"]
 
-    def sc(lb, n, hp, key=False):
-        return (f'<div class="statcard{" key" if key else ""}"><div class="num">{n}</div>'
-                f'<div class="lb">{lb}</div><div class="hp">{hp}</div></div>')
-    stats = (
-        '<div class="statgroup"><p class="gh">Candidatos da varredura</p>'
-        '<p class="gsub">Estudos que a busca automática achou — ainda sem resumo.</p><div class="statcards">'
-        + sc("Novos", contagem.get("novo", 0), "achados; você ainda não decidiu", key=True)
-        + sc("Selecionados", contagem.get("selecionado", 0), "marcados p/ virar resumo")
-        + sc("Já resumidos", contagem.get("resumido", 0), "a IA já transformou em resumo")
-        + '</div></div>'
-        '<div class="statgroup"><p class="gh">Estoque de resumos · fila de envio</p>'
-        '<p class="gsub">Resumos prontos que vão pros assinantes.</p><div class="statcards">'
-        + sc("Prontos p/ enviar", prontos, "esperando a vez na fila", key=True)
-        + sc("Já enviados", enviados, "entregues aos assinantes")
-        + sc("Total na reserva", len(reserva), "prontos + enviados")
-        + '</div></div>')
-    legenda = ('<div class="legend"><span><b>score</b> = importância clínica que a IA dá, '
-               'de 0 a 10 (só ordena a lista; o assinante não vê)</span>'
-               '<span class="scorechip hi">★ 8</span> alta &nbsp;<span class="scorechip md">5</span> média '
-               '&nbsp;<span class="scorechip lo">2</span> baixa</div>')
-    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
-    acoes = f"""
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 22px">
-        <form method="post" action="/curadoria" onsubmit="return confirm('Rodar a varredura de 2026 no Europe PMC (Haiku)? Pode levar 1–2 min.')">
-          <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="varrer">
-          <button class="actbtn" type="submit">🔎 Rodar varredura 2026</button>
-        </form>
-        <form method="post" action="/curadoria" onsubmit="return confirm('Gerar os resumos (padrão de qualidade) dos selecionados? Usa IA.')">
-          <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="gerar">
-          <button class="actbtn ghost" type="submit">✍️ Gerar resumos dos selecionados</button>
-        </form>
-      </div>"""
-    blocos = []
-    for tema, lst in grupos.items():
-        itens = "".join(
-            f'<label class="candi">'
-            f'<input type="checkbox" name="sel" value="{_esc(c.get("id"))}"{" checked" if c.get("status") == "selecionado" else ""}>'
-            f'<span class="cbody"><span style="display:flex;align-items:center;gap:8px;justify-content:space-between">'
-            f'<span class="ctitle">{_esc(c.get("titulo"))}</span>{_chip_score(c.get("score"))}</span>'
-            f'<span class="cperg">❓ {_esc(c.get("pergunta") or "—")}</span>'
-            f'<span class="cmeta">{_esc(c.get("fonte", ""))} · {_esc(c.get("data", ""))}'
-            f'{" · DOI " + _esc(c.get("doi")) if c.get("doi") else ""}</span></span></label>'
-            for c in lst)
-        emoji = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵", "Performance": "🏃", "Longevidade": "🧬"}.get(tema, "•")
-        blocos.append(f'<div class="sectag" style="margin-top:24px">{emoji} {_esc(tema)} · {len(lst)}</div>{itens}')
-    lista = "".join(blocos) or '<p class="hint">Nenhum candidato ainda. Clique em <strong>Rodar varredura 2026</strong>.</p>'
-    form_lista = f"""
-      <form method="post" action="/curadoria">
-        <input type="hidden" name="token" value="{tok}"><input type="hidden" name="acao" value="selecionar">
-        {lista}
-        <div style="position:sticky;bottom:0;padding:14px 0;margin-top:8px;background:linear-gradient(0deg,var(--verde) 40%,transparent)">
-          <button class="actbtn" type="submit">💾 Salvar seleção</button>
+
+def _curadoria_chips(candidatos, token, tema=""):
+    """Filtro por tema dentro da triagem. Mostra as 5 frentes sempre (inclusive com 0)."""
+    from urllib.parse import quote
+    tk = _esc(token)
+    n = {}
+    for c in candidatos:
+        k = c.get("tema", "—")
+        n[k] = n.get(k, 0) + 1
+    temas = _CUR_ORDEM + [t for t in n if t not in _CUR_ORDEM]
+    chips = [f'<a class="temachip{"" if tema else " on"}" href="/curadoria?token={tk}&aba=triagem">'
+             f'Todos <b>{len(candidatos)}</b></a>']
+    for t in temas:
+        on = " on" if t == tema else ""
+        chips.append(f'<a class="temachip{on}" href="/curadoria?token={tk}&aba=triagem&tema={quote(t)}">'
+                     f'{_CUR_EMOJI.get(t, "•")} {_esc(t)} <b>{n.get(t, 0)}</b></a>')
+    return f'<div class="temachips">{"".join(chips)}</div>'
+
+
+def _curadoria_reserva_item(r, token):
+    """Item da Reserva: título + <details> pra editar/remover (comportamento original)."""
+    tok, rid = _esc(token), _esc(r.get("id"))
+    prio = ' · <span style="color:var(--ouro2)">★ prioridade</span>' if r.get("prioridade") else ""
+    return (
+        f'<div class="item">'
+        f'<div class="d">{_esc(r.get("tema"))} · {_esc(r.get("status"))}{prio}</div>'
+        f'<div class="t">{_esc(r.get("titulo_pt"))}</div>'
+        f'<details style="margin-top:8px">'
+        f'<summary style="cursor:pointer;color:var(--ouro2);font-family:system-ui,sans-serif;'
+        f'font-size:13px">✏️ editar / remover</summary>'
+        f'<form method="post" action="/curadoria" style="margin-top:12px">'
+        f'<input type="hidden" name="token" value="{tok}">'
+        f'<input type="hidden" name="acao" value="editar_reserva">'
+        f'<input type="hidden" name="id" value="{rid}">'
+        f'<input type="hidden" name="aba" value="reserva">'
+        f'<label>Título</label>'
+        f'<input type="text" name="titulo_pt" value="{_esc(r.get("titulo_pt"))}" style="width:100%">'
+        f'<label style="margin-top:10px">Resumo (pode ajustar o texto que a IA gerou)</label>'
+        f'<textarea name="resumo" rows="10">{_esc(r.get("resumo"))}</textarea>'
+        f'<button class="actbtn" type="submit">Salvar alterações</button>'
+        f'</form>'
+        f'<form method="post" action="/curadoria" '
+        f'onsubmit="return confirm(\'Remover este item da reserva?\')" style="margin-top:10px">'
+        f'<input type="hidden" name="token" value="{tok}">'
+        f'<input type="hidden" name="acao" value="remover_reserva">'
+        f'<input type="hidden" name="id" value="{rid}">'
+        f'<input type="hidden" name="aba" value="reserva">'
+        f'<button class="actbtn ghost" type="submit">🗑️ Remover da reserva</button>'
+        f'</form></details></div>')
+
+
+def _curadoria_ferramentas(token):
+    """Ações raras, recolhidas: adicionar meu estudo (PDF) e as duas varreduras."""
+    tok = _esc(token)
+    def _varredura(acao, label, pergunta):
+        return (f'<form method="post" action="/curadoria" style="display:inline" '
+                f'onsubmit="return confirm(\'{pergunta}\')">'
+                f'<input type="hidden" name="token" value="{tok}">'
+                f'<input type="hidden" name="acao" value="{acao}">'
+                f'<button class="actbtn ghost" type="submit">{label}</button></form>')
+    return f"""
+      <details style="margin-top:26px">
+        <summary style="cursor:pointer;color:var(--ouro2);font-family:var(--ui);font-size:13px">
+          ⚙️ Ferramentas</summary>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 18px">
+          {_varredura("varrer", "🔎 Varrer agora",
+                      "Rodar a varredura no Europe PMC (Haiku)? Pode levar 1–2 min.")}
+          {_varredura("varrer_classicos", "🏛️ Varrer clássicos",
+                      "Buscar estudos-marco por citações? Pode levar 1–2 min.")}
         </div>
-      </form>"""
-    def _reserva_item(r):
-        rid = _esc(r.get("id"))
-        prio = ' · <span style="color:var(--ouro2)">★ prioridade</span>' if r.get("prioridade") else ""
-        return (
-            f'<div class="item">'
-            f'<div class="d">{_esc(r.get("tema"))} · {_esc(r.get("status"))}{prio}</div>'
-            f'<div class="t">{_esc(r.get("titulo_pt"))}</div>'
-            f'<details style="margin-top:8px">'
-            f'<summary style="cursor:pointer;color:var(--ouro2);font-family:system-ui,sans-serif;font-size:13px">✏️ editar / remover</summary>'
-            f'<form method="post" action="/curadoria" style="margin-top:12px">'
-            f'<input type="hidden" name="token" value="{tok}">'
-            f'<input type="hidden" name="acao" value="editar_reserva">'
-            f'<input type="hidden" name="id" value="{rid}">'
-            f'<label>Título</label>'
-            f'<input type="text" name="titulo_pt" value="{_esc(r.get("titulo_pt"))}" style="width:100%">'
-            f'<label style="margin-top:10px">Resumo (pode ajustar o texto que a IA gerou)</label>'
-            f'<textarea name="resumo" rows="10">{_esc(r.get("resumo"))}</textarea>'
-            f'<button class="actbtn" type="submit">Salvar alterações</button>'
-            f'</form>'
-            f'<form method="post" action="/curadoria" onsubmit="return confirm(\'Remover este item da reserva?\')" style="margin-top:10px">'
-            f'<input type="hidden" name="token" value="{tok}">'
-            f'<input type="hidden" name="acao" value="remover_reserva">'
-            f'<input type="hidden" name="id" value="{rid}">'
-            f'<button class="actbtn ghost" type="submit">🗑️ Remover da reserva</button>'
-            f'</form>'
-            f'</details></div>')
-    res_html = "".join(_reserva_item(r) for r in reserva) or '<p class="hint">Reserva vazia. Selecione candidatos e clique em <strong>Gerar resumos</strong>.</p>'
-    add_form = f"""
-      <div class="panel" style="max-width:none;margin:0 0 24px">
-        <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:25px;color:var(--ouro2);margin-bottom:6px">➕ Adicionar meu estudo</h3>
-        <p class="hint" style="margin-bottom:14px">Sobe o PDF (ou cola o texto). Gero o resumo e ele entra na <strong>fila, na frente</strong> — vai pros assinantes no próximo dia útil (com seu review das 18h).</p>
-        <form method="post" action="/curadoria" enctype="multipart/form-data">
-          <input type="hidden" name="token" value="{tok}">
-          <label>PDF do estudo</label>
-          <input type="file" name="pdf" accept="application/pdf" style="color:var(--suave);font-family:system-ui,sans-serif;margin-bottom:14px">
-          <label>…ou cole o texto/resumo (se não tiver PDF)</label>
-          <textarea name="texto" rows="3" placeholder="Cole aqui o abstract/texto do estudo…"></textarea>
-          <input type="text" name="titulo" placeholder="Título do estudo (opcional — se vazio, eu crio a partir do texto)" style="width:100%;margin-bottom:10px">
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <input type="text" name="fonte" placeholder="Revista (opcional)" style="flex:1">
-            <input type="text" name="doi" placeholder="DOI (opcional)" style="flex:1">
-          </div>
-          <button class="actbtn" type="submit" style="margin-top:14px">Gerar resumo e adicionar à fila</button>
-        </form>
-      </div>"""
+        <div class="panel" style="max-width:none;margin:0">
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;
+                     color:var(--ouro2);margin-bottom:6px">➕ Adicionar meu estudo</h3>
+          <p class="hint" style="margin-bottom:14px">Sobe o PDF (ou cola o texto). Gero o resumo
+            e ele entra na <strong>fila, na frente</strong>.</p>
+          <form method="post" action="/curadoria" enctype="multipart/form-data">
+            <input type="hidden" name="token" value="{tok}">
+            <label>PDF do estudo</label>
+            <input type="file" name="pdf" accept="application/pdf"
+                   style="color:var(--suave);font-family:system-ui,sans-serif;margin-bottom:14px">
+            <label>…ou cole o texto/resumo (se não tiver PDF)</label>
+            <textarea name="texto" rows="3" placeholder="Cole aqui o abstract do estudo…"></textarea>
+            <input type="text" name="titulo" placeholder="Título (opcional)" style="width:100%;margin-bottom:10px">
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <input type="text" name="fonte" placeholder="Revista (opcional)" style="flex:1">
+              <input type="text" name="doi" placeholder="DOI (opcional)" style="flex:1">
+            </div>
+            <button class="actbtn" type="submit" style="margin-top:14px">
+              Gerar resumo e adicionar à fila</button>
+          </form>
+        </div>
+      </details>"""
+
+
+def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
+                     aba="triagem", tema="", msg=""):
+    """Bancada de triagem: faixa de estoque + o que sai amanhã + abas
+    (Triagem · Reserva · Clássicos) + ferramentas recolhidas."""
+    prontos = [r for r in reserva if r.get("status") == "pronto"]
+    cl_cands = (classicos or {}).get("candidatos", [])
+    cl_banco = (classicos or {}).get("banco", [])
+    contagens = {"triagem": len(candidatos), "reserva": len(prontos), "classicos": len(cl_cands)}
+    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+
+    if aba == "reserva":
+        corpo_aba = ("".join(_curadoria_reserva_item(r, token) for r in reserva)
+                     or '<p class="hint">Reserva vazia. Priorize candidatos na Triagem — '
+                        'os resumos são gerados automaticamente à noite.</p>')
+    elif aba == "classicos":
+        lista = "".join(_curadoria_item(c, token, "classicos", "") for c in cl_cands)
+        banco = "".join(
+            f'<div class="item"><div class="d">{_esc(c.get("tema"))} · '
+            f'{_esc(str(c.get("citacoes", 0)))} citações</div>'
+            f'<div class="t">{_esc(c.get("titulo_pt"))}</div></div>' for c in cl_banco)
+        corpo_aba = (
+            '<p class="hint">Estudos-marco (evergreen), ranqueados por citações. '
+            'Servem de piso quando falta conteúdo fresco.</p>'
+            + (lista or '<p class="hint">Nenhum clássico aguardando aprovação. '
+                        'Rode <strong>🏛️ Varrer clássicos</strong> em Ferramentas.</p>')
+            + (f'<div class="sectag" style="margin-top:24px">🏛️ No banco · {len(cl_banco)}</div>{banco}'
+               if cl_banco else ""))
+    else:
+        vis = [c for c in candidatos if not tema or c.get("tema") == tema]
+        corpo_aba = (_curadoria_chips(candidatos, token, tema)
+                     + ("".join(_curadoria_item(c, token, "triagem", tema) for c in vis)
+                        or '<p class="hint">Nada aguardando triagem aqui. A máquina segue '
+                           'escolhendo e enviando sozinha — você decide às 18h.</p>'))
+
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "curadoria")}
-      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:6px 0 4px">Curadoria · Reserva 2026</h2>
-      {stats}
-      {msg_html}{acoes}{add_form}
-      <p class="hint">Leia o <strong>título</strong> + a <strong>pergunta</strong> e marque os que valem resumir. Nada vai pro arquivo dos assinantes — é sua reserva privada.</p>
-      {legenda}
-      {form_lista}
-      <section class="sec"><h2 class="disp" style="font-size:30px">Reserva pronta</h2>{res_html}</section>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:6px 0 10px">Curadoria</h2>
+      {_curadoria_faixa(estado)}
+      {_curadoria_amanha(amanha)}
+      {msg_html}
+      {_curadoria_abas(aba, contagens, token, tema)}
+      {corpo_aba}
+      {_curadoria_ferramentas(token)}
     </div>"""
-    return _pagina("Curadoria · Reserva", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+    return _pagina("Curadoria", corpo, logado=True,
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 # ── Agenda de envios (admin, token) — grade de 3 semanas, arrastar-e-soltar ──

@@ -119,29 +119,12 @@ class TestRender(unittest.TestCase):
         self.assertNotIn(">Minha conta<", self.s._topbar(True, atual="/minha"))
         self.assertIn(">Minha conta<", self.s._topbar(True, atual="/artigos"))
 
-    def test_estoque_cards_e_chip(self):
-        cont = {"novo": 12, "selecionado": 4, "resumido": 31}
-        reserva = [{"status": "pronto", "tema": "Obesidade", "titulo_pt": "X"}]
-        # 3 candidatos cobrindo as 3 faixas de _chip_score (hi >=7, md >=4, lo <4).
-        # Scores escolhidos para NÃO colidir com os exemplos fixos da legenda
-        # estática (8, 5, 2) — senão a asserção passa mesmo com _chip_score quebrado.
-        cand = [
-            {"id": "1", "tema": "Obesidade", "titulo": "Alto", "pergunta": "P",
-             "fonte": "NEJM", "data": "2026-01-01", "score": 8.5, "doi": ""},
-            {"id": "2", "tema": "Obesidade", "titulo": "Medio", "pergunta": "P",
-             "fonte": "NEJM", "data": "2026-01-01", "score": 5.3, "doi": ""},
-            {"id": "3", "tema": "Obesidade", "titulo": "Baixo", "pergunta": "P",
-             "fonte": "NEJM", "data": "2026-01-01", "score": 2.7, "doi": ""},
-        ]
-        html = self.s.pagina_curadoria(cand, reserva, cont, "tok")
-        self.assertIn("statcard", html)        # números viraram cartões
-        self.assertIn("importância clínica", html)  # legenda do score
-        # markup EXATO produzido por _chip_score (não a legenda estática) — falha
-        # se os limiares (>=7 hi, >=4 md, <4 lo) ou o formato "{v:g}" mudarem.
-        self.assertIn('<span class="scorechip hi">★ 8.5</span>', html)   # 8.5 -> hi, com estrela
-        self.assertIn('<span class="scorechip md">5.3</span>', html)     # 5.3 -> md, sem estrela
-        self.assertIn('<span class="scorechip lo">2.7</span>', html)     # 2.7 -> lo, sem estrela
-        self.assertNotIn("· score ", html)     # regressão: formato textual antigo não deve voltar
+    def test_chip_score_faixas(self):
+        # 3 scores cobrindo as 3 faixas de _chip_score (hi >=7, md >=4, lo <4).
+        # markup EXATO — falha se os limiares ou o formato "{v:g}" mudarem.
+        self.assertEqual(self.s._chip_score(8.5), '<span class="scorechip hi">★ 8.5</span>')
+        self.assertEqual(self.s._chip_score(5.3), '<span class="scorechip md">5.3</span>')
+        self.assertEqual(self.s._chip_score(2.7), '<span class="scorechip lo">2.7</span>')
 
     def test_meus_dados_blocos(self):
         html = self.s.pagina_meus_dados({"nome": "D", "email": "d@x.com", "whatsapp": "5543999990000"})
@@ -355,6 +338,67 @@ class TestCuradoriaItem(unittest.TestCase):
 
     def test_nao_tem_mais_checkbox(self):
         self.assertNotIn("<input type=\"checkbox\"", self.s._curadoria_item(self.c, "tok"))
+
+
+class TestPaginaCuradoria(unittest.TestCase):
+    def setUp(self):
+        import site_web
+        self.s = site_web
+        self.estado = {"envios": 12, "ate": "2026-08-12", "baixo": False}
+        self.cand = {"id": "c1", "titulo": "Estudo A", "pergunta": "P?", "score": 8,
+                     "fonte": "Lancet", "data": "2026-07-12", "doi": "10.1/a",
+                     "url": "", "status": "novo", "tema": "Obesidade", "tipo": "varredura"}
+        self.classicos = {"candidatos": [], "banco": []}
+
+    def _render(self, **kw):
+        base = dict(estado=self.estado, amanha=None, candidatos=[self.cand], reserva=[],
+                    classicos=self.classicos, token="tok")
+        base.update(kw)
+        return self.s.pagina_curadoria(**base)
+
+    def test_renderiza_triagem_por_padrao(self):
+        html = self._render()
+        self.assertIn("Estudo A", html)
+        self.assertIn('class="tab on"', html)
+
+    def test_nao_tem_mais_salvar_selecao(self):
+        html = self._render()
+        self.assertNotIn("Salvar seleção", html)
+        self.assertNotIn('type="checkbox"', html)
+
+    def test_filtro_por_tema_esconde_os_outros(self):
+        outro = {**self.cand, "id": "c2", "titulo": "Estudo B", "tema": "Hormonal"}
+        html = self._render(candidatos=[self.cand, outro], tema="Obesidade")
+        self.assertIn("Estudo A", html)
+        self.assertNotIn("Estudo B", html)
+
+    def test_aba_reserva_lista_os_prontos(self):
+        reserva = [{"id": "r1", "tema": "Obesidade", "status": "pronto",
+                    "titulo_pt": "Resumo pronto", "resumo": "txt", "prioridade": 0}]
+        html = self._render(reserva=reserva, aba="reserva")
+        self.assertIn("Resumo pronto", html)
+
+    def test_aba_classicos_lista_candidatos_classicos(self):
+        cl = {**self.cand, "id": "k1", "titulo": "Clássico X", "tipo": "classico"}
+        html = self._render(classicos={"candidatos": [cl], "banco": []}, aba="classicos")
+        self.assertIn("Clássico X", html)
+
+    def test_classico_nao_vaza_pra_triagem(self):
+        cl = {**self.cand, "id": "k1", "titulo": "Clássico X", "tipo": "classico"}
+        html = self._render(classicos={"candidatos": [cl], "banco": []})
+        self.assertNotIn("Clássico X", html)
+
+    def test_ferramentas_tem_meu_estudo_e_varreduras(self):
+        html = self._render()
+        self.assertIn("Adicionar meu estudo", html)
+        self.assertIn('value="varrer"', html)
+        self.assertIn('value="varrer_classicos"', html)
+
+    def test_faixa_e_amanha_aparecem(self):
+        html = self._render(amanha={"titulo": "Amanhã X", "status": "DRAFT",
+                                    "review_token": "tk9"})
+        self.assertIn("Conteúdo garantido até", html)
+        self.assertIn("Amanhã X", html)
 
 
 if __name__ == "__main__":

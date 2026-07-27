@@ -258,16 +258,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msg = q.get("msg", [""])[0]
             return self._html(site_web.pagina_agenda(semanas, db.contar_reserva_pronto(), config.ADMIN_TOKEN, msg))
         if path.startswith("/curadoria"):
-            import config, db, site_web, auth_web
+            import config, db, site_web, auth_web, agenda_plan, daily, draft_store
+            from datetime import datetime, timedelta
             q = up.parse_qs(up.urlparse(self.path).query)
             sess = self._sessao()
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
-            cands = db.listar_candidatos(status="novo") + db.listar_candidatos(status="selecionado")
+            novos = db.listar_candidatos(status="novo", tipo="varredura")
+            cands = novos + db.listar_candidatos(status="selecionado", tipo="varredura")
+            classicos = {
+                "candidatos": (db.listar_candidatos(status="novo", tipo="classico")
+                               + db.listar_candidatos(status="selecionado", tipo="classico")),
+                "banco": db.listar_classicos(elegiveis=False)}
+            estado = agenda_plan.estado_estoque(
+                db.contar_reserva_pronto(), len(novos), len(db.listar_classicos(elegiveis=True)),
+                datetime.now(), daily._dias_envio(), daily.ESTOQUE_MINIMO)
+            amanha = None
+            try:
+                d = draft_store.carregar((datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"))
+                if d:
+                    amanha = {"titulo": d.get("titulo_pt") or (d.get("artigo") or {}).get("titulo", ""),
+                              "status": d.get("status", ""), "review_token": d.get("review_token", "")}
+            except Exception as e:
+                print(f"[curadoria] rascunho de amanhã falhou: {e}", flush=True)
             return self._html(site_web.pagina_curadoria(
-                cands, db.listar_reserva(), db.contar_candidatos(), config.ADMIN_TOKEN,
+                estado, amanha, cands, db.listar_reserva(), classicos, config.ADMIN_TOKEN,
+                aba=q.get("aba", ["triagem"])[0], tema=q.get("tema", [""])[0],
                 msg=q.get("msg", [""])[0]), 200)
         if self._site():
             return self._site_get(path)
