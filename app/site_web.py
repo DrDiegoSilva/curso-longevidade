@@ -921,7 +921,7 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
                 f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="definir_slot">'
                 f'<input type="hidden" name="id" value="{_esc(s.get("id"))}">'
                 f'<select name="slot" style="padding:5px 8px;font-size:12px;background:#0e211a;color:var(--creme);border:1px solid rgba(233,225,198,.2);border-radius:8px">{opts}</select>'
-                f'<button class="actbtn ghost" style="padding:6px 10px;font-size:12px" type="submit">Salvar</button></form>')
+                f'<button class="actbtn ghost" style="padding:6px 12px;font-size:12px;white-space:nowrap;flex-shrink:0" type="submit">Salvar</button></form>')
     def _cel_remover(s):
         return (f'<form method="post" action="/admin" style="margin:0">'
                 f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="remover">'
