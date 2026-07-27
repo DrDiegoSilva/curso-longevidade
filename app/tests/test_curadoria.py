@@ -262,5 +262,29 @@ class TestGerarRoteia(unittest.TestCase):
         self.assertEqual(regs_reserva[0]["score"], 8.5)
 
 
+class TestMontarCandidatosTriagem(unittest.TestCase):
+    def test_separa_por_tipo_e_classico_nunca_cai_na_triagem(self):
+        # FakeDB se comporta como o db.py real: só filtra por tipo quando o chamador
+        # PASSA tipo=. Se montar_candidatos_triagem parar de passar tipo="varredura"
+        # (o bug que a task 6 corrigiu na rota), o fake devolve os DOIS candidatos
+        # pro "novo" -> o clássico vaza pra `cands` -> o teste abaixo falha.
+        pool = [
+            {"id": "v1", "status": "novo", "tipo": "varredura", "titulo": "Fresco"},
+            {"id": "k1", "status": "novo", "tipo": "classico", "titulo": "Clássico Antigo"},
+        ]
+        class FakeDB:
+            def listar_candidatos(self, status=None, tema=None, tipo=None):
+                return [dict(c) for c in pool
+                        if (status is None or c["status"] == status)
+                        and (tipo is None or c["tipo"] == tipo)]
+            def listar_classicos(self, tema=None, elegiveis=True):
+                return []
+        novos, cands, classicos = curadoria.montar_candidatos_triagem(FakeDB())
+        ids_triagem = {c["id"] for c in cands}
+        self.assertIn("v1", ids_triagem)
+        self.assertNotIn("k1", ids_triagem)                    # o clássico NUNCA vaza pra triagem
+        self.assertEqual([c["id"] for c in classicos["candidatos"]], ["k1"])
+
+
 if __name__ == "__main__":
     unittest.main()

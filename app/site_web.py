@@ -1174,7 +1174,8 @@ def _curadoria_ferramentas(token):
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;
                      color:var(--ouro2);margin-bottom:6px">➕ Adicionar meu estudo</h3>
           <p class="hint" style="margin-bottom:14px">Sobe o PDF (ou cola o texto). Gero o resumo
-            e ele entra na <strong>fila, na frente</strong>.</p>
+            e ele entra na <strong>fila, na frente</strong> — vai pros assinantes no próximo dia
+            útil (com seu review das 18h).</p>
           <form method="post" action="/curadoria" enctype="multipart/form-data">
             <input type="hidden" name="token" value="{tok}">
             <label>PDF do estudo</label>
@@ -1182,7 +1183,9 @@ def _curadoria_ferramentas(token):
                    style="color:var(--suave);font-family:system-ui,sans-serif;margin-bottom:14px">
             <label>…ou cole o texto/resumo (se não tiver PDF)</label>
             <textarea name="texto" rows="3" placeholder="Cole aqui o abstract do estudo…"></textarea>
-            <input type="text" name="titulo" placeholder="Título (opcional)" style="width:100%;margin-bottom:10px">
+            <input type="text" name="titulo"
+                   placeholder="Título (opcional — se vazio, eu crio a partir do texto)"
+                   style="width:100%;margin-bottom:10px">
             <div style="display:flex;gap:10px;flex-wrap:wrap">
               <input type="text" name="fonte" placeholder="Revista (opcional)" style="flex:1">
               <input type="text" name="doi" placeholder="DOI (opcional)" style="flex:1">
@@ -1198,16 +1201,26 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
                      aba="triagem", tema="", msg=""):
     """Bancada de triagem: faixa de estoque + o que sai amanhã + abas
     (Triagem · Reserva · Clássicos) + ferramentas recolhidas."""
+    aba = aba if aba in ("triagem", "reserva", "classicos") else "triagem"
+    # defesa: um "classico" nunca aparece na triagem, mesmo que a rota regrida e
+    # pare de separar `candidatos` por tipo ao montar a lista (ver curadoria.
+    # montar_candidatos_triagem, que já faz esse filtro — isto é só um segundo freio).
+    candidatos = [c for c in candidatos if c.get("tipo") != "classico"]
     prontos = [r for r in reserva if r.get("status") == "pronto"]
+    resto_reserva = [r for r in reserva if r.get("status") != "pronto"]
     cl_cands = (classicos or {}).get("candidatos", [])
     cl_banco = (classicos or {}).get("banco", [])
     contagens = {"triagem": len(candidatos), "reserva": len(prontos), "classicos": len(cl_cands)}
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
 
     if aba == "reserva":
-        corpo_aba = ("".join(_curadoria_reserva_item(r, token) for r in reserva)
-                     or '<p class="hint">Reserva vazia. Priorize candidatos na Triagem — '
-                        'os resumos são gerados automaticamente à noite.</p>')
+        corpo_aba = "".join(_curadoria_reserva_item(r, token) for r in prontos)
+        if resto_reserva:
+            corpo_aba += (f'<div class="sectag" style="margin-top:24px">📤 Já enviados · '
+                          f'{len(resto_reserva)}</div>'
+                          + "".join(_curadoria_reserva_item(r, token) for r in resto_reserva))
+        corpo_aba = corpo_aba or ('<p class="hint">Reserva vazia. Priorize candidatos na '
+                                  'Triagem — os resumos são gerados automaticamente à noite.</p>')
     elif aba == "classicos":
         lista = "".join(_curadoria_item(c, token, "classicos", "") for c in cl_cands)
         banco = "".join(

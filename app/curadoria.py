@@ -283,6 +283,25 @@ def rodar_varredura_classicos(caps=None):
     return n
 
 
+def montar_candidatos_triagem(db_mod=None):
+    """Monta os candidatos que a rota /curadoria mostra, JÁ separados por tipo:
+    `cands` (novo+selecionado, tipo='varredura') alimenta a aba Triagem; `classicos`
+    (novo+selecionado, tipo='classico', + banco não-elegível) alimenta a aba Clássicos.
+    Sem esse filtro por `tipo`, um clássico (achado por citações, potencialmente de
+    10+ anos) vazaria pra dentro da triagem semanal, junto dos estudos frescos —
+    indistinguível deles na lista. db_mod injetável p/ teste (sem harness HTTP).
+    Retorna (novos, cands, classicos)."""
+    if db_mod is None:
+        import db as db_mod
+    novos = db_mod.listar_candidatos(status="novo", tipo="varredura")
+    cands = novos + db_mod.listar_candidatos(status="selecionado", tipo="varredura")
+    classicos = {
+        "candidatos": (db_mod.listar_candidatos(status="novo", tipo="classico")
+                       + db_mod.listar_candidatos(status="selecionado", tipo="classico")),
+        "banco": db_mod.listar_classicos(elegiveis=False)}
+    return novos, cands, classicos
+
+
 def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
     """Gera o resumo (padrão) de cada candidato 'selecionado'. tipo='classico' -> banco de
     clássicos; senão -> reserva. Retorna quantos. db_mod/gerar_resumo_fn injetáveis p/ teste."""

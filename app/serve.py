@@ -258,7 +258,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msg = q.get("msg", [""])[0]
             return self._html(site_web.pagina_agenda(semanas, db.contar_reserva_pronto(), config.ADMIN_TOKEN, msg))
         if path.startswith("/curadoria"):
-            import config, db, site_web, auth_web, agenda_plan, daily, draft_store
+            import config, db, site_web, auth_web, agenda_plan, daily, draft_store, curadoria
             from datetime import datetime, timedelta
             q = up.parse_qs(up.urlparse(self.path).query)
             sess = self._sessao()
@@ -266,15 +266,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
-            novos = db.listar_candidatos(status="novo", tipo="varredura")
-            cands = novos + db.listar_candidatos(status="selecionado", tipo="varredura")
-            classicos = {
-                "candidatos": (db.listar_candidatos(status="novo", tipo="classico")
-                               + db.listar_candidatos(status="selecionado", tipo="classico")),
-                "banco": db.listar_classicos(elegiveis=False)}
-            estado = agenda_plan.estado_estoque(
-                db.contar_reserva_pronto(), len(novos), len(db.listar_classicos(elegiveis=True)),
-                datetime.now(), daily._dias_envio(), daily.ESTOQUE_MINIMO)
+            novos, cands, classicos = curadoria.montar_candidatos_triagem(db)
+            reserva_pronto_n = db.contar_reserva_pronto()
+            classico_elegivel_n = len(db.listar_classicos(elegiveis=True))
+            n_estoque = reserva_pronto_n + len(novos) + classico_elegivel_n
+            try:
+                estado = agenda_plan.estado_estoque(
+                    reserva_pronto_n, len(novos), classico_elegivel_n,
+                    datetime.now(), daily._dias_envio(), daily.ESTOQUE_MINIMO)
+            except Exception as e:
+                # ex.: admin salvou 0 dias de envio em /admin/envio -> dias_envio vazio
+                # faz estado_estoque levantar ValueError. Degrada pra faixa sem data
+                # em vez de 500 (a rota /agenda logo acima já usa esse padrão de guard).
+                print(f"[curadoria] estado do estoque falhou: {e}", flush=True)
+                estado = {"envios": n_estoque, "ate": None, "baixo": n_estoque < daily.ESTOQUE_MINIMO}
             amanha = None
             try:
                 d = draft_store.carregar((datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d"))

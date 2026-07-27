@@ -366,6 +366,13 @@ class TestPaginaCuradoria(unittest.TestCase):
         self.assertNotIn("Salvar seleção", html)
         self.assertNotIn('type="checkbox"', html)
 
+    def test_aba_invalida_da_querystring_cai_em_triagem(self):
+        # `aba` vem cru da querystring — um valor lixo não pode deixar nenhuma
+        # aba destacada nem quebrar o corpo (cai no default: triagem).
+        html = self._render(aba="<script>lixo")
+        self.assertEqual(html.count('class="tab on"'), 1)
+        self.assertIn("Estudo A", html)
+
     def test_filtro_por_tema_esconde_os_outros(self):
         outro = {**self.cand, "id": "c2", "titulo": "Estudo B", "tema": "Hormonal"}
         html = self._render(candidatos=[self.cand, outro], tema="Obesidade")
@@ -378,14 +385,33 @@ class TestPaginaCuradoria(unittest.TestCase):
         html = self._render(reserva=reserva, aba="reserva")
         self.assertIn("Resumo pronto", html)
 
+    def test_aba_reserva_separa_prontos_de_enviados(self):
+        # o contador da aba conta só "pronto"; "enviado" segue listado abaixo, como
+        # histórico, separado por um cabeçalho — não misturado na mesma lista.
+        reserva = [
+            {"id": "r1", "tema": "Obesidade", "status": "enviado",
+             "titulo_pt": "Enviado Um", "resumo": "txt", "prioridade": 0},
+            {"id": "r2", "tema": "Obesidade", "status": "pronto",
+             "titulo_pt": "Pronto Um", "resumo": "txt", "prioridade": 0},
+        ]
+        html = self._render(reserva=reserva, aba="reserva")
+        self.assertIn("Já enviados", html)
+        self.assertLess(html.index("Pronto Um"), html.index("Já enviados"))
+        self.assertLess(html.index("Já enviados"), html.index("Enviado Um"))
+
     def test_aba_classicos_lista_candidatos_classicos(self):
         cl = {**self.cand, "id": "k1", "titulo": "Clássico X", "tipo": "classico"}
         html = self._render(classicos={"candidatos": [cl], "banco": []}, aba="classicos")
         self.assertIn("Clássico X", html)
 
     def test_classico_nao_vaza_pra_triagem(self):
+        # simula o cenário real do bug: um item tipo="classico" chegando MISTURADO
+        # dentro de `candidatos` (o que acontecia quando a rota montava a lista sem
+        # filtrar por tipo). O filtro defensivo em pagina_curadoria precisa barrá-lo
+        # mesmo aqui, sem depender de `classicos` estar corretamente separado.
         cl = {**self.cand, "id": "k1", "titulo": "Clássico X", "tipo": "classico"}
-        html = self._render(classicos={"candidatos": [cl], "banco": []})
+        html = self._render(candidatos=[self.cand, cl])
+        self.assertIn("Estudo A", html)
         self.assertNotIn("Clássico X", html)
 
     def test_ferramentas_tem_meu_estudo_e_varreduras(self):
