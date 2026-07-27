@@ -31,6 +31,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 class TestGuardasAtivar(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         os.environ["ASAAS_WEBHOOK_TOKEN"] = "segredo"
@@ -47,8 +52,11 @@ class TestGuardasAtivar(unittest.TestCase):
         self.envfn = lambda wpp, msg: self.enviados.append((wpp, msg))
 
     def tearDown(self):
-        os.environ.pop("DSCURSO_DATA", None)
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     CPF = "11144477735"
     WPP = "5543999990000"

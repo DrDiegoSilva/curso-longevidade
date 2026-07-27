@@ -27,6 +27,11 @@ class TestSuspenderSemSubscription(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         os.environ["ASAAS_WEBHOOK_TOKEN"] = "segredo"
@@ -46,8 +51,11 @@ class TestSuspenderSemSubscription(unittest.TestCase):
 
     def tearDown(self):
         self.w._alertar_admin = self._orig_alertar
-        os.environ.pop("DSCURSO_DATA", None)
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     def _assinante_pix(self, pid="pay_pix_1"):
         """Assinante de Pix: SEM asaas_subscription_id, como o Asaas de fato entrega."""

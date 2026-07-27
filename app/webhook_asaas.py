@@ -28,6 +28,32 @@ def decidir(event, sub_existe):
     return "IGNORAR"
 
 
+def _pending_plausivel(pending, pay):
+    """False só quando o `pending` CONTRADIZ este pagamento pelo valor.
+
+    Usado apenas no casamento por CPF (o casamento por token é exato e não precisa disso).
+    No parcelado o Asaas cobra `valor / parcelas` por evento; a tolerância cobre o centavo
+    de arredondamento da divisão.
+
+    Quando não dá para comparar (pending ou pagamento sem valor utilizável) responde True,
+    de propósito: descartar aí jogaria fora nome, e-mail, plano, aceite dos termos e código
+    de afiliado de um pending provavelmente legítimo. O que este filtro existe para barrar é
+    o caso oposto — um checkout ABANDONADO de outro valor (o `teste` de R$ 5 é o exemplo
+    real) sequestrando um pagamento que não tem nada a ver com ele.
+    """
+    if not pending:
+        return False
+    try:
+        total = float(pending.get("valor") or 0)
+        parcelas = max(1, int(pending.get("parcelas") or 1))
+        valor = float(pay.get("value") or 0)
+    except (TypeError, ValueError):
+        return True
+    if total <= 0 or valor <= 0:
+        return True
+    return abs(round(total / parcelas, 2) - valor) <= 0.10
+
+
 def _proximo_venc(cycle, ref=None):
     try:
         base = datetime.fromisoformat(ref) if ref else datetime.now()
@@ -155,8 +181,17 @@ def _executar(event, pay, pid, enviar_fn):
         # `cust` fica vazio -> cpfCnpj vazio -> o pending nunca era achado por CPF, mesmo
         # existindo. Mesmo atalho usado logo abaixo pro WhatsApp: Pix avulso manda
         # `cpfCnpj` DIRETO no pagamento, sem precisar da API — tenta esse como fallback.
-        pending = (db.obter_pending(pay.get("externalReference"))
-                   or db.obter_pending_por_cpf(cust.get("cpfCnpj") or pay.get("cpfCnpj")))
+        # O casamento por TOKEN é exato — o Asaas devolveu o externalReference do checkout,
+        # não há o que corroborar. Já o casamento por CPF é um palpite: `obter_pending_por_cpf`
+        # devolve o pending MAIS RECENTE daquele CPF, e pendings nunca são consumidos. Um
+        # checkout abandonado (ex.: o plano `teste` de R$5, alcançável por /assinar?plano=teste)
+        # ficava eternamente na frente e sequestrava o plano, o valor contratado e até o
+        # afiliado de um pagamento que não tinha nada a ver com ele. Por isso o pending achado
+        # por CPF só vale se o valor dele bater com a cobrança que está sendo processada.
+        pending = db.obter_pending(pay.get("externalReference"))
+        if not pending:
+            candidato = db.obter_pending_por_cpf(cust.get("cpfCnpj") or pay.get("cpfCnpj"))
+            pending = candidato if _pending_plausivel(candidato, pay) else None
         # Sem ASAAS_API_KEY (ou se a consulta ao Asaas falhar), `cust` fica vazio e uma
         # recompra/recontratação de quem JÁ é assinante ficaria bloqueada aqui por "falta"
         # de WhatsApp — mesmo já tendo o telefone dele gravado. Acha o assinante pelo CPF
@@ -191,6 +226,17 @@ def _executar(event, pay, pid, enviar_fn):
             # e os dois desembocavam em "conceder um ciclo novo".
             tipo_pagamento, _ = refunds.alvo_estorno(pay)
             inst_id = pay.get("installment") or ""
+            # `installmentNumber > 1` é o discriminador forte: a parcela 2 em diante NUNCA é
+            # a primeira cobrança de um contrato novo, seja qual for o grupo. Sem isso, uma
+            # parcela atrasada de um contrato ANTERIOR (cenário normal aqui: as parcelas
+            # restantes seguem sendo cobradas depois do cancelamento) tinha grupo diferente do
+            # que está em arquivo e era lida como contrato novo, comprando um ciclo inteiro
+            # por 1/12 do preço. O casamento por grupo fica como fallback para o caso de o
+            # Asaas não mandar o campo.
+            try:
+                n_parcela = int(pay.get("installmentNumber") or 0)
+            except (TypeError, ValueError):
+                n_parcela = 0
             if pid and existente.get("asaas_payment_id") == pid:
                 # B5: o Asaas manda PAYMENT_CONFIRMED e PAYMENT_RECEIVED para o MESMO
                 # pagamento, e a idempotência é por (payment_id, event) — os dois passam.
@@ -199,7 +245,7 @@ def _executar(event, pay, pid, enviar_fn):
                 # A guarda é por identidade do pagamento, então a recompra legítima (outro
                 # pagamento, antes de vencer) continua passando.
                 return (200, "replay")
-            if tipo_pagamento == "installment" and inst_id and inst_id == existente.get("asaas_installment_id"):
+            if tipo_pagamento == "installment" and (n_parcela > 1 or (inst_id and inst_id == existente.get("asaas_installment_id"))):
                 # B6/B7: parcela do contrato QUE JÁ ESTÁ EM ARQUIVO. Só atualiza a referência
                 # do pagamento mais recente (é nela que o estorno se baseia). NUNCA concede
                 # período novo, NUNCA reativa e NUNCA limpa o cancelamento: antes, a parcela
@@ -298,9 +344,17 @@ def _executar(event, pay, pid, enviar_fn):
             # seu único leitor); sem regravar, quem voltava e cancelava no 3º dia não
             # recebia estorno nenhum e ninguém era avisado.
             extra_sub = {"asaas_subscription_id": sid} if sid else {}
-            subscribers.marcar_status(existente["id"], existente["status"], asaas_payment_id=pid,
+            # Status "ATIVO" fixo (antes repassava `existente["status"]`): quem acabou de pagar
+            # está ativo por definição. Repassar o status antigo deixava um assinante CANCELADO
+            # — que cancelou a renovação e mudou de ideia dentro do período pago, o caso que o
+            # /renovar passou a atender — pagando e saindo com status CANCELADO e `acesso_ate`
+            # nulo, ou seja, SEM acesso nenhum. Limpar as marcas do cancelamento é parte da
+            # mesma reativação (mesmo tratamento do ramo de recontratação logo abaixo): sem
+            # isso ele sumiria da régua para sempre e nunca mais conseguiria cancelar.
+            subscribers.marcar_status(existente["id"], "ATIVO", asaas_payment_id=pid,
                                       acesso_ate=(None if sid else novo_fim), proximo_vencimento=novo_fim,
                                       criado_em=datetime.now().isoformat(),
+                                      cancelado_em=None, cancel_motivo=None,
                                       **extra_plano, **extra_inst, **extra_valor, **extra_sub)
             # Recompra é manual (o assinante voltou e pagou de novo) -> WhatsApp.
             _confirmar_renovacao({"email": existente.get("email") or email,
@@ -359,7 +413,13 @@ def _executar(event, pay, pid, enviar_fn):
                  "termos_versao": (pending or {}).get("termos_versao", ""),
                  "termos_ip": (pending or {}).get("termos_ip", ""),
                  "valor_contratado": base_contratada},
+                # `installment` aqui é o que faz a guarda de parcela funcionar para o cliente
+                # NOVO — é neste ramo que o assinante de cartão parcelado nasce. Sem ele, a
+                # parcela 2 não casava com o contrato em arquivo, caía na recompra e dava um
+                # ANO EXTRA de acesso, além de reabrir a janela de arrependimento ~30 dias
+                # depois da compra (o `criado_em` era regravado).
                 {"customer": pay.get("customer"), "subscription": sid, "payment": pid,
+                 "installment": pay.get("installment"),
                  "proximo_vencimento": prox})
             if not sid:
                 # Pix é pagamento DETACHED (avulso), sem assinatura recorrente por trás — não

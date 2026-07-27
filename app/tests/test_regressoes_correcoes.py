@@ -38,6 +38,11 @@ class _Base(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         os.environ["ASAAS_WEBHOOK_TOKEN"] = "segredo"
@@ -58,8 +63,11 @@ class _Base(unittest.TestCase):
 
     def tearDown(self):
         self.deliver.enviar_texto = self._orig_wa
-        os.environ.pop("DSCURSO_DATA", None)
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     def _antigo(self, plano="anual", acesso_ate="2025-07-01", pid="pay_velho", **extra):
         reg = self.s.criar_de_pagamento(
@@ -119,6 +127,33 @@ class TestC1ContratoNovoEmParcelas(_Base):
         atual = self.s.por_id(sub["id"])
         self.assertEqual(atual["cancelado_em"], "2025-06-01T10:00:00")
         self.assertFalse(self.s.tem_acesso(atual))
+
+
+class TestC2bRecompraDeQuemCancelou(_Base):
+    """Revisão #4: o C5 abriu o /renovar para quem cancelou no cartão e mudou de ideia
+    dentro do período pago — direto para dentro de um buraco. O pagamento traz uma
+    assinatura NOVA, então `por_subscription` não acha ninguém e cai no ATIVAR; o ramo de
+    recompra repassava `existente["status"]` (ainda CANCELADO) e gravava `acesso_ate=None`
+    porque há `sid`. Resultado: pagava e ficava SEM ACESSO no mesmo instante, em silêncio,
+    sem alerta nenhum — e o RENOVAR seguinte batia em `cancelado_em` e não consertava."""
+
+    def test_cancelado_dentro_do_periodo_que_paga_de_novo_volta_a_ter_acesso(self):
+        sub = self._antigo(acesso_ate="2027-08-01", cancelado_em="2026-07-01T10:00:00")
+        self.s.marcar_status(sub["id"], "CANCELADO", asaas_subscription_id="sub_velho")
+        antes = self.s.por_id(sub["id"])
+        self.assertTrue(self.s.tem_acesso(antes))          # cancelou mas ainda tem acesso
+
+        body = {"event": "PAYMENT_CONFIRMED",
+                "payment": {"id": "pay_novo", "externalReference": "", "customer": "cus_1",
+                            "subscription": "sub_novo", "dueDate": "2026-07-19",
+                            "value": 1099.0, "cpfCnpj": self.CPF}}
+        st, msg = self.w.processar(body, "segredo", enviar_fn=self.envfn)
+        self.assertEqual(st, 200)
+        atual = self.s.por_id(sub["id"])
+        self.assertEqual(atual["status"], "ATIVO")
+        self.assertIsNone(atual["cancelado_em"])
+        self.assertTrue(self.s.tem_acesso(atual))
+        self.assertEqual(atual["asaas_subscription_id"], "sub_novo")
 
 
 class TestC2PlanoNaRecontratacao(_Base):
@@ -189,6 +224,11 @@ class TestC4OfertaSoParaQuemTemAcesso(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         for m in ("config", "db", "subscribers", "serve", "site_web"):
             sys.modules.pop(m, None)
@@ -202,7 +242,11 @@ class TestC4OfertaSoParaQuemTemAcesso(unittest.TestCase):
 
     def tearDown(self):
         self.asaas.adiar_vencimento = self._orig
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     class _Stub:
         def __init__(self, sub):
@@ -271,6 +315,11 @@ class TestC5RenovarDeQuemCancelou(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         for m in ("config", "db", "subscribers", "serve", "site_web"):
             sys.modules.pop(m, None)
@@ -280,7 +329,11 @@ class TestC5RenovarDeQuemCancelou(unittest.TestCase):
         self.serve = serve
 
     def tearDown(self):
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     class _Stub:
         def __init__(self, sub):
@@ -302,12 +355,23 @@ class TestC5RenovarDeQuemCancelou(unittest.TestCase):
                 "acesso_ate": "2027-08-01", "asaas_subscription_id": "sub_1",
                 "cancelado_em": cancelado_em}
 
-    def test_quem_cancelou_no_cartao_consegue_recontratar(self):
-        out = self.serve.Handler._get_rota_renovar(self._Stub(self._sub("2026-07-01T10:00:00")))
+    def test_quem_cancelou_com_sucesso_consegue_recontratar(self):
+        """Cancelamento que deu certo no Asaas LIMPA o `asaas_subscription_id` — é assim que
+        o /renovar sabe que não há recorrência viva. Sem sid, a porta abre."""
+        sub = self._sub("2026-07-01T10:00:00")
+        sub["asaas_subscription_id"] = None
+        out = self.serve.Handler._get_rota_renovar(self._Stub(sub))
         self.assertIn('action="/renovar"', str(out))
 
     def test_quem_tem_recorrencia_ativa_continua_barrado(self):
         out = self.serve.Handler._get_rota_renovar(self._Stub(self._sub(None)))
+        self.assertNotIn('action="/renovar"', str(out))
+
+    def test_cancelamento_que_falhou_no_asaas_continua_barrado(self):
+        """Se o cancelamento no Asaas FALHOU, o sid é preservado de propósito: a assinatura
+        pode seguir cobrando, e deixar esse cliente montar um segundo checkout RECURRENT
+        seria cobrança em dobro — exatamente o que o B4 existe para evitar."""
+        out = self.serve.Handler._get_rota_renovar(self._Stub(self._sub("2026-07-01T10:00:00")))
         self.assertNotIn('action="/renovar"', str(out))
 
 
@@ -317,6 +381,11 @@ class TestC6TextoSeed0EmBancoExistente(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         for m in ("config", "db"):
             sys.modules.pop(m, None)
@@ -326,7 +395,11 @@ class TestC6TextoSeed0EmBancoExistente(unittest.TestCase):
         self.db = db
 
     def tearDown(self):
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     def test_texto_antigo_e_corrigido_no_banco_existente(self):
         a = next(x for x in self.db.listar_automacoes() if x["dias"] == 0)
@@ -341,3 +414,104 @@ class TestC6TextoSeed0EmBancoExistente(unittest.TestCase):
         self.db._migrar_texto_seed0()
         atual = next(x for x in self.db.listar_automacoes() if x["dias"] == 0)
         self.assertEqual(atual["texto"], "Texto que o Diego escreveu")
+
+
+class TestC7CancelarNaoQuebra(unittest.TestCase):
+    """A guarda do C4 foi escrita usando `subscribers` num método que não importa esse
+    módulo — `_cancelar_motivo` só importa `site_web`. Como `serve` não tem `subscribers`
+    no escopo do módulo, a linha levantava NameError em TODA tentativa de cancelamento, e
+    `do_POST` não tem try/except: o cliente ficava sem página nenhuma. Nada na suíte
+    exercitava o passo 1 do cancelamento — daí os 497 verdes."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
+        for m in ("config", "db", "subscribers", "serve", "site_web"):
+            sys.modules.pop(m, None)
+        import db, subscribers, serve
+        db._INITED = False
+        db.init()
+        self.db, self.s, self.serve = db, subscribers, serve
+        self.s._migrado = False
+
+    def tearDown(self):
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
+
+    class _Stub:
+        def __init__(self, sub):
+            self._sub = sub
+            self.cancelou = False
+
+        def _sub_logado(self):
+            return self._sub
+
+        def _html(self, s, code=200):
+            return s
+
+        def _redirect(self, location, token=None, clear=False):
+            return f"<redirect {location}>"
+
+        def _executar_cancelamento(self, sub, motivo):
+            self.cancelou = True
+            return "<cancelado>"
+
+    def _sub(self, acesso_ate):
+        reg = self.s.criar_de_pagamento(
+            {"nome": "A", "whatsapp": "5543999990000", "email": "a@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "c1", "payment": "p1", "proximo_vencimento": acesso_ate})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=acesso_ate)
+        return self.s.por_id(reg["id"])
+
+    def test_passo_1_do_cancelamento_roda_para_quem_tem_acesso(self):
+        futuro = (datetime.now() + timedelta(days=30)).date().isoformat()
+        stub = self._Stub(self._sub(futuro))
+        out = self.serve.Handler._cancelar_motivo(stub, lambda k: {"motivo": "caro"}.get(k, ""))
+        self.assertFalse(stub.cancelou)                 # mostrou a oferta
+        self.assertIn("mês", str(out).lower())
+
+    def test_passo_1_do_cancelamento_roda_para_quem_ja_venceu(self):
+        stub = self._Stub(self._sub("2020-01-01"))
+        self.serve.Handler._cancelar_motivo(stub, lambda k: {"motivo": "caro"}.get(k, ""))
+        self.assertTrue(stub.cancelou)                  # sem acesso -> cancela direto
+
+
+class TestC8PisoDaExtensao(TestC4OfertaSoParaQuemTemAcesso):
+    """O `max(ref, agora)` não tinha teste (mutante sobrevivia). O caso real é o assinante
+    INADIMPLENTE dentro da carência: `tem_acesso` é True, mas o `proximo_vencimento` já
+    passou — sem o piso, o "+30 dias" contaria de uma data velha e entregaria menos que os
+    30 dias prometidos na tela."""
+
+    def test_inadimplente_na_carencia_ganha_30_dias_de_verdade(self):
+        reg = self.s.criar_de_pagamento(
+            {"nome": "A", "whatsapp": "5543999990000", "email": "a@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "c1", "payment": "p1", "proximo_vencimento": "2020-01-01"})
+        carencia = (datetime.now() + timedelta(days=2)).isoformat()
+        self.s.marcar_status(reg["id"], "INADIMPLENTE", carencia_ate=carencia,
+                             proximo_vencimento="2020-01-01", acesso_ate=None)
+        sub = self.s.por_id(reg["id"])
+        self.assertTrue(self.s.tem_acesso(sub))
+        self.serve.Handler._cancelar_confirmar(self._Stub(sub), self._g())
+        novo = self.s.por_id(reg["id"])["acesso_ate"]
+        self.assertGreater(novo, datetime.now().date().isoformat())
+
+
+class TestC9MigracaoLigadaNoInit(TestC6TextoSeed0EmBancoExistente):
+    """O mutante que removia a chamada de `_migrar_texto_seed0()` do `init()` sobrevivia:
+    os testes chamavam a função direto. Uma migração que não está ligada no init é
+    exatamente o defeito que o C6 existe para corrigir."""
+
+    def test_init_aplica_a_migracao(self):
+        a = next(x for x in self.db.listar_automacoes() if x["dias"] == 0)
+        self.db.salvar_automacao(a["id"], 0, "whatsapp", self.db._TEXTO_SEED0_ANTIGO, 1)
+        self.db._INITED = False
+        self.db.init()
+        atual = next(x for x in self.db.listar_automacoes() if x["dias"] == 0)
+        self.assertNotIn("A partir de amanhã", atual["texto"])

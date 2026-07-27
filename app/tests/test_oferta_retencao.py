@@ -43,6 +43,11 @@ class _CancelarStub:
 class TestOfertaRetencao(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         # NÃO despejar `renovacao` daqui: `webhook_asaas._CICLO_DIAS` é o MESMO objeto que
         # `renovacao.CICLO_DIAS` (test_renovacao.TestCicloDias trava isso com assertIs), e
@@ -59,7 +64,11 @@ class TestOfertaRetencao(unittest.TestCase):
 
     def tearDown(self):
         self.asaas.adiar_vencimento = self._orig_adiar
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     def _g(self, **over):
         base = {"acao": "aceitar", "motivo": "caro"}

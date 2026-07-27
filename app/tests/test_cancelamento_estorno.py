@@ -371,6 +371,36 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.assertEqual(len(self.alertas), 1)                 # admin avisado
         self.assertIn("estorn", self.alertas[0].lower())
 
+    def test_cancelamento_ok_limpa_o_subscription_id(self):
+        """É esse campo que diz "já renova sozinho": `regua.na_regua` exclui quem o tem, e o
+        guard do /renovar barra quem o tem. Mantê-lo depois de cancelar deixava o assinante
+        fora dos avisos de vencimento PARA SEMPRE e sem porta para voltar."""
+        escritas = []
+        orig = self.subscribers.marcar_status
+        self.subscribers.marcar_status = lambda i, st, **kw: escritas.append((i, st, kw))
+        try:
+            self._chamar(self._sub(), "mudei de ideia")
+        finally:
+            self.subscribers.marcar_status = orig
+        self.assertEqual(self.cancelados_asaas, ["sub_1"])
+        limpezas = [e for e in escritas if e[2].get("asaas_subscription_id", "x") is None]
+        self.assertEqual(len(limpezas), 1)
+        self.assertEqual(limpezas[0][1], "CANCELADO")   # não repassa o status antigo (ATIVO)
+
+    def test_falha_no_asaas_PRESERVA_o_subscription_id(self):
+        """Se a assinatura pode seguir viva no Asaas, o campo tem que ficar: é ele que faz o
+        /renovar barrar esse cliente. Sem isso ele montaria um 2º checkout RECURRENT e
+        passaria a ser cobrado em dobro — o estrago que o B4 existe para evitar."""
+        self.asaas.cancelar_assinatura = lambda sid: (_ for _ in ()).throw(RuntimeError("502"))
+        escritas = []
+        orig = self.subscribers.marcar_status
+        self.subscribers.marcar_status = lambda i, st, **kw: escritas.append((i, st, kw))
+        try:
+            self._chamar(self._sub(), "não uso mais")
+        finally:
+            self.subscribers.marcar_status = orig
+        self.assertEqual([e for e in escritas if e[2].get("asaas_subscription_id", "x") is None], [])
+
     def test_falha_ao_cancelar_no_asaas_alerta_o_admin(self):
         # Sem alerta, a assinatura seguiria cobrando em silêncio: o claim já foi
         # consumido, então uma nova tentativa do cliente nem chega no Asaas.

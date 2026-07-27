@@ -32,6 +32,11 @@ class TestJanelaDeArrependimentoEmContratoNovo(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         os.environ["ASAAS_WEBHOOK_TOKEN"] = "segredo"
@@ -52,8 +57,11 @@ class TestJanelaDeArrependimentoEmContratoNovo(unittest.TestCase):
 
     def tearDown(self):
         self.deliver.enviar_texto = self._orig_wa
-        os.environ.pop("DSCURSO_DATA", None)
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     def _body(self, pid, value=1044.05, installment=None, ext="tok_nao_existe"):
         pay = {"id": pid, "externalReference": ext, "customer": "cus_1",

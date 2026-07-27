@@ -39,6 +39,11 @@ class _RotaStub:
 class TestRenovarComAssinaturaRecorrente(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop` cegamente
+        # apagava variáveis que outros módulos de teste (ordem alfabética) esperam
+        # encontrar — foi assim que o test_preparar_pdf passou a cair em '/data'.
+        self._env0 = {k: os.environ.get(k) for k in
+                      ("DSCURSO_DATA", "DSCURSO_ARTIGOS_DB", "ASAAS_WEBHOOK_TOKEN")}
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         for m in ("config", "db", "subscribers", "serve", "site_web"):
             sys.modules.pop(m, None)
@@ -54,7 +59,11 @@ class TestRenovarComAssinaturaRecorrente(unittest.TestCase):
 
     def tearDown(self):
         self.asaas.criar_checkout = self._orig
-        os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        for _k, _v in self._env0.items():
+            if _v is None:
+                os.environ.pop(_k, None)
+            else:
+                os.environ[_k] = _v
 
     def _sub(self, sid=None):
         return {"id": "s1", "nome": "Dr. A", "email": "a@x.com", "cpf": "11144477735",

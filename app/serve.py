@@ -823,7 +823,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
-        if sub.get("asaas_subscription_id") and not sub.get("cancelado_em"):
+        if sub.get("asaas_subscription_id"):
             return self._html(site_web.pagina_msg("Renovação automática",
                                                   AVISO_JA_RECORRENTE, logado=True))
         plano = _c.plano_por_slug(sub.get("plano", "")) or {}
@@ -844,7 +844,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
-        if sub.get("asaas_subscription_id") and not sub.get("cancelado_em"):
+        if sub.get("asaas_subscription_id"):
             # Mesma guarda do GET, no POST: sem ela, um form antigo em cache ou um POST
             # direto ainda criaria a 2ª assinatura recorrente.
             return self._html(site_web.pagina_msg("Renovação automática",
@@ -897,7 +897,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         quer sair da assinatura não pode ficar preso tendo que aceitar termos novos
         primeiro. Isso vale pra todo o fluxo de cancelamento (aqui e em
         `_cancelar_confirmar`), que é o único jeito de sair sem depender do suporte."""
-        import site_web
+        import site_web, subscribers
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
@@ -938,7 +938,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not subscribers.tem_acesso(sub):
                 # Mesma guarda do passo 1, aqui no POST que de fato concede — senão um POST
                 # direto (ou o botão Voltar do navegador sobre o form antigo) contornava.
-                return self._executar_cancelamento(sub, motivo)
+                # NÃO cancela: este ramo é o do botão "Quero meu mês grátis", e cancelar aqui
+                # faria exatamente o contrário do que o cliente pediu — com `cancelado_em`
+                # gravado (que trava qualquer cancelamento futuro), e-mail de cancelamento e,
+                # dentro dos 7 dias, estorno automático. Alcançável quando o acesso vence
+                # entre a tela e o clique, ou quando um chargeback cai no meio do fluxo.
+                return self._html(site_web.pagina_msg(
+                    "Oferta indisponível",
+                    "Esta oferta vale enquanto a assinatura está ativa, e o seu acesso já "
+                    "terminou. Para voltar, é só refazer a assinatura — o valor é o mesmo "
+                    "que você já contratava.", logado=True))
             sid = sub.get("asaas_subscription_id")
             try:
                 if sid:
@@ -980,7 +989,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         assinante marcado (logo, incapaz de cancelar de novo) e sem cancelamento
         registrado. Agora ou o cancelamento está inteiro no banco, ou nada aconteceu.
         """
-        import site_web, asaas, db
+        import site_web, asaas, db, subscribers
         acesso_ate = sub.get("proximo_vencimento")   # padrão: acesso até o fim do período pago
         estado = _gravar_cancelamento(sub, motivo, acesso_ate)
         if estado == "perdeu":
@@ -991,8 +1000,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_cancelado(_acesso_ate_persistido(sub)))
         sid = sub.get("asaas_subscription_id")
         if sid:
+            asaas_ok = False
             try:
                 asaas.cancelar_assinatura(sid)
+                asaas_ok = True
             except Exception as e:
                 # Alerta, não só log: a assinatura pode seguir cobrando em silêncio e o
                 # cliente não consegue mais tentar (o cancelamento já está gravado, então
@@ -1001,6 +1012,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 _alertar(sub, f"cancelamento de {sub.get('nome') or sub.get('id')} gravado, mas a "
                               f"assinatura NÃO foi cancelada no Asaas ({e}) — cancele manualmente, "
                               f"senão ela continua cobrando")
+            if asaas_ok:
+                # A recorrência não existe mais, então o campo não pode continuar apontando
+                # pra ela: é esse id que diz "já renova sozinho", e tanto `regua.na_regua`
+                # quanto o guard do /renovar leem exatamente ele. Mantê-lo deixava quem
+                # cancelou fora dos avisos de vencimento PARA SEMPRE e ouvindo "sua assinatura
+                # já renova automaticamente" ao tentar voltar. Quando o cancelamento no Asaas
+                # FALHA o campo é preservado de propósito: a assinatura pode seguir cobrando,
+                # e deixar esse cliente montar um segundo checkout RECURRENT seria cobrança em
+                # dobro — o estrago que o B4 existe para evitar.
+                # Fora do try do Asaas de propósito: uma falha AQUI não é "não cancelei no
+                # Asaas" e não pode disparar aquele alerta, que diria o contrário do ocorrido.
+                # "CANCELADO" literal e não `sub["status"]`: `sub` é o dicionário de ANTES do
+                # claim, e repassá-lo desfaria o cancelamento recém-gravado.
+                try:
+                    subscribers.marcar_status(sub["id"], "CANCELADO", asaas_subscription_id=None)
+                except Exception as e:
+                    print(f"[cancelar] limpar subscription_id falhou: {e}", flush=True)
         # Estorno só quando temos CERTEZA do estado gravado. Em "incerto" (banco falhou e
         # não deu pra confirmar) o dinheiro não se move — regra global.
         resultado = estornar_arrependimento(sub) if estado == "venceu" else None
