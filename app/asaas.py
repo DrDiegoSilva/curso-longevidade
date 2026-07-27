@@ -2,8 +2,14 @@
 `montar_checkout` é puro/testável; as funções de rede logam erro server-side e
 nunca vazam o corpo cru do Asaas pro cliente.
 
-⚠️ Validar no sandbox: aceitação de RECURRENT + installmentCount juntos (cartão
-parcelado que renova). Se o Asaas recusar, escolher um dos dois na hora.
+CONFIRMADO (Diego, jul/2026, conta REAL — não é mais dúvida): quando vão RECURRENT e
+installmentCount juntos, o Asaas aplica só UM — o parcelamento. Cartão PARCELADO, portanto,
+NÃO renova sozinho e os pagamentos chegam sem `subscription`. Duas consequências de que o
+resto do sistema depende:
+  - a cláusula 2 dos termos está correta ao dizer que só o cartão à vista renova;
+  - o assinante de parcelado nunca fica com `asaas_subscription_id`, então o cancelamento
+    não chama DELETE /subscriptions — as parcelas restantes seguem sendo cobradas, que é o
+    que a cláusula 3 promete.
 """
 import json
 import urllib.request
