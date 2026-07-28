@@ -101,4 +101,5 @@ def taggear(artigos, llm=None):
         cls = json.loads(bruto) if bruto else []
     except Exception:
         cls = []
-    return {c["i"]: _norm_tags(c.get("tags")) for c in cls if isinstance(c.get("i"), int)}
+    return {c["i"]: _norm_tags(c.get("tags")) for c in cls
+            if isinstance(c, dict) and isinstance(c.get("i"), int)}

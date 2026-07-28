@@ -45,6 +45,12 @@ class TestTriageTags(unittest.TestCase):
         import triage
         self.assertEqual(triage.taggear([]), {})
 
+    def test_taggear_garbage(self):
+        """LLM devolve array de strings soltas (não objetos) -> nunca levanta."""
+        import triage
+        llm = lambda p: '["oops","nope"]'
+        self.assertEqual(triage.taggear([{"titulo": "A"}], llm=llm), {})
+
 
 class TestDbTags(unittest.TestCase):
     def setUp(self):
@@ -115,3 +121,39 @@ class TestCuradoriaTags(unittest.TestCase):
         n = curadoria.backfill_tags(db_mod=fake_db, taggear_fn=taggear)
         self.assertEqual(n, 1)                                  # só o 'a' (sem tags)
         fake_db.atualizar_tags.assert_called_once_with("candidato", "a", ["nova"])
+
+    def test_normalizar_propaga_tags_da_triagem(self):
+        """A varredura tria com tags (triage._parse) -> _normalizar tem que levar
+        a["tags"] adiante, senão salvar_candidatos grava '[]' sempre."""
+        import curadoria
+        a = {"titulo": "Estudo X", "fonte": "Europe PMC", "data": "2026-01-01",
+             "doi": "10.1/x", "url": "http://x", "resumo": "abstract...", "score": 8,
+             "citacoes": 3, "tags": ["retatrutida", "glp1"]}
+        cand = curadoria._normalizar(a, "Obesidade")
+        self.assertEqual(cand["tags"], ["retatrutida", "glp1"])
+
+    def test_normalizar_sem_tags_devolve_lista_vazia(self):
+        import curadoria
+        a = {"titulo": "Estudo Y"}
+        cand = curadoria._normalizar(a, "Obesidade")
+        self.assertEqual(cand["tags"], [])
+
+    def test_backfill_chunk_com_erro_nao_aborta_os_seguintes(self):
+        """Um chunk que estoura (taggear_fn levanta) não pode travar os chunks seguintes."""
+        import curadoria
+        from unittest import mock
+        fake_db = mock.Mock()
+        fake_db.listar_candidatos.return_value = [
+            {"id": str(i), "tema": "Obesidade", "titulo": f"T{i}", "abstract": "x", "tags": "[]"}
+            for i in range(3)]
+        fake_db.listar_reserva.return_value = []
+        fake_db.listar_classicos.return_value = []
+
+        def taggear_quebra_no_primeiro(arts):
+            if not hasattr(taggear_quebra_no_primeiro, "chamou"):
+                taggear_quebra_no_primeiro.chamou = True
+                raise RuntimeError("boom")
+            return {i: ["nova"] for i in range(len(arts))}
+
+        n = curadoria.backfill_tags(db_mod=fake_db, taggear_fn=taggear_quebra_no_primeiro, lote=1)
+        self.assertEqual(n, 2)                                  # 1º chunk falhou, os outros 2 seguiram

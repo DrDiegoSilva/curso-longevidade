@@ -41,6 +41,7 @@ def _normalizar(a, tema, tipo="varredura"):
         "citacoes": int(a.get("citacoes", 0) or 0),
         "tipo": tipo,
         "chave": _chave(a),
+        "tags": a.get("tags") or [],
     }
 
 
@@ -355,7 +356,11 @@ def backfill_tags(db_mod=None, taggear_fn=None, lote=20):
     feitos = 0
     for i in range(0, len(pend), lote):
         chunk = pend[i:i + lote]
-        tags_por_i = taggear_fn([p[2] for p in chunk])
+        try:
+            tags_por_i = taggear_fn([p[2] for p in chunk])
+        except Exception as e:
+            print(f"[tags] backfill chunk erro: {e}", flush=True)
+            continue
         for j, (tipo, eid, _) in enumerate(chunk):
             db_mod.atualizar_tags(tipo, eid, tags_por_i.get(j, []))
             feitos += 1
