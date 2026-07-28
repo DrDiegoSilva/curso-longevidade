@@ -17,24 +17,38 @@ def _reload_db(tmp):
     return _db
 
 
+def _snapshot_env():
+    """Guarda o ambiente ANTERIOR (antes de _reload_db mexer nele)."""
+    return {k: os.environ.get(k) for k in ("DSCURSO_ARTIGOS_DB", "DATABASE_URL")}
+
+
+def _restore_db(snap):
+    """Restaura o ambiente pro estado do snapshot E reseta o estado do módulo
+    `db` (via reload, que zera `_INITED`). Sem o reload, `db._INITED` continua
+    True apontando pro banco temp já apagado; o próximo módulo de teste que
+    faz `db.init()` preguiçoso (ex.: via subscribers.py) vira no-op e quebra
+    com "no such table" no banco default restaurado — vaza pra frente por
+    ordem alfabética (mesma lição do test_renovar_ja_recorrente.py sobre o
+    test_preparar_pdf). Reusado pelo Task 2 (TestSeriesAtivar)."""
+    for k, v in snap.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    import importlib, db as _db
+    importlib.reload(_db)
+
+
 class TestDbSeries(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
-        # Guarda o ambiente ANTERIOR e restaura no tearDown: dar `pop`/sobrescrever
-        # cegamente vaza pra frente (ordem alfabética) e quebra o próximo módulo que
-        # espera achar o banco no caminho default — mesma lição do
-        # test_renovar_ja_recorrente.py (comentário sobre o test_preparar_pdf).
-        self._env0 = {k: os.environ.get(k) for k in ("DSCURSO_ARTIGOS_DB", "DATABASE_URL")}
+        self.snap = _snapshot_env()
         self.db = _reload_db(self.tmp)
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
-        for k, v in self._env0.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+        _restore_db(self.snap)
 
     def test_criar_listar_obter(self):
         sid = self.db.criar_serie("Série GLP1")
