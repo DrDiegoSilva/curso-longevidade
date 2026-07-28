@@ -28,6 +28,7 @@ def pagina_revisao(r, aviso="", audio_on=False):
   <button name="acao" value="aprovar">✅ Aprovar</button>
   <button name="acao" value="editar">✏️ Salvar edição</button>
 {btn_audio}  <button name="acao" value="nao_enviar">🚫 Não enviar hoje</button>
+  <button name="acao" value="trocar">🔁 Trocar por outro estudo</button>
 </form></body>"""
 
 
@@ -51,3 +52,43 @@ def pagina_admin(assinantes, token=""):
   <input name="nome" placeholder="Nome"> <input name="whatsapp" placeholder="55DDDNUMERO">
   <button>adicionar</button>
 </form></body>"""
+
+
+def pagina_trocar_estudo(alternativas, r, token):
+    esc = _html.escape
+    tok = esc(token)
+    atual = esc((r.get("artigo") or {}).get("titulo", ""))
+    if not alternativas:
+        corpo = "<p>Sem outros estudos disponíveis para trocar agora.</p>"
+    else:
+        itens = "".join(
+            f'<li style="margin:12px 0">'
+            f'<form method="post" action="/revisar/{tok}" '
+            f'style="display:flex;gap:10px;align-items:center;justify-content:space-between">'
+            f'<span><b>{esc(a["titulo"])}</b><br>'
+            f'<small style="color:#6b7a76">{esc(a["tema"])} · {esc(a["fonte"])} · '
+            f'nota {esc(str(a["score"]))} · {esc(a["tipo"])}</small></span>'
+            f'<input type="hidden" name="acao" value="trocar_confirmar">'
+            f'<input type="hidden" name="tipo" value="{esc(a["tipo"])}">'
+            f'<input type="hidden" name="id" value="{esc(str(a["id"]))}">'
+            f'<button type="submit">Usar este amanhã</button>'
+            f'</form></li>'
+            for a in alternativas
+        )
+        corpo = f'<ul style="list-style:none;padding:0">{itens}</ul>'
+    return f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font-family:system-ui;max-width:680px;margin:24px auto;padding:0 16px;color:#1a2b28">
+<div style="color:#0f4c3a;font-weight:600">Trocar o estudo de amanhã</div>
+<p style="color:#6b7a76;font-size:14px">Atual: {atual}. Escolha outro — o resumo novo chega no seu WhatsApp em ~1-2 min, com link de revisão novo.</p>
+{corpo}
+<p style="margin-top:16px"><a href="/revisar/{tok}">← Voltar para a revisão</a></p>
+</body>"""
+
+
+def pagina_trocando():
+    return ('<!doctype html><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<body style="font-family:system-ui;max-width:600px;margin:40px auto;padding:0 16px;color:#1a2b28">'
+            '<h3>🔄 Trocando…</h3>'
+            '<p>O novo resumo está sendo gerado. Em ~1-2 min você recebe no WhatsApp o estudo novo '
+            '(com PDF, áudio e um link de revisão novo). Pode fechar esta página.</p></body>')
