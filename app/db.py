@@ -173,12 +173,12 @@ def init():
                 tema TEXT, titulo TEXT, fonte TEXT, data TEXT, doi TEXT, url TEXT,
                 abstract TEXT, pergunta TEXT, score REAL, chave TEXT UNIQUE,
                 citacoes INTEGER DEFAULT 0, tipo TEXT DEFAULT 'varredura',
-                status TEXT DEFAULT 'novo', criado_em TEXT
+                status TEXT DEFAULT 'novo', criado_em TEXT, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS classicos (
                 id TEXT PRIMARY KEY, tema TEXT, titulo_pt TEXT, resumo TEXT,
                 gancho TEXT, grafico TEXT, doi TEXT, fonte TEXT, url TEXT, data TEXT,
-                citacoes INTEGER DEFAULT 0, ultimo_envio TEXT, criado_em TEXT
+                citacoes INTEGER DEFAULT 0, ultimo_envio TEXT, criado_em TEXT, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS reserva_resumos (
                 id TEXT PRIMARY KEY, candidato_id TEXT,
@@ -186,7 +186,7 @@ def init():
                 doi TEXT, fonte TEXT, url TEXT, data TEXT,
                 status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
                 origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT,
-                score REAL DEFAULT 0
+                score REAL DEFAULT 0, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS daily_drafts (
                 data TEXT PRIMARY KEY,
@@ -277,6 +277,9 @@ def _migrar_colunas():
         _add_coluna(c, "subscribers", "asaas_installment_id", "TEXT")
         _add_coluna(c, "curadoria_candidatos", "citacoes", "INTEGER DEFAULT 0")
         _add_coluna(c, "curadoria_candidatos", "tipo", "TEXT DEFAULT 'varredura'")
+        _add_coluna(c, "curadoria_candidatos", "tags", "TEXT DEFAULT '[]'")
+        _add_coluna(c, "reserva_resumos", "tags", "TEXT DEFAULT '[]'")
+        _add_coluna(c, "classicos", "tags", "TEXT DEFAULT '[]'")
 
 
 def _habilitar_rls():
@@ -797,14 +800,14 @@ def salvar_candidatos(cands):
                 continue
             cur = c.execute(
                 """INSERT INTO curadoria_candidatos
-                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,citacoes,tipo,status,criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
+                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,citacoes,tipo,tags,status,criado_em)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
                    ON CONFLICT (chave) DO NOTHING""",
                 (secrets.token_hex(8), x.get("tema", ""), x.get("titulo", ""), x.get("fonte", ""),
                  x.get("data", ""), x.get("doi", ""), x.get("url", ""), x.get("abstract", ""),
                  x.get("pergunta", ""), float(x.get("score", 0) or 0), x.get("chave"),
                  int(x.get("citacoes", 0) or 0), x.get("tipo", "varredura"),
-                 datetime.now().isoformat()))
+                 json.dumps(x.get("tags") or []), datetime.now().isoformat()))
             if cur.rowcount and cur.rowcount > 0:
                 novos += 1
     return novos
@@ -871,13 +874,13 @@ def salvar_reserva(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO reserva_resumos
-               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?)""",
+               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score,tags)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?,?)""",
             (rid, reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
              reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
              reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""),
              int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat(),
-             float(reg.get("score", 0) or 0)))
+             float(reg.get("score", 0) or 0), json.dumps(reg.get("tags") or [])))
     return rid
 
 
@@ -943,12 +946,12 @@ def salvar_classico(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO classicos
-               (id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               (id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em,tags)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (cid, reg.get("tema", ""), reg.get("titulo_pt", ""), reg.get("resumo", ""),
              reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""), reg.get("fonte", ""),
              reg.get("url", ""), reg.get("data", ""), int(reg.get("citacoes", 0) or 0),
-             datetime.now().isoformat()))
+             datetime.now().isoformat(), json.dumps(reg.get("tags") or [])))
     return cid
 
 
@@ -980,6 +983,43 @@ def marcar_classico_enviado(cid, data):
     """Marca o envio de um clássico (NÃO deleta — reusável no próximo ciclo)."""
     with _conn() as c:
         c.execute("UPDATE classicos SET ultimo_envio=? WHERE id=?", (data, cid))
+
+
+# ── Tags (Fase 1 — item 8) ──
+_TAG_TAB = {"candidato": "curadoria_candidatos", "reserva": "reserva_resumos", "classico": "classicos"}
+
+
+def atualizar_tags(tipo, id_, tags):
+    """Sobrescreve as tags de um estudo (candidato/reserva/classico). tipo desconhecido = no-op."""
+    tab = _TAG_TAB.get(tipo)
+    if not tab:
+        return
+    with _conn() as c:
+        c.execute(f"UPDATE {tab} SET tags=? WHERE id=?", (json.dumps(tags or []), id_))
+
+
+def buscar_por_tag(termo):
+    """Estudos (reserva+candidatos+clássicos) cuja 'tags' contém `termo` (substring, sem case).
+    Retorna [{tipo,id,titulo,tema,tags}]. Termo vazio -> []."""
+    termo = (termo or "").strip().lower()
+    if not termo:
+        return []
+    like = f"%{termo}%"
+    out = []
+    with _conn() as c:
+        for tipo, tab, tcol in (("reserva", "reserva_resumos", "titulo_pt"),
+                                ("candidato", "curadoria_candidatos", "titulo"),
+                                ("classico", "classicos", "titulo_pt")):
+            for r in c.execute(f"SELECT id, {tcol} AS titulo, tema, tags FROM {tab} "
+                               f"WHERE lower(tags) LIKE ?", (like,)).fetchall():
+                d = dict(r)
+                try:
+                    tags = json.loads(d.get("tags") or "[]")
+                except Exception:
+                    tags = []
+                out.append({"tipo": tipo, "id": d["id"], "titulo": d.get("titulo") or "",
+                            "tema": d.get("tema") or "", "tags": tags})
+    return out
 
 
 # ── Agenda (data -> estudo) ──

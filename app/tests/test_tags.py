@@ -44,3 +44,45 @@ class TestTriageTags(unittest.TestCase):
     def test_taggear_vazio(self):
         import triage
         self.assertEqual(triage.taggear([]), {})
+
+
+class TestDbTags(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ.pop("DATABASE_URL", None)
+        import importlib, db as _db
+        importlib.reload(_db)
+        self.db = _db
+        self.db.init()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_reserva_salva_e_le_tags(self):
+        import json
+        rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Reta X",
+                                      "resumo": "r", "tags": ["retatrutida", "glp1"]})
+        self.assertEqual(json.loads(self.db.obter_reserva(rid)["tags"]), ["retatrutida", "glp1"])
+
+    def test_default_vazio(self):
+        import json
+        rid = self.db.salvar_reserva({"tema": "T", "titulo_pt": "Sem tags"})
+        self.assertEqual(json.loads(self.db.obter_reserva(rid)["tags"]), [])
+
+    def test_buscar_por_tag_cruza_e_substring(self):
+        self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "R1", "tags": ["retatrutida"]})
+        self.db.salvar_classico({"tema": "Obesidade", "titulo_pt": "C1", "tags": ["retatrutida", "glp1"]})
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": "K1", "chave": "k1",
+                                    "tags": ["semaglutida"]}])
+        achados = self.db.buscar_por_tag("RETA")             # substring + case-insensitive
+        self.assertEqual(sorted(a["titulo"] for a in achados), ["C1", "R1"])
+        self.assertEqual(self.db.buscar_por_tag("semaglutida")[0]["tipo"], "candidato")
+        self.assertEqual(self.db.buscar_por_tag(""), [])     # vazio -> []
+
+    def test_atualizar_tags(self):
+        import json
+        rid = self.db.salvar_reserva({"tema": "T", "titulo_pt": "X"})
+        self.db.atualizar_tags("reserva", rid, ["nova"])
+        self.assertEqual(json.loads(self.db.obter_reserva(rid)["tags"]), ["nova"])
