@@ -81,3 +81,127 @@ class TestBaseCobradaFixo(unittest.TestCase):
 
     def test_nao_fica_negativo(self):
         self.assertEqual(self.p.base_cobrada(self.anual, "CARTAO", 300.0, 0.0, 500.0), 0.0)
+
+
+class _AssinarStub:
+    """Stub mínimo pro `self` de `_post_assinar` — mesmo padrão de
+    `test_aceite_checkout.py::_AssinarStub`: implementa só o que o método usa
+    (`headers`, `client_address`, `_html`, `_redirect`), não abre socket."""
+
+    def __init__(self, ip="203.0.113.9"):
+        self.headers = {}
+        self.client_address = (ip, 54321)
+
+    def _html(self, s, code=200):
+        return s
+
+    def _redirect(self, location, token=None, clear=False):
+        return f"<redirect {location}>"
+
+
+class TestCupomLancamentoNaRotaAssinar(unittest.TestCase):
+    """Trava a propriedade de segurança do dinheiro do cupom LANCAMENTO na rota de
+    verdade (`serve.Handler._post_assinar`), não só nas funções puras acima: o cupom
+    promocional (desconto_valor>0) tem que SEMPRE cair no caminho pago do Asaas, nunca
+    no caminho de cortesia (`subscribers.criar_de_pagamento` com status ATIVO direto,
+    sem pagamento). Mesmo harness de `test_aceite_checkout.py::TestGateDeAceiteNoPostAssinar`
+    (stub mínimo + `g` como o `form.get(k, [""])[0]` do POST real) — reaproveitado aqui
+    porque LANCAMENTO já é semeado por `db.init()`."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
+        os.environ.pop("DATABASE_URL", None)
+        for m in ("config", "db", "subscribers", "serve", "site_legal", "site_web", "legal", "asaas", "pricing"):
+            sys.modules.pop(m, None)
+        import db, subscribers, legal, serve
+        db._INITED = False
+        db.init()
+        self.db, self.subscribers, self.legal, self.serve = db, subscribers, legal, serve
+        self.stub = _AssinarStub()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _g(self, **over):
+        base = {"plano": "anual", "nome": "Cliente Lancamento", "email": "lancamento@example.com",
+                "cpf": "11144477735", "whatsapp": "43999991111", "metodo": "CARTAO",
+                "parcelas": "1", "cupom": "LANCAMENTO", "aceito": "1"}
+        base.update(over)
+        return lambda k: base.get(k, "")
+
+    def _mock_asaas(self):
+        import asaas
+        checkouts = []
+        orig_criar = asaas.criar_checkout
+        asaas.criar_checkout = lambda payload: checkouts.append(payload) or {
+            "url": "https://checkout.asaas.example/lancamento", "id": "chk_lanc"}
+        return asaas, checkouts, orig_criar
+
+    def test_cupom_lancamento_nao_cria_assinante_gratis_cartao(self):
+        """Propriedade crítica: LANCAMENTO no cartão NÃO pode passar pelo ramo de
+        cortesia (`subscribers.criar_de_pagamento` -> assinante ATIVO sem pagar)."""
+        asaas, checkouts, orig_criar = self._mock_asaas()
+        criacoes = []
+        orig_criar_de_pagamento = self.subscribers.criar_de_pagamento
+        self.subscribers.criar_de_pagamento = lambda *a, **k: criacoes.append((a, k)) or {"id": "fake"}
+        try:
+            g = self._g()
+            html = self.serve.Handler._post_assinar(self.stub, g)
+        finally:
+            asaas.criar_checkout = orig_criar
+            self.subscribers.criar_de_pagamento = orig_criar_de_pagamento
+        self.assertEqual(criacoes, [])   # caminho de cortesia (grátis) NUNCA foi tomado
+        self.assertEqual(html, "<redirect https://checkout.asaas.example/lancamento>")
+        self.assertEqual(len(checkouts), 1)
+
+    def test_cupom_lancamento_cobra_997_no_cartao_pending_com_valor_base_1497(self):
+        """Caminho pago: pending gravado com valor=997 (1497-500) e valor_base=1497
+        (preço de tabela preservado p/ renovação)."""
+        asaas, checkouts, orig_criar = self._mock_asaas()
+        tokens = []
+        orig_criar_pending = self.db.criar_pending
+
+        def _espiao(dados):
+            token = orig_criar_pending(dados)
+            tokens.append(token)
+            return token
+
+        self.db.criar_pending = _espiao
+        try:
+            g = self._g()
+            html = self.serve.Handler._post_assinar(self.stub, g)
+        finally:
+            asaas.criar_checkout = orig_criar
+            self.db.criar_pending = orig_criar_pending
+        self.assertEqual(html, "<redirect https://checkout.asaas.example/lancamento>")
+        self.assertEqual(len(tokens), 1)
+        pending = self.db.obter_pending(tokens[0])
+        self.assertEqual(pending["valor"], 997.0)
+        self.assertEqual(pending["valor_base"], 1497.0)
+        self.assertEqual(len(checkouts), 1)
+
+    def test_cupom_lancamento_pix_cobra_947_15(self):
+        """Variante Pix: 1497 - 500 = 997, depois 5% off Pix -> 947.15."""
+        asaas, checkouts, orig_criar = self._mock_asaas()
+        tokens = []
+        orig_criar_pending = self.db.criar_pending
+
+        def _espiao(dados):
+            token = orig_criar_pending(dados)
+            tokens.append(token)
+            return token
+
+        self.db.criar_pending = _espiao
+        try:
+            g = self._g(metodo="PIX", whatsapp="43999992222", cpf="52998224725")
+            html = self.serve.Handler._post_assinar(self.stub, g)
+        finally:
+            asaas.criar_checkout = orig_criar
+            self.db.criar_pending = orig_criar_pending
+        self.assertEqual(html, "<redirect https://checkout.asaas.example/lancamento>")
+        self.assertEqual(len(tokens), 1)
+        pending = self.db.obter_pending(tokens[0])
+        self.assertEqual(pending["valor"], 947.15)
+        self.assertEqual(pending["valor_base"], 1497.0)
