@@ -1212,9 +1212,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             parcelas = 1
         cupom = g("cupom").strip()
+        _cup = db.obter_cupom(cupom) if cupom else None
+        # Cortesia = cupom ATIVO sem desconto_valor (dias grátis, sem Asaas). Um cupom
+        # PROMOCIONAL (desconto_valor>0, ex.: LANCAMENTO) também é "válido" mas NUNCA pode
+        # cair aqui — senão vira acesso grátis no plano pago. Só o caminho pago abaixo
+        # aplica o desconto fixo do promocional.
+        _eh_cortesia = bool(_cup and _cup.get("ativo") and float(_cup.get("desconto_valor") or 0) == 0)
         # Cupom de cortesia: ativa na hora, sem Asaas
-        if cupom and db.cupom_valido(cupom):
-            info = db.obter_cupom(cupom) or {}
+        if cupom and _eh_cortesia:
+            info = _cup
             reg = subscribers.criar_de_pagamento(
                 {**dados, "plano": plano["slug"], "metodo": "CUPOM",
                  "termos_versao": legal.VERSAO, "termos_ip": ip_cliente}, {}, status="ATIVO")
@@ -1240,19 +1246,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # do momento: é a mesma promessa da cláusula 2 dos termos ("pelo mesmo valor
         # contratado"), só que pela porta pública em vez da /renovar autenticada.
         base_vig = renovacao.preco_renovacao(ja, plano) if ja else pricing.preco_vigente(plano, n_ativos)
-        # Cupom de afiliado: 10% off na 1ª venda + atribuição (segue pro checkout PAGO)
+        # Cupom promocional (ex.: LANCAMENTO): desconto FIXO em R$, escopado por plano — não
+        # gera comissão (só afiliado gera). Cupom de afiliado: 10% off na 1ª venda + atribuição.
+        # Mutuamente exclusivos na prática (mesmo campo `cupom`), mas base_cobrada aceita os dois.
+        promo_valor = db.cupom_desconto(cupom, plano["slug"]) if cupom else 0.0
         af = db.afiliado_por_codigo(cupom) if cupom else None
         af_codigo = af["codigo"] if af else ""
-        base_final = pricing.base_cobrada(plano, metodo, base_vig, af["pct_desconto"] if af else 0.0)
+        base_final = pricing.base_cobrada(plano, metodo, base_vig,
+                                          af["pct_desconto"] if af else 0.0, promo_valor)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
-        # `valor_base` é a BASE contratada (pré-desconto de método, pré-cupom de afiliado):
-        # é ela que o webhook grava em `valor_contratado` e que a renovação usa como preço.
+        # `valor_base` é a BASE contratada (pré-desconto de método, pré-cupom): é ela que o
+        # webhook grava em `valor_contratado` e que a renovação usa como preço — continua
+        # `base_vig` (preço de tabela) tanto pro cupom de afiliado quanto pro promocional, então
+        # a renovação cobra o valor cheio (o desconto de lançamento não se repete no ciclo 2).
         # `valor` (o que o cliente paga) não serve: no parcelado o Asaas confirma parcela por
         # parcela e no Pix já vem com 5% off, que a renovação reaplicaria a cada ciclo.
         token = db.criar_pending({**dados, "plano": plano["slug"], "metodo": metodo,
                                   "parcelas": parcelas, "valor": valor, "valor_base": base_vig,
                                   "afiliado_codigo": af_codigo,
                                   "termos_versao": legal.VERSAO, "termos_ip": ip_cliente})
+        if promo_valor > 0:
+            try:
+                db.consumir_cupom(cupom)      # marca uso (multi-uso segue ativo; uso único desativa)
+            except Exception as e:
+                print(f"[assinar] consumir cupom promo falhou: {e}", flush=True)
         try:
             payload = asaas.montar_checkout(plano, metodo, parcelas, dados, token, config.PUBLIC_URL, base=base_final)
             res = asaas.criar_checkout(payload)
