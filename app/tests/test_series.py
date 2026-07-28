@@ -100,3 +100,107 @@ class TestDbSeries(unittest.TestCase):
         self.assertEqual(s["data_inicio"], "2026-08-10")
         self.db.set_serie_item_data(iid, "2026-08-10")
         self.assertEqual(self.db.obter_serie(sid)["itens"][0]["data"], "2026-08-10")
+
+
+class TestSeriesAtivar(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+        self.dias = ["segunda", "terca", "quarta", "quinta", "sexta"]
+        # uma segunda-feira ~2 semanas no futuro (determinístico)
+        base = date.today() + timedelta(days=14)
+        self.seg = base - timedelta(days=base.weekday())          # segunda
+        self.seg_iso = self.seg.isoformat()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    def _serie_com(self, n):
+        sid = self.db.criar_serie("S")
+        ids = []
+        for k in range(n):
+            rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": f"R{k}",
+                                          "resumo": "r", "tags": ["glp1"]})
+            self.db.adicionar_serie_item(sid, "reserva", rid, titulo=f"R{k}", tema="Obesidade")
+            ids.append(rid)
+        return sid, ids
+
+    def test_ativa_grava_n_dias_uteis_em_ordem_e_consome(self):
+        import series
+        sid, rids = self._serie_com(3)
+        ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok, msg)
+        # seg, ter, qua recebem os 3 estudos em ordem
+        esperados = [(self.seg + timedelta(days=k)).isoformat() for k in range(3)]
+        for dia, rid in zip(esperados, rids):
+            slot = self.db.agenda_slot(dia)
+            self.assertEqual(slot["tipo"], "reserva")
+            self.assertEqual(slot["ref_id"], rid)
+            self.assertEqual(self.db.obter_reserva(rid)["status"], "agendado")  # consumido
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "ativa")
+        self.assertEqual([i["data"] for i in self.db.obter_serie(sid)["itens"]], esperados)
+
+    def test_pula_fixado_e_pulado(self):
+        import series
+        sid, rids = self._serie_com(2)
+        ter = (self.seg + timedelta(days=1)).isoformat()
+        qua = (self.seg + timedelta(days=2)).isoformat()
+        self.db.agenda_fixar(ter, True)          # terça fixada -> pular
+        ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok, msg)
+        datas = [i["data"] for i in self.db.obter_serie(sid)["itens"]]
+        self.assertEqual(datas, [self.seg_iso, qua])   # seg e qua; terça pulada
+        self.assertEqual(self.db.agenda_slot(ter)["fixado"], 1)  # fixado intacto
+
+    def test_recusa_segunda_ativa(self):
+        import series
+        sid1, _ = self._serie_com(1)
+        sid2, _ = self._serie_com(1)
+        self.db.atualizar_serie(sid1, status="ativa")
+        ok, msg = series.ativar_serie(sid2, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok)
+        self.assertIn("ativa", msg.lower())
+
+    def test_recusa_data_nao_util_e_abaixo_do_min(self):
+        import series
+        sid, _ = self._serie_com(1)
+        sab = (self.seg + timedelta(days=5)).isoformat()   # sábado
+        ok, _ = series.ativar_serie(sid, sab, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok)
+        ok2, msg2 = series.ativar_serie(sid, self.seg_iso, dia_min="2099-01-01",
+                                        db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok2)
+        self.assertIn("2099-01-01", msg2)
+
+    def test_reconciliar_fecha_serie_vencida(self):
+        import series
+        sid, _ = self._serie_com(1)
+        self.db.atualizar_serie(sid, status="ativa")
+        self.db.set_serie_item_data(self.db.obter_serie(sid)["itens"][0]["id"], "2020-01-01")
+        fechados = series.reconciliar(db_mod=self.db, hoje="2026-07-28")
+        self.assertIn(sid, fechados)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "concluida")
+
+    def test_dia_minimo_pula_dia_ja_preparado(self):
+        import series
+        amanha = (date.today() + timedelta(days=1))
+        # força amanhã a ser dia útil escolhendo dias_envio = todos
+        todos = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+        preparado = {amanha.isoformat()}
+        dm = series.dia_minimo_inicio(db_mod=self.db, hoje=date.today().isoformat(),
+                                      dias_envio=todos, preparado_fn=lambda d: d in preparado)
+        self.assertGreater(dm, amanha.isoformat())   # pulou amanhã (já preparado)
+
+    def test_contexto_pagina(self):
+        import series
+        sid = self.db.criar_serie("S")
+        self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Reta",
+                                "resumo": "r", "tags": ["retatrutida"]})
+        ctx = series.contexto_pagina(db_mod=self.db, serie_aberta_id=sid, termo="retatrutida")
+        self.assertEqual(len(ctx["series"]), 1)
+        self.assertEqual(ctx["aberta"]["serie"]["id"], sid)
+        self.assertEqual(ctx["resultados"][0]["titulo"], "Reta")
+        self.assertEqual(series.contexto_pagina(db_mod=self.db)["resultados"], [])
