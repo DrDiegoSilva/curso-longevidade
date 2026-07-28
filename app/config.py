@@ -87,12 +87,12 @@ PLANOS = [
     # mensal é sempre 1x (parcelas travado), logo é RECURRENT puro e renova sozinho; já o Pix
     # mensal nunca renovaria (cobrança mensal manual/WhatsApp todo mês). Tirar o Pix tira o
     # mensal inteiro da régua. Diego confirmou: não existe assinante mensal pago via Pix hoje.
-    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147", "aceita_pix": False},
+    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 147.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 147",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147", "aceita_pix": False},
     # Trimestral/Semestral OCULTOS da venda (decisão do Diego 2026-07-20: só Mensal e Anual).
     # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
     {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},
     {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês", "oculto": True},
-    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 1099.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 1.099", "nota": "≈ R$ 92/mês · em até 12x sem juros", "pix_desconto_pct": 5, "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
+    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 1497.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 1.497", "nota": "≈ R$ 125/mês · em até 12x sem juros", "pix_desconto_pct": 5, "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
     # Plano de TESTE (R$5) — OCULTO da landing; só via link direto /assinar?plano=teste. Pagar por Pix (à vista).
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
 ]

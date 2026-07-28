@@ -159,7 +159,7 @@ class TestCompraNova(JornadaBase):
         self.assert_recebeu_um_ano("Pix anual")
         self.assertEqual(e["plano"], "anual")
         self.assertTrue(e["tem_acesso"])
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)   # a BASE, não o valor com desconto
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)   # a BASE, não o valor com desconto
         self.assertEqual(self.boas_vindas_enviadas(), 1)
 
     def test_cartao_a_vista_anual(self):
@@ -168,13 +168,13 @@ class TestCompraNova(JornadaBase):
         self.assertTrue(e["tem_acesso"])
         self.assertEqual(e["assinatura_asaas"], "sub_1")
         self.assertFalse(e["na_regua"])          # renova sozinho: régua não pode chamar
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)
 
     def test_cartao_12x_anual(self):
         self.paga(plano="anual", metodo="CARTAO", parcelas=12, grupo="g1", n_parcela=1)
         e = self.estado()
         self.assert_recebeu_um_ano("anual 12x")
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)   # não R$ 91,58
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)   # não R$ 91,58
         self.assertTrue(e["na_regua"])           # parcelado NÃO renova sozinho
         self.assertEqual(self.boas_vindas_enviadas(), 1)
 
@@ -182,7 +182,7 @@ class TestCompraNova(JornadaBase):
         self.paga(plano="mensal", metodo="CARTAO", sub_id="sub_m")
         e = self.estado()
         self.assertEqual(e["plano"], "mensal")
-        self.assertEqual(e["renovacao_cobraria"], 99.0)
+        self.assertEqual(e["renovacao_cobraria"], 147.0)
 
 
 class TestEventosRepetidos(JornadaBase):
@@ -240,28 +240,28 @@ class TestClienteQueVolta(JornadaBase):
         e = self.estado()
         self.assertTrue(e["tem_acesso"])
         self.assertFalse(e["cancelado"])
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)
 
     def test_volta_no_12x_recebe_o_ano(self):
         self._venceu()
         self.paga(plano="anual", metodo="CARTAO", parcelas=12, grupo="g2", n_parcela=1)
         e = self.estado()
         self.assertTrue(e["tem_acesso"], "voltou no 12x e ficou sem acesso")
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)
 
     def test_ex_mensal_que_compra_o_anual_recebe_o_anual(self):
         self._venceu(plano="mensal", metodo="CARTAO", sub_id="sub_m")
         self.paga(plano="anual", metodo="PIX")
         e = self.estado()
         self.assertEqual(e["plano"], "anual")
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)
 
     def test_ex_anual_que_compra_o_mensal_recebe_o_mensal(self):
         self._venceu(plano="anual", metodo="PIX")
         self.paga(plano="mensal", metodo="CARTAO", sub_id="sub_m")
         e = self.estado()
         self.assertEqual(e["plano"], "mensal")
-        self.assertEqual(e["renovacao_cobraria"], 99.0)
+        self.assertEqual(e["renovacao_cobraria"], 147.0)
 
     def test_cliente_novo_que_mexeu_no_checkout_duas_vezes_recebe_o_que_pagou(self):
         """Em produção o Asaas não devolve o `externalReference`, então o pending é achado
@@ -280,7 +280,7 @@ class TestClienteQueVolta(JornadaBase):
         e = self.estado()
         self.assertEqual(e["plano"], "anual")
         self.assert_recebeu_um_ano("pagou anual depois de refazer o checkout")
-        self.assertEqual(e["renovacao_cobraria"], 1099.0)
+        self.assertEqual(e["renovacao_cobraria"], 1497.0)
 
     def test_checkout_abandonado_nao_muda_o_plano_do_que_ele_pagou(self):
         self._venceu(plano="anual", metodo="PIX")
