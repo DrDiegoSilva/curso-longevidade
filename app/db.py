@@ -207,6 +207,25 @@ def init():
                 criado_em TEXT,
                 atualizado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS series (
+                id TEXT PRIMARY KEY,
+                nome TEXT,
+                status TEXT DEFAULT 'rascunho',
+                data_inicio TEXT DEFAULT '',
+                criado_em TEXT,
+                ativada_em TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS serie_itens (
+                id TEXT PRIMARY KEY,
+                serie_id TEXT,
+                ordem INTEGER DEFAULT 0,
+                ref_tipo TEXT,
+                ref_id TEXT,
+                titulo TEXT DEFAULT '',
+                tema TEXT DEFAULT '',
+                data TEXT DEFAULT '',
+                enviado INTEGER DEFAULT 0
+            );
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
                 ativo INTEGER DEFAULT 1, criado_em TEXT
@@ -230,7 +249,8 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
-            "automacoes_renovacao", "avisos_renovacao", "classicos"]
+            "automacoes_renovacao", "avisos_renovacao", "classicos",
+            "series", "serie_itens"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -1020,6 +1040,93 @@ def buscar_por_tag(termo):
                 out.append({"tipo": tipo, "id": d["id"], "titulo": d.get("titulo") or "",
                             "tema": d.get("tema") or "", "tags": tags})
     return out
+
+
+# ── Séries de estudos (Fase 2 — item 8) ──
+def criar_serie(nome):
+    """Cria uma série (rascunho, sem itens). Retorna o id."""
+    import secrets
+    from datetime import datetime
+    sid = secrets.token_hex(8)
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO series (id,nome,status,data_inicio,criado_em,ativada_em) "
+            "VALUES (?,?, 'rascunho', '', ?, '')",
+            (sid, nome or "", datetime.now().isoformat()))
+    return sid
+
+
+def listar_series():
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM series ORDER BY criado_em DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def obter_serie(serie_id):
+    """{"serie": dict, "itens": [dict, ...]} ordenados por 'ordem', ou None se não existir."""
+    with _conn() as c:
+        s = c.execute("SELECT * FROM series WHERE id=?", (serie_id,)).fetchone()
+        if not s:
+            return None
+        itens = c.execute("SELECT * FROM serie_itens WHERE serie_id=? ORDER BY ordem",
+                           (serie_id,)).fetchall()
+    return {"serie": dict(s), "itens": [dict(i) for i in itens]}
+
+
+def adicionar_serie_item(serie_id, ref_tipo, ref_id, titulo="", tema=""):
+    """Adiciona um item ao fim da série (ordem = max+1). Retorna o id do item."""
+    import secrets
+    iid = secrets.token_hex(8)
+    with _conn() as c:
+        r = c.execute("SELECT COALESCE(MAX(ordem), -1) AS m FROM serie_itens WHERE serie_id=?",
+                      (serie_id,)).fetchone()
+        ordem = int(dict(r)["m"]) + 1
+        c.execute(
+            "INSERT INTO serie_itens (id,serie_id,ordem,ref_tipo,ref_id,titulo,tema,data,enviado) "
+            "VALUES (?,?,?,?,?,?,?, '', 0)",
+            (iid, serie_id, ordem, ref_tipo, ref_id, titulo or "", tema or ""))
+    return iid
+
+
+def remover_serie_item(item_id):
+    with _conn() as c:
+        c.execute("DELETE FROM serie_itens WHERE id=?", (item_id,))
+
+
+def reordenar_serie_item(item_id, direcao):
+    """Troca a 'ordem' do item com o vizinho ('cima' = ordem menor, 'baixo' = maior)."""
+    with _conn() as c:
+        it = c.execute("SELECT * FROM serie_itens WHERE id=?", (item_id,)).fetchone()
+        if not it:
+            return
+        it = dict(it)
+        if direcao == "cima":
+            viz = c.execute("SELECT * FROM serie_itens WHERE serie_id=? AND ordem<? "
+                             "ORDER BY ordem DESC LIMIT 1", (it["serie_id"], it["ordem"])).fetchone()
+        else:
+            viz = c.execute("SELECT * FROM serie_itens WHERE serie_id=? AND ordem>? "
+                             "ORDER BY ordem ASC LIMIT 1", (it["serie_id"], it["ordem"])).fetchone()
+        if not viz:
+            return
+        viz = dict(viz)
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (viz["ordem"], it["id"]))
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (it["ordem"], viz["id"]))
+
+
+def atualizar_serie(serie_id, **campos):
+    """Atualiza campos da série (whitelist: nome/status/data_inicio/ativada_em). No-op se vazio."""
+    permitidos = {"nome", "status", "data_inicio", "ativada_em"}
+    sets = {k: v for k, v in campos.items() if k in permitidos}
+    if not sets:
+        return
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with _conn() as c:
+        c.execute(f"UPDATE series SET {cols} WHERE id=?", (*sets.values(), serie_id))
+
+
+def set_serie_item_data(item_id, data):
+    with _conn() as c:
+        c.execute("UPDATE serie_itens SET data=? WHERE id=?", (data or "", item_id))
 
 
 # ── Agenda (data -> estudo) ──
