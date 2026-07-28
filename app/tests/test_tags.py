@@ -86,3 +86,32 @@ class TestDbTags(unittest.TestCase):
         rid = self.db.salvar_reserva({"tema": "T", "titulo_pt": "X"})
         self.db.atualizar_tags("reserva", rid, ["nova"])
         self.assertEqual(json.loads(self.db.obter_reserva(rid)["tags"]), ["nova"])
+
+
+class TestCuradoriaTags(unittest.TestCase):
+    def test_gerar_selecionados_carrega_tags(self):
+        import curadoria
+        from unittest import mock
+        cand = {"id": "c1", "tema": "Obesidade", "titulo": "T", "tipo": "varredura",
+                "tags": '["retatrutida","glp1"]'}
+        salvos = {}
+        fake_db = mock.Mock()
+        fake_db.listar_candidatos.return_value = [cand]
+        fake_db.salvar_reserva.side_effect = lambda reg: salvos.update(reg) or "rid"
+        gerar = lambda c: {"titulo_pt": "Tpt", "resumo": "r", "gancho": "", "grafico": None}
+        curadoria.gerar_selecionados(db_mod=fake_db, gerar_resumo_fn=gerar)
+        self.assertEqual(salvos.get("tags"), ["retatrutida", "glp1"])   # string do banco -> lista
+
+    def test_backfill_so_sem_tags_e_idempotente(self):
+        import curadoria
+        from unittest import mock
+        fake_db = mock.Mock()
+        fake_db.listar_candidatos.return_value = [
+            {"id": "a", "tema": "Obesidade", "titulo": "A", "abstract": "x", "tags": "[]"},
+            {"id": "b", "tema": "Obesidade", "titulo": "B", "abstract": "y", "tags": '["ja"]'}]
+        fake_db.listar_reserva.return_value = []
+        fake_db.listar_classicos.return_value = []
+        taggear = lambda arts: {i: ["nova"] for i in range(len(arts))}
+        n = curadoria.backfill_tags(db_mod=fake_db, taggear_fn=taggear)
+        self.assertEqual(n, 1)                                  # só o 'a' (sem tags)
+        fake_db.atualizar_tags.assert_called_once_with("candidato", "a", ["nova"])

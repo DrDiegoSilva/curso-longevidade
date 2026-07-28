@@ -242,6 +242,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
     tema_triagem = "Meus estudos"
     triados = triar_fn([{"titulo": titulo or "", "resumo": corpo, "fonte": fonte}], tema_triagem)
     score = triados[0].get("score", 0) if triados else 7   # LIXO/no-return -> default 7 (Diego escolheu)
+    tags = triados[0].get("tags", []) if triados else []
     # Sem título informado -> gerar o título a partir do TEXTO. Senão a IA de título é
     # instruída a reescrever um "título em inglês" vazio e devolve um recado de erro.
     if not (titulo or "").strip() and "gerar_titulo" not in geradores:
@@ -254,7 +255,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
         "gancho": r.get("gancho", ""),
         "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
         "doi": doi, "fonte": fonte, "url": url, "data": data,
-        "prioridade": 1, "origem": "manual", "score": score})
+        "prioridade": 1, "origem": "manual", "score": score, "tags": tags})
     return rid, r["titulo_pt"]
 
 
@@ -317,7 +318,8 @@ def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
                    "gancho": r.get("gancho", ""),
                    "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
                    "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
-                   "data": c.get("data", ""), "score": c.get("score", 0)}
+                   "data": c.get("data", ""), "score": c.get("score", 0),
+                   "tags": json.loads(c.get("tags") or "[]")}
             if c.get("tipo") == "classico":
                 reg["citacoes"] = c.get("citacoes", 0)
                 db_mod.salvar_classico(reg)
@@ -329,6 +331,34 @@ def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
         except Exception as e:
             print(f"[curadoria] gerar resumo falhou ({c.get('titulo','')[:40]}): {e}", flush=True)
     print(f"[curadoria] {feitos} resumo(s) gerado(s)", flush=True)
+    return feitos
+
+
+def backfill_tags(db_mod=None, taggear_fn=None, lote=20):
+    """Etiqueta estudos das 3 tabelas SEM tags ([]/NULL). Idempotente. Retorna quantos.
+    Usa taggear (só-tags, não re-classifica). taggear_fn injetável p/ teste."""
+    if db_mod is None:
+        import db as db_mod
+    if taggear_fn is None:
+        import triage
+        taggear_fn = triage.taggear
+    db_mod.init()
+    pend = []
+    for tipo, itens, tk in (
+            ("candidato", db_mod.listar_candidatos(), "titulo"),
+            ("reserva", db_mod.listar_reserva(), "titulo_pt"),
+            ("classico", db_mod.listar_classicos(elegiveis=False), "titulo_pt")):   # elegiveis=False = TODOS os bancados
+        for e in itens:
+            if (e.get("tags") or "[]") in ("[]", "", None):
+                pend.append((tipo, e["id"],
+                             {"titulo": e.get(tk, ""), "resumo": e.get("resumo") or e.get("abstract", "")}))
+    feitos = 0
+    for i in range(0, len(pend), lote):
+        chunk = pend[i:i + lote]
+        tags_por_i = taggear_fn([p[2] for p in chunk])
+        for j, (tipo, eid, _) in enumerate(chunk):
+            db_mod.atualizar_tags(tipo, eid, tags_por_i.get(j, []))
+            feitos += 1
     return feitos
 
 
