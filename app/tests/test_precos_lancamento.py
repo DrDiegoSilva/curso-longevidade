@@ -59,6 +59,34 @@ class TestCupomFixo(unittest.TestCase):
         self.db.consumir_cupom("PROMO2")                                       # uso único -> desativa
         self.assertEqual(self.db.cupom_desconto("PROMO2", "anual"), 0.0)       # inativo -> 0
 
+    def test_seed_lancamento_autocorrige_cortesia_preexistente(self):
+        """Footgun (MEDIUM, revisão final): se uma linha 'LANCAMENTO' já existe como
+        CORTESIA (desconto_valor=0, dias_acesso>0 — ex. veio do env DSCURSO_CUPONS, cujo
+        loop roda antes deste seed) o re-seed tem que CORRIGIR a linha pro formato
+        promocional, não deixá-la como está (o antigo ON CONFLICT DO NOTHING deixava, o
+        que dava assinatura anual grátis pra quem usasse LANCAMENTO)."""
+        # `db.init()` (chamado no setUp) já rodou `_seed_cupons()` uma vez, então a linha
+        # 'LANCAMENTO' já existe no formato promocional. `criar_cupom` usa DO NOTHING, então
+        # não sobrescreve — força a forma CORTESIA direto (é o que o env DSCURSO_CUPONS ou
+        # uma linha antiga de produção deixariam) pra simular o footgun antes de re-rodar o seed.
+        with self.db._conn() as c:
+            c.execute("UPDATE cupons SET desconto_valor=0, dias_acesso=30, plano_slug='' "
+                      "WHERE codigo='LANCAMENTO'")
+        cortesia = self.db.obter_cupom("LANCAMENTO")
+        self.assertEqual(float(cortesia["desconto_valor"]), 0.0)
+        self.assertEqual(cortesia["dias_acesso"], 30)
+
+        self.db._seed_cupons()   # re-roda o seed (init() é guardado por _INITED)
+
+        info = self.db.obter_cupom("LANCAMENTO")
+        self.assertEqual(float(info["desconto_valor"]), 500.0)
+        self.assertEqual(info["dias_acesso"], 0)
+        self.assertEqual(info["plano_slug"], "anual")
+        self.assertEqual(info["ativo"], 1)
+        self.assertEqual(info["uso_unico"], 0)
+        # E o efeito prático: não dá mais acesso grátis, sempre desconta no checkout pago.
+        self.assertEqual(self.db.cupom_desconto("LANCAMENTO", "anual"), 500.0)
+
 
 class TestBaseCobradaFixo(unittest.TestCase):
     def setUp(self):

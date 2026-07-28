@@ -298,11 +298,21 @@ def _seed_cupons():
                 # cupons do env = multi-uso (o Diego compartilha o mesmo código)
                 c.execute("INSERT INTO cupons (codigo,ativo,descricao,uso_unico,criado_em) VALUES (?,1,'seed',0,?) "
                           "ON CONFLICT (codigo) DO UPDATE SET uso_unico=0", (cod, datetime.now().isoformat()))
-    # Cupom de lançamento (-R$500 no anual). Idempotente (ON CONFLICT DO NOTHING em
-    # criar_cupom) e blindado em try/except pra uma falha aqui nunca derrubar o boot.
+    # Cupom de lançamento (-R$500 no anual). UPSERT (não DO NOTHING) porque uma linha
+    # "LANCAMENTO" pré-existente como CORTESIA (ex.: alguém pôs o código no env
+    # DSCURSO_CUPONS, cujo loop roda ANTES deste seed e grava desconto_valor=0/
+    # dias_acesso=0 = acesso grátis) tem que ser corrigida pro formato promocional, nunca
+    # deixada como está — senão `_eh_cortesia` (que olha desconto_valor==0) manda todo
+    # comprador de LANCAMENTO pro caminho grátis. Blindado em try/except pra uma falha
+    # aqui nunca derrubar o boot.
     try:
-        criar_cupom(codigo="LANCAMENTO", descricao="Lançamento: -R$500 no anual",
-                    uso_unico=False, desconto_valor=500, plano_slug="anual")
+        with _conn() as c:
+            c.execute(
+                "INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,dias_acesso,criado_em,desconto_valor,plano_slug) "
+                "VALUES ('LANCAMENTO',1,'Lançamento: -R$500 no anual',0,0,0,?,500,'anual') "
+                "ON CONFLICT (codigo) DO UPDATE SET ativo=1, uso_unico=0, dias_acesso=0, "
+                "desconto_valor=500, plano_slug='anual'",
+                (datetime.now().isoformat(),))
     except Exception as e:
         print(f"[db] seed LANCAMENTO falhou: {e}", flush=True)
 
