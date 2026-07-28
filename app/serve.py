@@ -713,6 +713,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"Varredura de clássicos: {curadoria.rodar_varredura_classicos()} novos candidatos."
                 except Exception as e:
                     print(f"[classicos] varredura erro: {e}", flush=True); msg = "Falha na varredura de clássicos (ver logs)."
+            elif acao == "backfill_tags":
+                try:
+                    import curadoria
+                    msg = f"Tags: {curadoria.backfill_tags()} estudo(s) etiquetado(s)."
+                except Exception as e:
+                    print(f"[tags] backfill erro: {e}", flush=True)
+                    msg = "Falha no backfill de tags (ver logs)."
             elif acao == "gerar":
                 try:
                     msg = f"Resumos gerados: {curadoria.gerar_selecionados()}."

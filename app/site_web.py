@@ -1377,6 +1377,8 @@ def _curadoria_ferramentas(token):
                       "Rodar a varredura no Europe PMC (Haiku)? Pode levar 1–2 min.")}
           {_varredura("varrer_classicos", "🏛️ Varrer clássicos",
                       "Buscar estudos-marco por citações? Pode levar 1–2 min.")}
+          {_varredura("backfill_tags", "🏷️ Etiquetar estudos (tags)",
+                      "Etiquetar estudos existentes sem tags? Pode levar alguns segundos.")}
         </div>
         <div class="panel" style="max-width:none;margin:0">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;
