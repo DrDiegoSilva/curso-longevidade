@@ -60,10 +60,15 @@ def valor_com_desconto(base, pct):
     return round(float(base) * (1 - float(pct) / 100.0), 2)
 
 
-def base_cobrada(plano, metodo, base_vig, cupom_pct=0.0):
-    """Valor efetivamente cobrado: aplica o cupom (%) sobre a base vigente e, se for PIX e o plano
-    oferecer `pix_desconto_pct`, o desconto Pix por cima (empilha com o cupom). Puro/testável."""
-    v = valor_com_desconto(base_vig, cupom_pct) if cupom_pct else round(float(base_vig), 2)
+def base_cobrada(plano, metodo, base_vig, cupom_pct=0.0, cupom_valor=0.0):
+    """Valor efetivamente cobrado: aplica o desconto FIXO do cupom promocional (R$), depois
+    o cupom % (afiliado), e por fim, se for PIX e o plano oferecer `pix_desconto_pct`, o
+    desconto Pix por cima (empilha). Puro/testável."""
+    v = round(float(base_vig), 2)
+    if cupom_valor:
+        v = round(max(0.0, v - float(cupom_valor)), 2)
+    if cupom_pct:
+        v = valor_com_desconto(v, cupom_pct)
     if (metodo or "").upper() == "PIX" and plano.get("pix_desconto_pct"):
         v = valor_com_desconto(v, plano["pix_desconto_pct"])
     return v

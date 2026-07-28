@@ -58,3 +58,26 @@ class TestCupomFixo(unittest.TestCase):
         self.assertEqual(self.db.cupom_desconto("PROMO2", "anual"), 200.0)     # escopo vazio = qualquer plano
         self.db.consumir_cupom("PROMO2")                                       # uso único -> desativa
         self.assertEqual(self.db.cupom_desconto("PROMO2", "anual"), 0.0)       # inativo -> 0
+
+
+class TestBaseCobradaFixo(unittest.TestCase):
+    def setUp(self):
+        import pricing, config
+        self.p, self.cfg = pricing, config
+        self.anual = self.cfg.plano_por_slug("anual")
+
+    def test_cupom_fixo_cartao(self):
+        # 1497 - 500 = 997 (cartão não tem desconto Pix)
+        self.assertEqual(self.p.base_cobrada(self.anual, "CARTAO", 1497.0, 0.0, 500.0), 997.0)
+
+    def test_cupom_fixo_pix_empilha(self):
+        # 1497 - 500 = 997, depois Pix 5% -> 947.15
+        self.assertEqual(self.p.base_cobrada(self.anual, "PIX", 1497.0, 0.0, 500.0), 947.15)
+
+    def test_retrocompat_sem_cupom_valor(self):
+        # chamada antiga (4 args) inalterada
+        self.assertEqual(self.p.base_cobrada(self.anual, "CARTAO", 1497.0, 0.0), 1497.0)
+        self.assertEqual(self.p.base_cobrada(self.anual, "PIX", 1497.0, 0.0), round(1497.0 * 0.95, 2))
+
+    def test_nao_fica_negativo(self):
+        self.assertEqual(self.p.base_cobrada(self.anual, "CARTAO", 300.0, 0.0, 500.0), 0.0)
