@@ -67,6 +67,16 @@ class _Wrap:
             self._c.close()
 
 
+def _integrity_error():
+    """Classe de IntegrityError do driver em uso — pra distinguir "violou uma
+    constraint" (esperado, tratável) de "o banco caiu" (não tratável) sem
+    inspecionar a mensagem de erro."""
+    if _is_pg():
+        import psycopg2
+        return psycopg2.IntegrityError
+    return sqlite3.IntegrityError
+
+
 def _conn():
     if _is_pg():
         import psycopg2
@@ -174,12 +184,12 @@ def init():
                 tema TEXT, titulo TEXT, fonte TEXT, data TEXT, doi TEXT, url TEXT,
                 abstract TEXT, pergunta TEXT, score REAL, chave TEXT UNIQUE,
                 citacoes INTEGER DEFAULT 0, tipo TEXT DEFAULT 'varredura',
-                status TEXT DEFAULT 'novo', criado_em TEXT
+                status TEXT DEFAULT 'novo', criado_em TEXT, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS classicos (
                 id TEXT PRIMARY KEY, tema TEXT, titulo_pt TEXT, resumo TEXT,
                 gancho TEXT, grafico TEXT, doi TEXT, fonte TEXT, url TEXT, data TEXT,
-                citacoes INTEGER DEFAULT 0, ultimo_envio TEXT, criado_em TEXT
+                citacoes INTEGER DEFAULT 0, ultimo_envio TEXT, criado_em TEXT, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS reserva_resumos (
                 id TEXT PRIMARY KEY, candidato_id TEXT,
@@ -187,7 +197,7 @@ def init():
                 doi TEXT, fonte TEXT, url TEXT, data TEXT,
                 status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
                 origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT,
-                score REAL DEFAULT 0
+                score REAL DEFAULT 0, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS daily_drafts (
                 data TEXT PRIMARY KEY,
@@ -208,6 +218,28 @@ def init():
                 criado_em TEXT,
                 atualizado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS series (
+                id TEXT PRIMARY KEY,
+                nome TEXT,
+                status TEXT DEFAULT 'rascunho',
+                data_inicio TEXT DEFAULT '',
+                criado_em TEXT,
+                ativada_em TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS serie_itens (
+                id TEXT PRIMARY KEY,
+                serie_id TEXT,
+                ordem INTEGER DEFAULT 0,
+                ref_tipo TEXT,
+                ref_id TEXT,
+                titulo TEXT DEFAULT '',
+                tema TEXT DEFAULT '',
+                data TEXT DEFAULT '',
+                enviado INTEGER DEFAULT 0,
+                UNIQUE (serie_id, ref_tipo, ref_id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_serie_itens_dedup
+                ON serie_itens(serie_id, ref_tipo, ref_id);
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
                 ativo INTEGER DEFAULT 1, criado_em TEXT
@@ -219,6 +251,7 @@ def init():
             """
         )
     _migrar_colunas()
+    _migrar_indices()
     _seed_cupons()
     _seed_automacoes()
     _migrar_texto_seed0()
@@ -231,7 +264,8 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "pending_signups", "webhook_events", "cupons", "senha_tokens",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
-            "automacoes_renovacao", "avisos_renovacao", "classicos"]
+            "automacoes_renovacao", "avisos_renovacao", "classicos",
+            "series", "serie_itens"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -280,6 +314,78 @@ def _migrar_colunas():
         _add_coluna(c, "subscribers", "asaas_installment_id", "TEXT")
         _add_coluna(c, "curadoria_candidatos", "citacoes", "INTEGER DEFAULT 0")
         _add_coluna(c, "curadoria_candidatos", "tipo", "TEXT DEFAULT 'varredura'")
+        _add_coluna(c, "curadoria_candidatos", "tags", "TEXT DEFAULT '[]'")
+        _add_coluna(c, "reserva_resumos", "tags", "TEXT DEFAULT '[]'")
+        _add_coluna(c, "classicos", "tags", "TEXT DEFAULT '[]'")
+
+
+# Índices ÚNICOS que podem falhar num banco já povoado (linhas já em conflito).
+# Por isso ficam FORA do executescript do init(): um CREATE INDEX que levanta lá
+# dentro aborta o script inteiro e o app sobe sem schema. Cada um tem um reparo
+# determinístico que roda antes da 2ª tentativa.
+_IDX_SERIE_ATIVA = ("CREATE UNIQUE INDEX IF NOT EXISTS ux_series_uma_ativa "
+                    "ON series(status) WHERE status='ativa'")
+_IDX_SERIE_ITENS_ORDEM = ("CREATE UNIQUE INDEX IF NOT EXISTS ux_serie_itens_ordem "
+                          "ON serie_itens(serie_id, ordem)")
+
+
+def _demover_series_ativas_extras():
+    """Deixa ATIVA só a série ativada primeiro; as outras viram 'incompleta' —
+    status visível na /series que NÃO tranca a próxima ativação. Só é alcançável
+    num banco escrito antes de ux_series_uma_ativa existir (a corrida de
+    check-then-act do series.ativar_serie deixava N séries ativas).
+
+    `extras` nasce FORA do `with`: hoje o `_Wrap.__exit__` devolve None (não
+    suprime) e um erro do bloco propaga antes do log, mas a ligação só é segura
+    por causa desse detalhe. Se algum dia o wrapper passar a engolir exceção,
+    esta função — cujo trabalho INTEIRO é limpeza — quebraria com variável solta
+    em cima do erro de verdade."""
+    extras = []
+    with _conn() as c:
+        rows = c.execute("SELECT id FROM series WHERE status='ativa' "
+                         "ORDER BY ativada_em ASC, criado_em ASC, id ASC").fetchall()
+        extras = [dict(r)["id"] for r in rows][1:]
+        for sid in extras:
+            c.execute("UPDATE series SET status='incompleta' WHERE id=?", (sid,))
+    if extras:
+        print(f"[db] {len(extras)} série(s) ativa(s) extra(s) marcadas 'incompleta': {extras}",
+              flush=True)
+
+
+def _renumerar_serie_itens():
+    """Renumera 'ordem' 0..n-1 por série preservando a ordem visível (ordem, id).
+    Repara bancos onde a corrida do `MAX(ordem)+1` já deixou ordens repetidas —
+    pré-requisito pra ux_serie_itens_ordem existir."""
+    with _conn() as c:
+        rows = c.execute("SELECT id, serie_id FROM serie_itens "
+                         "ORDER BY serie_id, ordem, id").fetchall()
+        atual, n = object(), 0
+        for r in rows:
+            d = dict(r)
+            if d["serie_id"] != atual:
+                atual, n = d["serie_id"], 0
+            c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (n, d["id"]))
+            n += 1
+
+
+def _criar_indice(sql):
+    with _conn() as c:
+        c.execute(sql)
+
+
+def _migrar_indices():
+    """Cria os índices únicos retroativos: tenta, repara o conflito, tenta de novo.
+    Uma 2ª falha propaga (o banco está num estado que o reparo não previu — melhor
+    barulho no boot do que uma constraint que o código acha que existe e não existe)."""
+    for sql, reparo, nome in ((_IDX_SERIE_ATIVA, _demover_series_ativas_extras, "ux_series_uma_ativa"),
+                              (_IDX_SERIE_ITENS_ORDEM, _renumerar_serie_itens, "ux_serie_itens_ordem")):
+        try:
+            _criar_indice(sql)
+            continue
+        except _integrity_error() as e:
+            print(f"[db] {nome}: {e} — reparando as linhas em conflito", flush=True)
+        reparo()
+        _criar_indice(sql)
 
 
 def _habilitar_rls():
@@ -833,14 +939,14 @@ def salvar_candidatos(cands):
                 continue
             cur = c.execute(
                 """INSERT INTO curadoria_candidatos
-                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,citacoes,tipo,status,criado_em)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
+                   (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,citacoes,tipo,tags,status,criado_em)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
                    ON CONFLICT (chave) DO NOTHING""",
                 (secrets.token_hex(8), x.get("tema", ""), x.get("titulo", ""), x.get("fonte", ""),
                  x.get("data", ""), x.get("doi", ""), x.get("url", ""), x.get("abstract", ""),
                  x.get("pergunta", ""), float(x.get("score", 0) or 0), x.get("chave"),
                  int(x.get("citacoes", 0) or 0), x.get("tipo", "varredura"),
-                 datetime.now().isoformat()))
+                 json.dumps(x.get("tags") or []), datetime.now().isoformat()))
             if cur.rowcount and cur.rowcount > 0:
                 novos += 1
     return novos
@@ -880,6 +986,14 @@ def marcar_candidatos(ids, status):
             c.execute("UPDATE curadoria_candidatos SET status=? WHERE id=?", (status, i))
 
 
+def obter_candidato(cid):
+    """Um candidato da curadoria por id (ou None). Espelha obter_reserva — usado
+    por series._indisponiveis pra checar o status antes de agendar."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM curadoria_candidatos WHERE id=?", (cid,)).fetchone()
+    return dict(r) if r else None
+
+
 def marcar_candidato_agendado(cid):
     """Prende um candidato na agenda (sai do pool 'novo' até enviar/soltar)."""
     with _conn() as c:
@@ -907,13 +1021,13 @@ def salvar_reserva(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO reserva_resumos
-               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?)""",
+               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score,tags)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?,?)""",
             (rid, reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
              reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
              reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""),
              int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat(),
-             float(reg.get("score", 0) or 0)))
+             float(reg.get("score", 0) or 0), json.dumps(reg.get("tags") or [])))
     return rid
 
 
@@ -979,12 +1093,12 @@ def salvar_classico(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO classicos
-               (id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+               (id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em,tags)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (cid, reg.get("tema", ""), reg.get("titulo_pt", ""), reg.get("resumo", ""),
              reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""), reg.get("fonte", ""),
              reg.get("url", ""), reg.get("data", ""), int(reg.get("citacoes", 0) or 0),
-             datetime.now().isoformat()))
+             datetime.now().isoformat(), json.dumps(reg.get("tags") or [])))
     return cid
 
 
@@ -1016,6 +1130,228 @@ def marcar_classico_enviado(cid, data):
     """Marca o envio de um clássico (NÃO deleta — reusável no próximo ciclo)."""
     with _conn() as c:
         c.execute("UPDATE classicos SET ultimo_envio=? WHERE id=?", (data, cid))
+
+
+# ── Tags (Fase 1 — item 8) ──
+_TAG_TAB = {"candidato": "curadoria_candidatos", "reserva": "reserva_resumos", "classico": "classicos"}
+
+
+def atualizar_tags(tipo, id_, tags):
+    """Sobrescreve as tags de um estudo (candidato/reserva/classico). tipo desconhecido = no-op."""
+    tab = _TAG_TAB.get(tipo)
+    if not tab:
+        return
+    with _conn() as c:
+        c.execute(f"UPDATE {tab} SET tags=? WHERE id=?", (json.dumps(tags or []), id_))
+
+
+def buscar_por_tag(termo):
+    """Estudos (reserva+candidatos+clássicos) cuja 'tags' contém `termo` (substring, sem case).
+    Retorna [{tipo,id,titulo,tema,tags}]. Termo vazio -> []."""
+    termo = (termo or "").strip().lower()
+    if not termo:
+        return []
+    like = f"%{termo}%"
+    out = []
+    with _conn() as c:
+        for tipo, tab, tcol in (("reserva", "reserva_resumos", "titulo_pt"),
+                                ("candidato", "curadoria_candidatos", "titulo"),
+                                ("classico", "classicos", "titulo_pt")):
+            for r in c.execute(f"SELECT id, {tcol} AS titulo, tema, tags FROM {tab} "
+                               f"WHERE lower(tags) LIKE ?", (like,)).fetchall():
+                d = dict(r)
+                try:
+                    tags = json.loads(d.get("tags") or "[]")
+                except Exception:
+                    tags = []
+                out.append({"tipo": tipo, "id": d["id"], "titulo": d.get("titulo") or "",
+                            "tema": d.get("tema") or "", "tags": tags})
+    return out
+
+
+# ── Séries de estudos (Fase 2 — item 8) ──
+def criar_serie(nome):
+    """Cria uma série (rascunho, sem itens). Retorna o id."""
+    import secrets
+    from datetime import datetime
+    sid = secrets.token_hex(8)
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO series (id,nome,status,data_inicio,criado_em,ativada_em) "
+            "VALUES (?,?, 'rascunho', '', ?, '')",
+            (sid, nome or "", datetime.now().isoformat()))
+    return sid
+
+
+def listar_series():
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM series ORDER BY criado_em DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def obter_serie(serie_id):
+    """{"serie": dict, "itens": [dict, ...]} ordenados por 'ordem', ou None se não existir.
+    O desempate por 'id' deixa a leitura DETERMINÍSTICA mesmo num banco antigo que
+    ainda tenha ordens repetidas (ver _renumerar_serie_itens): series.ativar_serie
+    casa esta lista 1:1 com os dias de envio, então "ordem instável" = sequência
+    curada embaralhada."""
+    with _conn() as c:
+        s = c.execute("SELECT * FROM series WHERE id=?", (serie_id,)).fetchone()
+        if not s:
+            return None
+        itens = c.execute("SELECT * FROM serie_itens WHERE serie_id=? ORDER BY ordem, id",
+                           (serie_id,)).fetchall()
+    return {"serie": dict(s), "itens": [dict(i) for i in itens]}
+
+
+_TENTATIVAS_ORDEM = 8       # colisões de 'ordem' entre threads: recomeça com MAX fresco
+
+
+def adicionar_serie_item(serie_id, ref_tipo, ref_id, titulo="", tema=""):
+    """Adiciona um item ao fim da série (ordem = max+1). Se (serie_id, ref_tipo,
+    ref_id) já está na série, devolve o item EXISTENTE em vez de duplicar — um
+    double-click no ➕ do /series não pode agendar o mesmo estudo duas vezes
+    (ver serie_item_existe, usado pela rota pra escolher a mensagem certa).
+
+    O pré-check abaixo é só um atalho pro caso comum (evita gerar id/computar
+    ordem à toa quando o item já existe) — quem FECHA a corrida de verdade é o
+    `UNIQUE (serie_id, ref_tipo, ref_id)` da tabela + `ON CONFLICT DO NOTHING`:
+    o servidor é `ThreadingHTTPServer` (serve.py), então um double-click real
+    chega como duas threads concorrentes, cada uma com sua própria conexão
+    sqlite — um SELECT-antes-do-INSERT sem constraint tem uma janela TOCTOU
+    (as duas threads podem ver "não existe" antes de qualquer INSERT commitar;
+    comprovado com um teste de 8 threads concorrentes, que produzia 3 linhas
+    em vez de 1 antes desta constraint). A tabela é nova nesta Fase 2 (ainda
+    não deployada) — dá pra declarar a UNIQUE de cara, sem migração em tabela
+    de produção existente. Retorna o id do item.
+
+    A 'ordem' tinha o MESMO TOCTOU, e ele era pior: `SELECT MAX(ordem)+1` seguido
+    de um INSERT sem UNIQUE(serie_id, ordem) atrás deixava 10 threads com 10 itens
+    DISTINTOS gravarem ordem = [0,0,0,0,0,1,1,2,2,2] — sem erro nenhum, só a
+    sequência curada (o ponto inteiro de uma série) embaralhada. Agora o índice
+    ux_serie_itens_ordem recusa a colisão e a tentativa recomeça com um MAX fresco."""
+    import secrets
+    erro = None
+    for _ in range(_TENTATIVAS_ORDEM):
+        try:
+            with _conn() as c:
+                existente = c.execute(
+                    "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+                    (serie_id, ref_tipo, ref_id)).fetchone()
+                if existente:
+                    return dict(existente)["id"]
+                iid = secrets.token_hex(8)
+                r = c.execute("SELECT COALESCE(MAX(ordem), -1) AS m FROM serie_itens WHERE serie_id=?",
+                              (serie_id,)).fetchone()
+                ordem = int(dict(r)["m"]) + 1
+                # ON CONFLICT com alvo explícito só cobre o alvo: uma colisão em
+                # (serie_id, ordem) levanta IntegrityError e cai no retry abaixo.
+                cur = c.execute(
+                    "INSERT INTO serie_itens (id,serie_id,ordem,ref_tipo,ref_id,titulo,tema,data,enviado) "
+                    "VALUES (?,?,?,?,?,?,?, '', 0) "
+                    "ON CONFLICT (serie_id, ref_tipo, ref_id) DO NOTHING",
+                    (iid, serie_id, ordem, ref_tipo, ref_id, titulo or "", tema or ""))
+                if cur.rowcount > 0:
+                    return iid
+                # perdeu a corrida pro ON CONFLICT: outra thread inseriu entre o
+                # pré-check e este INSERT — devolve o id de quem venceu.
+                vencedor = c.execute(
+                    "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+                    (serie_id, ref_tipo, ref_id)).fetchone()
+                return dict(vencedor)["id"]
+        except _integrity_error() as e:
+            erro = e            # (serie_id, ordem) ocupado por outra thread: recomeça
+    raise erro
+
+
+def serie_item_existe(serie_id, ref_tipo, ref_id):
+    """True se (serie_id, ref_tipo, ref_id) já está na série. Usado pela rota
+    /series ANTES de chamar adicionar_serie_item (que já evita duplicar) só
+    pra escolher a mensagem certa ('já está na série' vs 'Adicionado')."""
+    with _conn() as c:
+        r = c.execute(
+            "SELECT 1 FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+            (serie_id, ref_tipo, ref_id)).fetchone()
+    return r is not None
+
+
+def remover_serie_item(item_id):
+    with _conn() as c:
+        c.execute("DELETE FROM serie_itens WHERE id=?", (item_id,))
+
+
+def reordenar_serie_item(item_id, direcao):
+    """Troca a 'ordem' do item com o vizinho ('cima' = ordem menor, 'baixo' = maior).
+
+    O swap passa por uma SENTINELA porque ux_serie_itens_ordem é imediato (checado
+    a cada statement, não no commit): um swap ingênuo em dois UPDATEs viola a
+    constraint já no primeiro, quando os dois itens ficariam com a mesma 'ordem'.
+    A sentinela é MIN(ordem)-1 da própria série, calculada na MESMA transação —
+    sempre livre, e não depende de nenhum valor mágico que uma reordenação
+    interrompida pudesse ter deixado pra trás."""
+    with _conn() as c:
+        it = c.execute("SELECT * FROM serie_itens WHERE id=?", (item_id,)).fetchone()
+        if not it:
+            return
+        it = dict(it)
+        if direcao == "cima":
+            viz = c.execute("SELECT * FROM serie_itens WHERE serie_id=? AND ordem<? "
+                             "ORDER BY ordem DESC LIMIT 1", (it["serie_id"], it["ordem"])).fetchone()
+        else:
+            viz = c.execute("SELECT * FROM serie_itens WHERE serie_id=? AND ordem>? "
+                             "ORDER BY ordem ASC LIMIT 1", (it["serie_id"], it["ordem"])).fetchone()
+        if not viz:
+            return
+        viz = dict(viz)
+        r = c.execute("SELECT COALESCE(MIN(ordem), 0) - 1 AS s FROM serie_itens WHERE serie_id=?",
+                      (it["serie_id"],)).fetchone()
+        sentinela = int(dict(r)["s"])
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (sentinela, it["id"]))
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (it["ordem"], viz["id"]))
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (viz["ordem"], it["id"]))
+
+
+def reivindicar_serie_ativa(serie_id, data_inicio, ativada_em):
+    """Claim ATÔMICO do único slot de "série ativa". True se ESTA chamada virou a
+    série (que precisa estar em 'rascunho') a ativa; False se perdeu.
+
+    Duas travas, as duas no banco: (1) o UPDATE é condicional em
+    status='rascunho', então N cliques na MESMA série só passam uma vez
+    (rowcount==0 nos perdedores); (2) o índice único PARCIAL ux_series_uma_ativa
+    recusa a segunda série DIFERENTE. Sem isso, o "uma série ativa" de
+    series.ativar_serie era check-then-act com o loop inteiro de escrita na
+    janela — e serve.py é ThreadingHTTPServer, uma thread por clique: 8 ativações
+    concorrentes deixavam 8 séries ativas, e 8 cliques na mesma série
+    consumiam/devolviam a mesma reserva várias vezes.
+
+    O claim vem ANTES de escrever os dias justamente pra que o perdedor pare sem
+    ter tocado na agenda (desfazer um agenda_upsert que já sobrescreveu o slot
+    anterior não é reversível — o ocupante antigo já voltou pro estoque)."""
+    try:
+        with _conn() as c:
+            cur = c.execute(
+                "UPDATE series SET status='ativa', data_inicio=?, ativada_em=? "
+                "WHERE id=? AND status='rascunho'", (data_inicio, ativada_em, serie_id))
+            venceu = cur.rowcount > 0
+    except _integrity_error():
+        return False        # outra série já ocupa o slot de 'ativa'
+    return venceu
+
+
+def atualizar_serie(serie_id, **campos):
+    """Atualiza campos da série (whitelist: nome/status/data_inicio/ativada_em). No-op se vazio."""
+    permitidos = {"nome", "status", "data_inicio", "ativada_em"}
+    sets = {k: v for k, v in campos.items() if k in permitidos}
+    if not sets:
+        return
+    cols = ", ".join(f"{k}=?" for k in sets)
+    with _conn() as c:
+        c.execute(f"UPDATE series SET {cols} WHERE id=?", (*sets.values(), serie_id))
+
+
+def set_serie_item_data(item_id, data):
+    with _conn() as c:
+        c.execute("UPDATE serie_itens SET data=? WHERE id=?", (data or "", item_id))
 
 
 # ── Agenda (data -> estudo) ──

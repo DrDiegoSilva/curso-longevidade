@@ -653,6 +653,7 @@ def _admin_nav(token="", atual=""):
             + lk("/admin", "👥 Assinantes", "assinantes")
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
             + lk("/agenda", "📅 Agenda", "agenda")
+            + lk("/series", "🎬 Séries", "series")
             + lk("/admin/precos", "💰 Preços", "precos")
             + lk("/admin/envio", "🗓️ Dias", "envio")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
@@ -1378,6 +1379,8 @@ def _curadoria_ferramentas(token):
                       "Rodar a varredura no Europe PMC (Haiku)? Pode levar 1–2 min.")}
           {_varredura("varrer_classicos", "🏛️ Varrer clássicos",
                       "Buscar estudos-marco por citações? Pode levar 1–2 min.")}
+          {_varredura("backfill_tags", "🏷️ Etiquetar estudos (tags)",
+                      "Etiquetar estudos existentes sem tags? Pode levar alguns segundos.")}
         </div>
         <div class="panel" style="max-width:none;margin:0">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;
@@ -1614,6 +1617,120 @@ def pagina_agenda(semanas, estoque, token, msg=""):
              + '</div>')
     return _pagina("Agenda · Admin", corpo, logado=True,
                    meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg=""):
+    """Montador de séries: lista + (rascunho aberto) busca por tag + itens ordenados
+    + adicionar meu estudo + ativar com data de início."""
+    tk = _esc(token)
+    aviso = f'<p class="hint">{_esc(msg)}</p>' if msg else ""
+
+    def _badge(st):
+        cor = {"rascunho": "#8a7", "ativa": "var(--ouro2)", "concluida": "#999"}.get(st, "#999")
+        return f'<span style="color:{cor};font-size:12px;text-transform:uppercase">{_esc(st)}</span>'
+
+    linhas = ""
+    for s in ctx.get("series", []):
+        linhas += (f'<li style="margin:6px 0"><a href="/series?serie={_esc(s["id"])}&token={tk}" '
+                   f'style="color:var(--ouro2);text-decoration:none">{_esc(s.get("nome") or "(sem nome)")}</a> '
+                   f'&nbsp;{_badge(s.get("status",""))}</li>')
+    lista = f'<ul style="list-style:none;padding:0">{linhas or "<li class=hint>Nenhuma série ainda.</li>"}</ul>'
+
+    nova = (f'<form method="post" action="/series" style="margin:10px 0">'
+            f'<input type="hidden" name="acao" value="criar">'
+            f'<input type="hidden" name="token" value="{tk}">'
+            f'<input name="nome" placeholder="Nome da nova série (ex.: Série GLP1)" '
+            f'style="padding:8px;min-width:280px">'
+            f'<button type="submit">➕ Criar série</button></form>')
+
+    montador = ""
+    aberta = ctx.get("aberta")
+    if aberta:
+        sid = _esc(aberta["serie"]["id"])
+        st = aberta["serie"].get("status", "")
+        # itens da série
+        its = ""
+        for it in aberta.get("itens", []):
+            iid = _esc(it["id"])
+            dia = f' · <b>{_esc(it["data"])}</b>' if it.get("data") else ""
+            its += (f'<li style="margin:5px 0;display:flex;gap:6px;align-items:center">'
+                    f'<span>{_esc(it.get("titulo") or it.get("ref_id"))} '
+                    f'<span class=hint>({_esc(it.get("ref_tipo"))}{dia})</span></span>')
+            if st == "rascunho":
+                for direc, seta in (("cima", "↑"), ("baixo", "↓")):
+                    its += (f'<form method="post" action="/series" style="display:inline">'
+                            f'<input type="hidden" name="acao" value="reordenar">'
+                            f'<input type="hidden" name="token" value="{tk}">'
+                            f'<input type="hidden" name="serie" value="{sid}">'
+                            f'<input type="hidden" name="item" value="{iid}">'
+                            f'<input type="hidden" name="direcao" value="{direc}">'
+                            f'<button type="submit">{seta}</button></form>')
+                its += (f'<form method="post" action="/series" style="display:inline">'
+                        f'<input type="hidden" name="acao" value="remover_item">'
+                        f'<input type="hidden" name="token" value="{tk}">'
+                        f'<input type="hidden" name="serie" value="{sid}">'
+                        f'<input type="hidden" name="item" value="{iid}">'
+                        f'<button type="submit">🗑️</button></form>')
+            its += "</li>"
+        itens_html = f'<ul style="list-style:none;padding:0">{its or "<li class=hint>Vazia.</li>"}</ul>'
+
+        if st == "rascunho":
+            # busca por tag
+            busca = (f'<form method="post" action="/series" style="margin:10px 0">'
+                     f'<input type="hidden" name="acao" value="buscar">'
+                     f'<input type="hidden" name="token" value="{tk}">'
+                     f'<input type="hidden" name="serie" value="{sid}">'
+                     f'<input name="termo" placeholder="Buscar no estoque por tag (ex.: glp1)" '
+                     f'style="padding:8px;min-width:260px">'
+                     f'<button type="submit">🔎 Buscar</button></form>')
+            res = ""
+            for r in ctx.get("resultados", []):
+                res += (f'<li style="margin:4px 0">'
+                        f'<form method="post" action="/series" style="display:inline">'
+                        f'<input type="hidden" name="acao" value="add_item">'
+                        f'<input type="hidden" name="token" value="{tk}">'
+                        f'<input type="hidden" name="serie" value="{sid}">'
+                        f'<input type="hidden" name="tipo" value="{_esc(r.get("tipo"))}">'
+                        f'<input type="hidden" name="id" value="{_esc(r.get("id"))}">'
+                        f'<input type="hidden" name="titulo" value="{_esc(r.get("titulo"))}">'
+                        f'<input type="hidden" name="tema" value="{_esc(r.get("tema"))}">'
+                        f'<button type="submit">➕</button> {_esc(r.get("titulo"))} '
+                        f'<span class=hint>({_esc(r.get("tipo"))} · {_esc(", ".join(r.get("tags", [])))})</span>'
+                        f'</form></li>')
+            resultados_html = (f'<ul style="list-style:none;padding:0">{res}</ul>' if res else "")
+
+            # adicionar meu estudo (upload) — multipart, mesmo campo do /curadoria
+            meu = (f'<form method="post" action="/series" enctype="multipart/form-data" '
+                   f'style="margin:12px 0;padding:10px;border:1px solid #333;border-radius:8px">'
+                   f'<b>➕ Adicionar meu estudo</b><br>'
+                   f'<input type="hidden" name="acao" value="add_meu_estudo">'
+                   f'<input type="hidden" name="token" value="{tk}">'
+                   f'<input type="hidden" name="serie" value="{sid}">'
+                   f'<input name="titulo" placeholder="Título (opcional)" style="padding:6px"><br>'
+                   f'<input type="file" name="pdf" accept="application/pdf"><br>'
+                   f'<textarea name="texto" placeholder="…ou cole o resumo" '
+                   f'style="width:100%;height:70px"></textarea>'
+                   f'<button type="submit">Enviar</button></form>')
+
+            ativar = (f'<form method="post" action="/series" style="margin:12px 0">'
+                      f'<input type="hidden" name="acao" value="ativar">'
+                      f'<input type="hidden" name="token" value="{tk}">'
+                      f'<input type="hidden" name="serie" value="{sid}">'
+                      f'<label>Data de início: '
+                      f'<input type="date" name="data_inicio" min="{_esc(dia_min)}" '
+                      f'value="{_esc(dia_min)}" required></label> '
+                      f'<button type="submit">🚀 Ativar série</button>'
+                      f'<span class=hint> (ocupa os próximos dias úteis livres, em ordem)</span></form>')
+            montador = (f'<h3>{_esc(aberta["serie"].get("nome"))} {_badge(st)}</h3>'
+                        f'{itens_html}{busca}{resultados_html}{meu}{ativar}')
+        else:
+            montador = (f'<h3>{_esc(aberta["serie"].get("nome"))} {_badge(st)}</h3>'
+                        f'<p class=hint>Início: {_esc(aberta["serie"].get("data_inicio") or "—")}. '
+                        f'Série já ativada/concluída — edição de itens é fora do MVP.</p>{itens_html}')
+
+    corpo = (f'<div class="wrap">{_admin_nav(token, "series")}'
+             f'<h2>🎬 Séries de estudos</h2>{aviso}{nova}{lista}{montador}</div>')
+    return _pagina("Séries · Admin", corpo, logado=True, atual="series")
 
 
 # ── Arquivo (protegido) ──
