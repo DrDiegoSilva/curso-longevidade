@@ -74,6 +74,51 @@ class TestDbSeries(unittest.TestCase):
         self.assertEqual(itens[0]["titulo"], "A")
         self.assertEqual(itens[0]["data"], "")
 
+    def test_adicionar_item_duplicado_nao_duplica(self):
+        """FINDING 3 (revisão final): adicionar_serie_item com (serie_id,
+        ref_tipo, ref_id) repetido devolve o item EXISTENTE em vez de criar uma
+        segunda linha — um double-click no ➕ não pode agendar o mesmo estudo
+        duas vezes."""
+        sid = self.db.criar_serie("S")
+        a = self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="A")
+        b = self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="A de novo")
+        self.assertEqual(a, b)
+        itens = self.db.obter_serie(sid)["itens"]
+        self.assertEqual(len(itens), 1)
+        self.assertEqual(itens[0]["titulo"], "A")   # não sobrescreveu com a 2ª chamada
+
+    def test_adicionar_item_duplicado_concorrente_nao_duplica(self):
+        """FINDING 3, corrida real: serve.py roda em ThreadingHTTPServer — um
+        double-click de verdade chega como DUAS THREADS concorrentes, cada uma
+        com sua própria conexão sqlite. Um SELECT-antes-do-INSERT sem UNIQUE
+        constraint tem uma janela TOCTOU (as duas threads podem ver "não
+        existe" antes de qualquer INSERT commitar). Sem a UNIQUE(serie_id,
+        ref_tipo, ref_id) + ON CONFLICT DO NOTHING, 8 threads concorrentes
+        produziam 3 linhas em vez de 1 (comprovado manualmente durante a
+        revisão) — este teste trava essa garantia na suíte."""
+        import threading
+        sid = self.db.criar_serie("S")
+        resultados, erros = [], []
+        barreira = threading.Barrier(8)
+
+        def worker():
+            barreira.wait()
+            try:
+                resultados.append(
+                    self.db.adicionar_serie_item(sid, "reserva", "rXX", titulo="Dup"))
+            except Exception as e:
+                erros.append(e)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(erros, [])
+        self.assertEqual(len(set(resultados)), 1)   # todas as threads concordam no MESMO id
+        self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)
+
     def test_reordenar_troca_vizinho(self):
         sid = self.db.criar_serie("S")
         a = self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="A")
@@ -206,6 +251,47 @@ class TestSeriesAtivar(unittest.TestCase):
         self.assertIn("dia", msg.lower())
         self.assertIsNone(self.db.agenda_slot(self.seg_iso))       # nada escrito na agenda
         self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")  # intocada
+
+    def test_dia_minimo_inicio_dias_envio_vazio_nao_levanta(self):
+        """FINDING 1 (CRITICAL, revisão final): dias_envio=[] é estado real e
+        alcançável (admin salva /admin/envio sem nenhum dia marcado ->
+        daily._dias_envio() devolve set()). dia_minimo_inicio() é avaliado como
+        ARGUMENTO nas duas rotas (GET /series e POST acao=ativar), ANTES de
+        qualquer guard poder ajudar — precisa devolver um sentinel falsy ("")
+        em vez de levantar ValueError, senão a tela inteira cai com 500."""
+        import series
+        dm = series.dia_minimo_inicio(db_mod=self.db, dias_envio=[])
+        self.assertEqual(dm, "")
+
+    def test_ativar_data_inicio_malformada_recusa_sem_raise(self):
+        """FINDING 2 (IMPORTANT, revisão final): data_inicio malformada/vazia
+        chega via POST urlencoded direto (sem passar pelo <input type=date> do
+        navegador) e não pode derrubar ativar_serie com ValueError do
+        datetime.strptime — precisa devolver (False, msg) amigável."""
+        import series
+        sid, _ = self._serie_com(1)
+        for data_ruim in ("10/08/2026", "", "2026-13-45"):
+            with self.subTest(data_ruim=data_ruim):
+                ok, msg = series.ativar_serie(sid, data_ruim, db_mod=self.db, dias_envio=self.dias)
+                self.assertFalse(ok)
+                self.assertTrue(msg)
+                self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_serie_com_item_duplicado_ocupa_1_dia(self):
+        """FINDING 3 (revisão final): dois add_item com o mesmo (serie_id,
+        ref_tipo, ref_id) — ex.: double-click no ➕ — não pode virar 2 linhas na
+        série nem ocupar 2 dias consecutivos da agenda com o MESMO estudo."""
+        import series
+        sid = self.db.criar_serie("S")
+        rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "Dup",
+                                      "resumo": "r", "tags": ["glp1"]})
+        self.db.adicionar_serie_item(sid, "reserva", rid, titulo="Dup", tema="Obesidade")
+        self.db.adicionar_serie_item(sid, "reserva", rid, titulo="Dup", tema="Obesidade")
+        self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)
+        ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok, msg)
+        ter = (self.seg + timedelta(days=1)).isoformat()
+        self.assertIsNone(self.db.agenda_slot(ter))   # não ocupou o dia seguinte
 
     def test_libera_dia_com_fila_devolve_payload_a_fila(self):
         """Um dia com tipo='fila' (materializar_agenda usa isso quando a reserva
@@ -443,3 +529,56 @@ class TestRotaSeries(unittest.TestCase):
         self.assertNotEqual(resultado[0], 403)   # passou do gate (pode falhar depois
                                                   # por texto curto demais — não é o que
                                                   # este teste verifica)
+
+    def test_get_dias_envio_vazio_nao_derruba_a_pagina(self):
+        """FINDING 1 (CRITICAL, revisão final), fim-a-fim: com dias_envio=""
+        salvo (admin desmarcou todos os dias em /admin/envio), o GET /series
+        chamava series.dia_minimo_inicio() como ARGUMENTO — a exceção estourava
+        antes de qualquer guard rodar e a rota inteira caía com 500."""
+        self.db.set_config("dias_envio", "")
+        stub = self.Stub("/series?token=segredo-teste")
+        code, html = stub.do_GET()
+        self.assertEqual(code, 200)
+        self.assertIn("Séries de estudos", html)
+
+    def test_post_ativar_dias_envio_vazio_redireciona_com_msg_amigavel(self):
+        """Mesma raiz do teste acima, mas no POST acao=ativar — que também avalia
+        series.dia_minimo_inicio() como argumento antes de chamar ativar_serie."""
+        self.db.set_config("dias_envio", "")
+        sid = self.db.criar_serie("S")
+        self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="R1")
+        body = (f"acao=ativar&serie={sid}&data_inicio=2026-08-10"
+                f"&token=segredo-teste").encode()
+        stub = self.Stub("/series", body=body)
+        tag, location = stub.do_POST()
+        self.assertEqual(tag, "REDIRECT")   # não pode levantar/500
+        import urllib.parse as _up
+        self.assertIn("dia", _up.unquote(location).lower())
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_post_ativar_data_malformada_nao_levanta(self):
+        """FINDING 2 (IMPORTANT, revisão final), fim-a-fim: data_inicio chega
+        malformada num POST urlencoded direto (sem o <input type=date> do
+        navegador no meio) — a rota não pode devolver 500."""
+        sid = self.db.criar_serie("S")
+        self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="R1")
+        body = (f"acao=ativar&serie={sid}&data_inicio=10%2F08%2F2026"
+                f"&token=segredo-teste").encode()
+        stub = self.Stub("/series", body=body)
+        tag, location = stub.do_POST()
+        self.assertEqual(tag, "REDIRECT")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_post_add_item_duplicado_avisa_ja_esta_na_serie(self):
+        """FINDING 3 (revisão final), fim-a-fim: 2º add_item do MESMO estudo
+        (double-click no ➕) precisa avisar 'já está na série' em vez de
+        duplicar silenciosamente a linha."""
+        sid = self.db.criar_serie("S")
+        body = (f"acao=add_item&serie={sid}&tipo=reserva&id=r1&titulo=A"
+                f"&tema=Obesidade&token=segredo-teste").encode()
+        self.Stub("/series", body=body).do_POST()
+        tag, location = self.Stub("/series", body=body).do_POST()
+        self.assertEqual(tag, "REDIRECT")
+        import urllib.parse as _up
+        self.assertIn("já está na série", _up.unquote(location).lower())
+        self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)

@@ -21,6 +21,15 @@ def contexto_pagina(db_mod=None, serie_aberta_id=None, termo=""):
     return {"series": series, "aberta": aberta, "resultados": resultados}
 
 
+def _tem_dia_util(dias_envio):
+    """True se `dias_envio` tem pelo menos um dia da semana reconhecido por
+    `agenda_plan.DIAS` — guarda a rodar ANTES de qualquer chamada que dependa
+    de `_dias_uteis_validos` (que levanta em conjunto vazio). dias_envio vazio
+    é estado real e alcançável: o admin salva /admin/envio sem nenhum dia
+    marcado e `daily._dias_envio()` devolve `set()`."""
+    return bool(set(dias_envio) & set(agenda_plan.DIAS))
+
+
 def _dias_uteis_validos(dias_envio):
     validos = set(dias_envio) & set(agenda_plan.DIAS)
     if not validos:
@@ -88,12 +97,20 @@ def reconciliar(db_mod=None, hoje=None):
 def dia_minimo_inicio(db_mod=None, hoje=None, dias_envio=None, preparado_fn=None):
     """Primeiro dia útil a partir de AMANHÃ cujo preview das 18h ainda NÃO foi
     montado. Ativar num dia já preparado não trocaria o rascunho pronto (limitação
-    do Item 23) — esse é o piso da data de início."""
+    do Item 23) — esse é o piso da data de início.
+
+    Nunca levanta: sem nenhum dia de envio configurado, devolve "" (sentinel
+    falsy) em vez do ValueError de _dias_uteis_validos. As duas rotas (GET
+    /series e POST acao=ativar) avaliam esta função como ARGUMENTO — antes de
+    qualquer guard rodar —, então um raise aqui derruba a tela inteira com 500
+    mesmo com o guard equivalente já em ativar_serie."""
     if db_mod is None:
         import db as db_mod
     if dias_envio is None:
         import daily
         dias_envio = daily._dias_envio()
+    if not _tem_dia_util(dias_envio):
+        return ""
     if preparado_fn is None:
         import draft_store
         preparado_fn = lambda d: draft_store.carregar(d) is not None
@@ -114,7 +131,7 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
     if dias_envio is None:
         import daily
         dias_envio = daily._dias_envio()
-    if not (set(dias_envio) & set(agenda_plan.DIAS)):
+    if not _tem_dia_util(dias_envio):
         # daily._dias_envio() retorna vazio no modo "não envia" — sem isso,
         # _eh_dia_util (via _dias_uteis_validos) levantaria ValueError e
         # violaria o contrato de "nunca crasha" antes de qualquer escrita.
@@ -131,7 +148,15 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
         return (False, "A série está vazia — adicione estudos antes de ativar.")
     if any(s.get("status") == "ativa" for s in db_mod.listar_series()):
         return (False, "Já existe uma série ativa. Espere ela terminar antes de ativar outra.")
-    if not _eh_dia_util(data_inicio, dias_envio):
+    try:
+        util = _eh_dia_util(data_inicio, dias_envio)
+    except ValueError:
+        # data_inicio malformada/vazia chega direto num POST urlencoded (o
+        # <input type=date> do navegador não é a única porta) — sem isso,
+        # datetime.strptime derrubava a rota com 500 (Fail-safe do plano:
+        # "falha parcial -> avisa, não fica silenciosa").
+        return (False, "Data de início inválida — escolha uma data no formato AAAA-MM-DD.")
+    if not util:
         return (False, "A data de início precisa cair num dia de envio (dia útil configurado).")
     if dia_min and data_inicio < dia_min:
         return (False, f"Escolha uma data a partir de {dia_min} — dias anteriores já podem ter o "

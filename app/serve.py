@@ -766,8 +766,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     f"/series?serie={_up.quote(sid)}&token={config.ADMIN_TOKEN}"
                     f"&termo={_up.quote(g('termo'))}")
             elif acao == "add_item":
-                db.adicionar_serie_item(sid, g("tipo"), g("id"), titulo=g("titulo"), tema=g("tema"))
-                msg = "Adicionado."
+                tipo, rid = g("tipo"), g("id")
+                ja_na_serie = db.serie_item_existe(sid, tipo, rid)
+                db.adicionar_serie_item(sid, tipo, rid, titulo=g("titulo"), tema=g("tema"))
+                msg = "Este estudo já está na série." if ja_na_serie else "Adicionado."
             elif acao == "remover_item":
                 db.remover_serie_item(g("item"))
                 msg = "Removido."

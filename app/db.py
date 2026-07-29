@@ -224,7 +224,8 @@ def init():
                 titulo TEXT DEFAULT '',
                 tema TEXT DEFAULT '',
                 data TEXT DEFAULT '',
-                enviado INTEGER DEFAULT 0
+                enviado INTEGER DEFAULT 0,
+                UNIQUE (serie_id, ref_tipo, ref_id)
             );
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
@@ -1074,18 +1075,57 @@ def obter_serie(serie_id):
 
 
 def adicionar_serie_item(serie_id, ref_tipo, ref_id, titulo="", tema=""):
-    """Adiciona um item ao fim da série (ordem = max+1). Retorna o id do item."""
+    """Adiciona um item ao fim da série (ordem = max+1). Se (serie_id, ref_tipo,
+    ref_id) já está na série, devolve o item EXISTENTE em vez de duplicar — um
+    double-click no ➕ do /series não pode agendar o mesmo estudo duas vezes
+    (ver serie_item_existe, usado pela rota pra escolher a mensagem certa).
+
+    O pré-check abaixo é só um atalho pro caso comum (evita gerar id/computar
+    ordem à toa quando o item já existe) — quem FECHA a corrida de verdade é o
+    `UNIQUE (serie_id, ref_tipo, ref_id)` da tabela + `ON CONFLICT DO NOTHING`:
+    o servidor é `ThreadingHTTPServer` (serve.py), então um double-click real
+    chega como duas threads concorrentes, cada uma com sua própria conexão
+    sqlite — um SELECT-antes-do-INSERT sem constraint tem uma janela TOCTOU
+    (as duas threads podem ver "não existe" antes de qualquer INSERT commitar;
+    comprovado com um teste de 8 threads concorrentes, que produzia 3 linhas
+    em vez de 1 antes desta constraint). A tabela é nova nesta Fase 2 (ainda
+    não deployada) — dá pra declarar a UNIQUE de cara, sem migração em tabela
+    de produção existente. Retorna o id do item."""
     import secrets
-    iid = secrets.token_hex(8)
     with _conn() as c:
+        existente = c.execute(
+            "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+            (serie_id, ref_tipo, ref_id)).fetchone()
+        if existente:
+            return dict(existente)["id"]
+        iid = secrets.token_hex(8)
         r = c.execute("SELECT COALESCE(MAX(ordem), -1) AS m FROM serie_itens WHERE serie_id=?",
                       (serie_id,)).fetchone()
         ordem = int(dict(r)["m"]) + 1
-        c.execute(
+        cur = c.execute(
             "INSERT INTO serie_itens (id,serie_id,ordem,ref_tipo,ref_id,titulo,tema,data,enviado) "
-            "VALUES (?,?,?,?,?,?,?, '', 0)",
+            "VALUES (?,?,?,?,?,?,?, '', 0) "
+            "ON CONFLICT (serie_id, ref_tipo, ref_id) DO NOTHING",
             (iid, serie_id, ordem, ref_tipo, ref_id, titulo or "", tema or ""))
-    return iid
+        if cur.rowcount > 0:
+            return iid
+        # perdeu a corrida pro ON CONFLICT: outra thread inseriu entre o
+        # pré-check e este INSERT — devolve o id de quem venceu.
+        vencedor = c.execute(
+            "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+            (serie_id, ref_tipo, ref_id)).fetchone()
+    return dict(vencedor)["id"]
+
+
+def serie_item_existe(serie_id, ref_tipo, ref_id):
+    """True se (serie_id, ref_tipo, ref_id) já está na série. Usado pela rota
+    /series ANTES de chamar adicionar_serie_item (que já evita duplicar) só
+    pra escolher a mensagem certa ('já está na série' vs 'Adicionado')."""
+    with _conn() as c:
+        r = c.execute(
+            "SELECT 1 FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+            (serie_id, ref_tipo, ref_id)).fetchone()
+    return r is not None
 
 
 def remover_serie_item(item_id):
