@@ -311,3 +311,80 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
                        f"não faltar/repetir estudo. " + " | ".join(falhas))
     return (True, f"Série ativada: {len(dias)} estudos a partir de {inicio_iso}. "
                   f"Revise cada dia às 18h.")
+
+
+def cancelar_serie(serie_id, db_mod=None, hoje=None, preparado_fn=None):
+    """Desfaz a ativação: libera os dias FUTUROS ainda não preparados (o estudo volta
+    ao estoque e o slot vira 'vazio') e devolve a série pra 'rascunho', pronta pra ser
+    reativada com outra data. Retorna (ok, msg).
+
+    NÃO libera: dia de hoje ou passado (o envio das 08h já passou — não existe
+    des-enviar) nem dia cujo rascunho das 18h já foi montado (ele seria enviado de
+    qualquer forma, então limpar o slot daria impressão falsa — mesma limitação que
+    justifica `dia_minimo_inicio`). Nem dia cujo slot já é de OUTRO estudo: devolver
+    às cegas duplicaria o estudo no estoque.
+
+    Não crasha: falha por dia é contada e avisada no msg, nunca engolida."""
+    if db_mod is None:
+        import db as db_mod
+    if preparado_fn is None:
+        import draft_store
+        preparado_fn = lambda d: draft_store.carregar(d) is not None
+    hoje = hoje or date.today().isoformat()
+
+    det = db_mod.obter_serie(serie_id)
+    if not det:
+        return (False, "Série não encontrada.")
+    st = (det["serie"].get("status") or "")
+    if st not in ("ativa", "incompleta"):
+        return (False, f"Só dá pra cancelar série ativa ou incompleta (esta está '{st}').")
+
+    liberados = passados = preparados = alheios = 0
+    falhas = []
+    for it in det["itens"]:
+        dia = it.get("data") or ""
+        if not dia:
+            continue
+        if dia <= hoje:
+            passados += 1
+            continue
+        if preparado_fn(dia):
+            preparados += 1
+            continue
+        try:
+            slot = db_mod.agenda_slot(dia)
+            if not slot or (slot.get("ref_id") or "") != (it.get("ref_id") or ""):
+                alheios += 1
+                continue
+            db_mod.agenda_devolver(dia)          # devolve ao estoque ANTES de limpar
+            db_mod.set_serie_item_data(it["id"], "")
+            liberados += 1
+        except Exception as e:
+            print(f"[series] cancelar: falhou liberar {dia}: {e}", flush=True)
+            falhas.append(dia)
+
+    try:
+        db_mod.atualizar_serie(serie_id, status="rascunho", data_inicio="", ativada_em="")
+    except Exception as e:
+        print(f"[series] cancelar: não devolvi a série {serie_id} pra rascunho: {e}", flush=True)
+        return (False, f"Os {liberados} dia(s) foram liberados, mas a série NÃO voltou pra "
+                       f"rascunho ({e}) — ela vai continuar bloqueando a próxima ativação. "
+                       f"Confira a /series.")
+
+    mantidos = []
+    if passados:
+        mantidos.append(f"{passados} já enviado(s)")
+    if preparados:
+        mantidos.append(f"{preparados} com rascunho das 18h pronto")
+    if alheios:
+        mantidos.append(f"{alheios} já ocupado(s) por outro estudo")
+    msg = f"Série cancelada: {liberados} dia(s) liberado(s)"
+    if mantidos:
+        msg += f", mantido(s) {' + '.join(mantidos)}"
+    msg += "."
+    if liberados:
+        msg += " Os estudos voltaram pro estoque."
+    if falhas:
+        msg += (f" ATENÇÃO: falhou liberar {', '.join(falhas)} — confira a /agenda "
+                f"(detalhe nos logs).")
+    return (True, msg)

@@ -1073,3 +1073,167 @@ class TestAgendaDevolverCandidato(unittest.TestCase):
         self.db.agenda_devolver("2026-08-11")
 
         self.assertEqual(self.db.agenda_slot("2026-08-11")["fixado"], 1)
+
+
+def _segunda_futura(dias=14):
+    """Uma segunda-feira a pelo menos ~`dias` dias de hoje. Data COMPUTADA, não
+    fixa: uma data cravada apodrece (o piso de `ativar_serie` recusa data
+    passada, então um '2026-08-10' fixo passa a falhar sozinho depois daquela
+    data)."""
+    base = date.today() + timedelta(days=dias)
+    return (base - timedelta(days=base.weekday())).isoformat()
+
+
+class TestCancelarSerie(unittest.TestCase):
+    """Task 2 (Cancelar série) — desfaz uma ativação: libera os dias futuros
+    ainda não preparados (estudo volta pro estoque, slot vira 'vazio') e volta
+    a série pra 'rascunho' com os itens intactos, pronta pra reativar com outra
+    data. Não mexe em dia já enviado/de hoje, em dia com rascunho das 18h
+    pronto, nem em dia que já é de outro estudo (evita duplicar no estoque)."""
+
+    DIAS_UTEIS = ["segunda", "terca", "quarta", "quinta", "sexta"]
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+        self.hoje = date.today().isoformat()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    def _serie_ativa(self, n=3, inicio=None):
+        """Série ativa com n reservas em n dias úteis seguidos a partir de inicio."""
+        import series
+        inicio = inicio or _segunda_futura()
+        sid = self.db.criar_serie("S")
+        for i in range(n):
+            rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": f"R{i}",
+                                          "resumo": "r", "tags": ["glp1"]})
+            self.db.adicionar_serie_item(sid, "reserva", rid, titulo=f"R{i}", tema="Obesidade")
+        ok, msg = series.ativar_serie(sid, inicio, db_mod=self.db, dias_envio=self.DIAS_UTEIS)
+        self.assertTrue(ok, f"setup falhou: {msg}")
+        return sid
+
+    def test_libera_dias_futuros_e_devolve_estudos(self):
+        import series
+        sid = self._serie_ativa(n=3)
+        dias = [it["data"] for it in self.db.obter_serie(sid)["itens"]]
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        for d in dias:
+            self.assertEqual(self.db.agenda_slot(d)["tipo"], "vazio", f"{d} devia estar livre")
+        for it in self.db.obter_serie(sid)["itens"]:
+            self.assertEqual(it["data"], "", "item liberado perde a data")
+            self.assertEqual(self.db.obter_reserva(it["ref_id"])["status"], "pronto",
+                             "estudo tem que voltar pro estoque")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_mantem_dia_passado_e_de_hoje(self):
+        import series
+        sid = self._serie_ativa(n=3)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        # hoje = o 2º dia: o 1º é passado, o 2º é hoje, só o 3º é futuro
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=dias[1],
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertNotEqual(self.db.agenda_slot(dias[0])["tipo"], "vazio", "passado fica")
+        self.assertNotEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio", "hoje fica")
+        self.assertEqual(self.db.agenda_slot(dias[2])["tipo"], "vazio", "futuro sai")
+
+    def test_nao_libera_dia_com_rascunho_pronto_e_avisa(self):
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: d == dias[0])
+
+        self.assertTrue(ok, msg)
+        self.assertNotEqual(self.db.agenda_slot(dias[0])["tipo"], "vazio")
+        self.assertEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio")
+        self.assertIn("rascunho", msg.lower(), f"o admin tem que ser avisado: {msg}")
+
+    def test_nao_mexe_em_dia_que_ja_e_de_outro_estudo(self):
+        import series
+        sid = self._serie_ativa(n=1)
+        it = self.db.obter_serie(sid)["itens"][0]
+        dia = it["data"]
+        # alguém trocou o dia (Item 23 / edição manual): o slot não é mais do item
+        outra = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "OUTRA", "resumo": "r"})
+        self.db.agenda_upsert(dia, tipo="reserva", ref_id=outra, titulo="OUTRA")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.agenda_slot(dia)["ref_id"], outra, "não mexe no dia alheio")
+        self.assertEqual(self.db.obter_reserva(it["ref_id"])["status"], "agendado",
+                         "não devolve às cegas — duplicaria o estudo no estoque")
+
+    def test_serie_presa_ativa_sem_datas_volta_a_rascunho(self):
+        """O caso grave: hoje esse estado só sai editando o banco."""
+        import series
+        sid = self.db.criar_serie("Presa")
+        self.db.atualizar_serie(sid, status="ativa")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_recusa_rascunho_e_concluida(self):
+        import series
+        sid = self.db.criar_serie("R")
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db)
+        self.assertFalse(ok)
+        self.assertIn("rascunho", msg.lower())
+
+        self.db.atualizar_serie(sid, status="concluida")
+        ok2, msg2 = series.cancelar_serie(sid, db_mod=self.db)
+        self.assertFalse(ok2)
+
+    def test_falha_por_dia_avisa_e_nao_fica_silenciosa(self):
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+        real = self.db.agenda_devolver
+
+        def devolver_quebrado(dia):
+            if dia == dias[0]:
+                raise RuntimeError("boom")
+            return real(dia)
+
+        self.db.agenda_devolver = devolver_quebrado
+        try:
+            ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                            preparado_fn=lambda d: False)
+        finally:
+            self.db.agenda_devolver = real
+
+        self.assertIn(dias[0], msg, f"o dia que falhou tem que aparecer: {msg}")
+        self.assertEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio",
+                         "uma falha não impede os outros dias")
+
+    def test_cancelar_libera_a_proxima_ativacao(self):
+        """Fecha o ciclo: ativei na data errada -> cancelo -> ativo na certa."""
+        import series
+        sid = self._serie_ativa(n=2)
+        ok, _ = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                      preparado_fn=lambda d: False)
+        self.assertTrue(ok)
+
+        nova = _segunda_futura(dias=21)
+        ok2, msg2 = series.ativar_serie(sid, nova, db_mod=self.db, dias_envio=self.DIAS_UTEIS)
+
+        self.assertTrue(ok2, msg2)
+        datas = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+        self.assertEqual(datas[0], nova, "reativou na data nova")
