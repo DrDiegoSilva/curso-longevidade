@@ -686,6 +686,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except ValueError:
                     dias = 0
                 db.init(); db.criar_cupom(descricao=g("descricao"), uso_unico=True, dias_acesso=dias)
+            elif acao == "toggle_cupom":
+                db.init(); db.toggle_cupom(g("codigo"), g("on") == "1")
             return self._redirect(f"/admin?token={config.ADMIN_TOKEN}" if token_ok else "/admin")
         if path == "/agenda":
             import config, db, daily, agenda_plan, auth_web

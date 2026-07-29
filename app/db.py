@@ -310,7 +310,12 @@ def _seed_cupons():
             c.execute(
                 "INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,dias_acesso,criado_em,desconto_valor,plano_slug) "
                 "VALUES ('LANCAMENTO',1,'Lançamento: -R$500 no anual',0,0,0,?,500,'anual') "
-                "ON CONFLICT (codigo) DO UPDATE SET ativo=1, uso_unico=0, dias_acesso=0, "
+                # Sem `ativo=1` aqui: o DO UPDATE ainda corrige a FORMA (shape) do cupom em
+                # todo boot (a proteção contra a cortesia pré-existente do comentário acima
+                # continua), mas não pisa mais o on/off — uma desativação pelo admin
+                # (toggle_cupom) tem que sobreviver a um restart/deploy. `ativo=1` continua
+                # no VALUES: um cupom NOVO nasce ativo.
+                "ON CONFLICT (codigo) DO UPDATE SET uso_unico=0, dias_acesso=0, "
                 "desconto_valor=500, plano_slug='anual'",
                 (datetime.now().isoformat(),))
     except Exception as e:
@@ -587,15 +592,25 @@ def listar_cupons():
 
 
 def consumir_cupom(codigo):
-    """Marca 1 uso do cupom. Se for de uso único, desativa (ativo=0)."""
+    """Marca 1 uso do cupom. Se for de uso único, desativa (ativo=0). Se for multi-uso,
+    PRESERVA o ativo atual — nunca escreve 1 fixo, senão um cupom multi-uso que o admin
+    desativou (toggle_cupom) reativa sozinho no próximo uso."""
     cod = (codigo or "").strip().upper()
     with _conn() as c:
-        r = c.execute("SELECT uso_unico,usos FROM cupons WHERE codigo=?", (cod,)).fetchone()
+        r = c.execute("SELECT uso_unico,usos,ativo FROM cupons WHERE codigo=?", (cod,)).fetchone()
         if not r:
             return
         novos = (r["usos"] or 0) + 1
-        ativo = 0 if r["uso_unico"] else 1
+        ativo = 0 if r["uso_unico"] else r["ativo"]
         c.execute("UPDATE cupons SET usos=?, ativo=? WHERE codigo=?", (novos, ativo, cod))
+
+
+def toggle_cupom(codigo, ativo):
+    """Ativa/desativa um cupom (admin). `ativo` é um valor explícito (set), não um flip —
+    mesmo padrão de `toggle_afiliado`: um double-submit do form não inverte duas vezes."""
+    cod = (codigo or "").strip().upper()
+    with _conn() as c:
+        c.execute("UPDATE cupons SET ativo=? WHERE codigo=?", (1 if ativo else 0, cod))
 
 
 # ── Afiliados / comissões (D3) ──

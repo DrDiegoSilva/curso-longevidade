@@ -1073,15 +1073,37 @@ def pagina_admin(assinantes, token="", cupons=None, confirmar_id=None, erro="",
     cards = "".join(card(s) for s in assinantes)
     ativos = sum(1 for s in assinantes if s.get("status") == "ATIVO")
     n_cur = sum(1 for s in assinantes if s.get("curador"))
+    def _cel_toggle_cupom(c):
+        on = bool(c.get("ativo"))
+        prox = "0" if on else "1"
+        rotulo = "Desativar" if on else "Ativar"
+        cls = "actbtn ghost" if on else "actbtn"
+        return (f'<form method="post" action="/admin" style="margin:0">'
+                f'<input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="toggle_cupom">'
+                f'<input type="hidden" name="codigo" value="{_esc(c.get("codigo"))}">'
+                f'<input type="hidden" name="on" value="{prox}">'
+                f'<button class="{cls}" style="padding:6px 13px;font-size:12px" type="submit">{rotulo}</button></form>')
     def _cupom_row(c):
         on = bool(c.get("ativo"))
-        cor = "#2f9e6b" if on else "#7a8a84"
+        # USADO só quando é de fato uso único CONSUMIDO (usos>0). Um cupom multi-uso
+        # desativado pelo admin, ou um uso-único desativado ANTES de qualquer uso, nunca
+        # foi "usado" — dizer isso engana quem lê esta tela pra saber o que está no ar.
+        usado = bool(c.get("uso_unico")) and (c.get("usos") or 0) > 0 and not on
+        if on:
+            label, cor = "ATIVO", "#2f9e6b"
+        elif usado:
+            label, cor = "USADO", "#7a8a84"
+        else:
+            label, cor = "DESATIVADO", "#c0562f"
         uu = "uso único" if c.get("uso_unico") else "multi-uso"
         dur = "acesso p/ sempre" if not c.get("dias_acesso") else f"{c.get('dias_acesso')} dias de acesso"
         return (f'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid rgba(233,225,198,.1)">'
                 f'<div><span style="font-family:ui-monospace,Menlo,monospace;font-size:16px;color:var(--ouro2);letter-spacing:.06em">{_esc(c.get("codigo"))}</span>'
                 f'<div style="font-family:system-ui;font-size:12px;color:var(--suave)">{_esc(c.get("descricao") or "sem descrição")} · {uu} · {dur} · {c.get("usos", 0)} uso(s)</div></div>'
-                f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{"ATIVO" if on else "USADO"}</span></div>')
+                f'<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'
+                f'<span style="font-family:system-ui;font-size:11px;font-weight:700;padding:4px 11px;border-radius:100px;background:{cor}22;color:{cor};border:1px solid {cor}66">{label}</span>'
+                f'{_cel_toggle_cupom(c)}'
+                f'</div></div>')
     cupons_lista = "".join(_cupom_row(c) for c in (cupons or [])) or '<p class="hint" style="margin-top:8px">Nenhum cupom gerado ainda.</p>'
     resumo_slots = ""
     if contagem_slots:
