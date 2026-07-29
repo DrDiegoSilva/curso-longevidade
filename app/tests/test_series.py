@@ -1,4 +1,5 @@
 """Fase 2 — séries de estudos (item 8)."""
+import io
 import os
 import sys
 import tempfile
@@ -279,3 +280,166 @@ class TestPaginaSeries(unittest.TestCase):
         html = site_web.pagina_series(self._ctx(aberta), "tok", serie_aberta_id="s1")
         self.assertNotIn('value="ativar"', html)
         self.assertIn("ativa", html.lower())
+
+
+class _SeriesRotaStub:
+    """Stub mínimo pro `self` de `do_GET`/`do_POST` quando `path == '/series'`. Não
+    abre socket real: em vez de instanciar `http.server.BaseHTTPRequestHandler`
+    (que dispara `handle()` sozinho no `__init__`), criamos uma classe que HERDA de
+    `serve.Handler` só pra reusar os métodos de verdade que a rota chama de fato
+    (`_series_upload`, `_parse_multipart`, `do_GET`, `do_POST`) e sobrescrevemos só o
+    que dependeria de uma conexão real: `path`/`headers`/`rfile` (entrada da
+    requisição) e `_html`/`_redirect`/`_sessao` (saída + sessão — mesmo padrão do
+    `_RotaStub` de test_reaceite.py e do `_Stub` de test_regressoes_correcoes.py, que
+    sobrescrevem só o que o método sob teste toca)."""
+
+    def __init__(self, path, body=b"", ctype="application/x-www-form-urlencoded",
+                 sessao=None):
+        self.path = path
+        self.headers = {"Content-Length": str(len(body)), "Content-Type": ctype}
+        self.rfile = io.BytesIO(body)
+        self._sess = sessao
+
+    def _sessao(self):
+        return self._sess
+
+    def _html(self, s, code=200):
+        return (code, s)
+
+    def _redirect(self, location, token=None, clear=False):
+        return ("REDIRECT", location)
+
+
+def _make_stub_cls():
+    """`_SeriesRotaStub` precisa herdar de `serve.Handler` (não `object`) pra ter
+    `_series_upload`/`_parse_multipart`/`do_GET`/`do_POST` de verdade — mas `serve` só
+    existe depois do `import` dentro do `setUp` de cada teste (mesmo padrão dos outros
+    testes deste arquivo, que importam `db`/`series`/`site_web` só depois de apontar
+    `DSCURSO_ARTIGOS_DB` pro banco temporário). Construída sob demanda em vez de uma
+    subclasse import-time fixa."""
+    import serve
+    # `_SeriesRotaStub` PRIMEIRO na MRO: precisa que `_html`/`_redirect`/`_sessao`
+    # (que sobrescrevem os de verdade) vençam a resolução de nome; `serve.Handler`
+    # depois só entra pros métodos que o stub não define (`do_GET`, `do_POST`,
+    # `_series_upload`, `_parse_multipart`).
+    return type("_SeriesRotaStubHandler", (_SeriesRotaStub, serve.Handler), {})
+
+
+class TestRotaSeries(unittest.TestCase):
+    """Fix round 1 (revisão): (1) o gate token-only barrava admin logado por sessão
+    sem token na URL — `_admin_nav` só bota `?token=` no link quando RECEBE um token,
+    então o admin que entra por sessão e clica em 'Séries' apanhava 403; a correção
+    espelha `/curadoria`/`/agenda` (token OU sessão de admin). (2) a rota inteira
+    (gate + dispatch de `acao` + a ordem multipart-antes-do-urlencoded) não tinha
+    cobertura direta — só regressão da suíte. Os testes abaixo exercitam
+    `serve.Handler.do_GET`/`do_POST` de verdade (via `_SeriesRotaStub`), não só
+    `series.py`/`site_web.py` isolados."""
+
+    ADMIN_WPP = "5599988877766"
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+        # `auth_web.eh_admin` lê `config.ADMIN_WHATSAPPS` via um `import config` no
+        # TOPO do módulo (referência presa em auth_web.py, não recalculada por
+        # chamada). Se algum teste anterior da suíte já fez `sys.modules.pop("config")`
+        # + reimport (troca o OBJETO do módulo) DEPOIS que `auth_web` foi carregado
+        # pela primeira vez, `auth_web` fica preso no objeto config VELHO — meu
+        # `import config` abaixo pegaria o objeto NOVO, e mutar `ADMIN_WHATSAPPS`
+        # nele ficaria invisível pro `eh_admin` real (403 mesmo com sessão de admin).
+        # Achado ao rodar a suíte inteira: passava isolado, falhava no discover.
+        # `importlib.reload` (não pop+reimport) resincroniza sem trocar identidade.
+        import importlib
+        if "auth_web" in sys.modules:
+            importlib.reload(sys.modules["auth_web"])
+        import config, auth_web
+        self._token0 = config.ADMIN_TOKEN
+        self._wpps0 = config.ADMIN_WHATSAPPS
+        config.ADMIN_TOKEN = "segredo-teste"
+        config.ADMIN_WHATSAPPS = [self.ADMIN_WPP]
+        self.config = config
+        self.Stub = _make_stub_cls()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        self.config.ADMIN_TOKEN = self._token0
+        self.config.ADMIN_WHATSAPPS = self._wpps0
+        _restore_db(self.snap)
+
+    def test_get_sem_token_sem_sessao_403(self):
+        stub = self.Stub("/series")
+        code, _ = stub.do_GET()
+        self.assertEqual(code, 403)
+
+    def test_get_com_token_valido_renderiza(self):
+        stub = self.Stub("/series?token=segredo-teste")
+        code, html = stub.do_GET()
+        self.assertEqual(code, 200)
+        self.assertIn("Séries de estudos", html)
+
+    def test_get_com_sessao_admin_sem_token_renderiza(self):
+        # ACHADO (revisão, Finding 1): sem a correção, isto devolvia 403 — o gate era
+        # token-only. `_admin_nav` só linka com token quando RECEBE um; um admin que
+        # entrou por sessão (login normal) e clicou no atalho ficava sem porta nenhuma.
+        stub = self.Stub("/series", sessao={"whatsapp": self.ADMIN_WPP})
+        code, html = stub.do_GET()
+        self.assertEqual(code, 200)
+        self.assertIn("Séries de estudos", html)
+
+    def test_post_criar_cria_serie_e_redireciona(self):
+        stub = self.Stub("/series", body=b"acao=criar&nome=Serie+X&token=segredo-teste")
+        tag, location = stub.do_POST()
+        self.assertEqual(tag, "REDIRECT")
+        self.assertTrue(location.startswith("/series?serie="))
+        self.assertIn("token=segredo-teste", location)
+        criadas = self.db.listar_series()
+        self.assertEqual(len(criadas), 1)
+        self.assertEqual(criadas[0]["nome"], "Serie X")
+
+    def test_post_acao_desconhecida_nao_levanta_e_redireciona(self):
+        stub = self.Stub("/series", body=b"acao=chuta-o-balde&token=segredo-teste")
+        tag, location = stub.do_POST()          # não pode levantar (nenhum elif bate)
+        self.assertEqual(tag, "REDIRECT")
+        self.assertTrue(location.startswith("/series?"))
+        self.assertEqual(self.db.listar_series(), [])   # nada foi criado
+
+    def test_post_sem_token_nem_sessao_403(self):
+        stub = self.Stub("/series", body=b"acao=criar&nome=X")
+        code, _ = stub.do_POST()
+        self.assertEqual(code, 403)
+
+    def test_post_multipart_nao_e_engolido_pelo_parser_urlencoded(self):
+        # a ordem do branch em do_POST importa: o dispatch multipart precisa vir ANTES
+        # de `form = up.parse_qs(raw.decode("utf-8"))`, senão bytes binários de um
+        # upload de PDF seriam (mal) interpretados como urlencoded. Sobrescrevemos
+        # `_series_upload` (instância, não classe) só pra provar QUE ele foi chamado —
+        # o processamento real do PDF/texto já tem cobertura própria em
+        # `_curadoria_upload`/curadoria.adicionar_meu_estudo noutros arquivos.
+        chamadas = []
+        stub = self.Stub("/series", body=b"--X\r\nlixo binario nao-urlencoded\r\n--X--",
+                         ctype="multipart/form-data; boundary=X")
+        stub._series_upload = lambda raw, ctype: chamadas.append((raw, ctype)) or ("UPLOAD", ctype)
+        resultado = stub.do_POST()
+        self.assertEqual(len(chamadas), 1)
+        self.assertEqual(chamadas[0][1], "multipart/form-data; boundary=X")
+        self.assertEqual(resultado, ("UPLOAD", "multipart/form-data; boundary=X"))
+
+    def test_series_upload_gate_token_ou_sessao(self):
+        # mesmo Finding 1, mas no branch multipart de verdade (_series_upload): o token
+        # vem de `campos.get("token")` (multipart), não de `g("token")` — forma
+        # diferente, mesma semântica OR-com-sessão.
+        raw = (b'--X\r\nContent-Disposition: form-data; name="serie"\r\n\r\ns1\r\n'
+               b'--X\r\nContent-Disposition: form-data; name="texto"\r\n\r\n'
+               b'texto qualquer\r\n--X--\r\n')
+        ctype = "multipart/form-data; boundary=X"
+        sem_credencial = self.Stub("/series", body=raw, ctype=ctype)
+        code, _ = sem_credencial._series_upload(raw, ctype)
+        self.assertEqual(code, 403)
+        com_sessao = self.Stub("/series", body=raw, ctype=ctype,
+                               sessao={"whatsapp": self.ADMIN_WPP})
+        resultado = com_sessao._series_upload(raw, ctype)
+        self.assertNotEqual(resultado[0], 403)   # passou do gate (pode falhar depois
+                                                  # por texto curto demais — não é o que
+                                                  # este teste verifica)

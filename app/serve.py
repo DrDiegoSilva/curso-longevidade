@@ -327,10 +327,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 aba=q.get("aba", ["triagem"])[0], tema=q.get("tema", [""])[0],
                 msg=q.get("msg", [""])[0]), 200)
         if path == "/series":
-            import config, series, site_web
+            import config, series, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
-            if not token_ok:
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             sid = q.get("serie", [""])[0] or None
             termo = q.get("termo", [""])[0]
@@ -750,9 +751,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        f"&tema={up.quote(tema)}&msg={up.quote(msg)}{ancora}")
             return self._redirect(destino)
         if path == "/series":
-            import config, db, series
+            import config, db, series, auth_web
+            sess = self._sessao()
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
-            if not token_ok:
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             acao, sid, msg = g("acao"), g("serie"), ""
@@ -991,9 +993,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _series_upload(self, raw, ctype):
         """POST /series (multipart) -> adicionar meu estudo à reserva e à série aberta."""
-        import config, db, curadoria
+        import config, db, curadoria, auth_web
         campos, arquivos = self._parse_multipart(ctype, raw)
-        if not config.ADMIN_TOKEN or campos.get("token") != config.ADMIN_TOKEN:
+        sess = self._sessao()
+        token_ok = bool(config.ADMIN_TOKEN) and campos.get("token") == config.ADMIN_TOKEN
+        if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
             return self._html("<h3>Acesso negado</h3>", 403)
         db.init()
         sid = campos.get("serie", "")
