@@ -349,7 +349,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             dia_min = series.dia_minimo_inicio()
             return self._html(site_web.pagina_series(
                 ctx, config.ADMIN_TOKEN or "", serie_aberta_id=sid or "",
-                dia_min=dia_min, msg=q.get("msg", [""])[0]))
+                dia_min=dia_min, msg=q.get("msg", [""])[0],
+                confirmar_cancelar=q.get("confirmar_cancelar", [""])[0]))
         if self._site():
             return self._site_get(path)
         # fallback: ebook (host curso./demais) — comportamento original
@@ -811,6 +812,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.reordenar_serie_item(g("item"), g("direcao"))
             elif acao == "ativar":
                 ok, msg = series.ativar_serie(sid, g("data_inicio"), dia_min=series.dia_minimo_inicio())
+            elif acao == "cancelar":
+                import urllib.parse as _up
+                return self._redirect(
+                    f"/series?serie={_up.quote(sid)}&token={config.ADMIN_TOKEN}"
+                    f"&confirmar_cancelar={_up.quote(sid)}")
+            elif acao == "cancelar_confirmar":
+                ok, msg = series.cancelar_serie(sid)
             import urllib.parse as _up
             alvo = f"/series?serie={_up.quote(sid)}&token={config.ADMIN_TOKEN}"
             if msg:

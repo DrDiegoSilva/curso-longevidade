@@ -414,6 +414,36 @@ class TestPaginaSeries(unittest.TestCase):
         self.assertNotIn('value="ativar"', html)
         self.assertIn("ativa", html.lower())
 
+    def test_pagina_mostra_botao_cancelar_na_serie_ativa(self):
+        import site_web
+        ctx = {"series": [{"id": "s1", "nome": "S", "status": "ativa"}],
+               "aberta": {"serie": {"id": "s1", "nome": "S", "status": "ativa"},
+                          "itens": [{"id": "i1", "ref_tipo": "reserva", "ref_id": "r1",
+                                     "titulo": "R1", "data": "2026-08-10"}]},
+               "resultados": []}
+        html = site_web.pagina_series(ctx, "TK")
+        self.assertIn("cancelar", html)
+        self.assertIn("🚫", html)
+
+    def test_pagina_nao_mostra_cancelar_em_rascunho(self):
+        import site_web
+        ctx = {"series": [{"id": "s1", "nome": "S", "status": "rascunho"}],
+               "aberta": {"serie": {"id": "s1", "nome": "S", "status": "rascunho"},
+                          "itens": []},
+               "resultados": []}
+        html = site_web.pagina_series(ctx, "TK")
+        self.assertNotIn("🚫", html)
+
+    def test_pagina_confirmacao_pede_confirmar_e_diz_o_efeito(self):
+        import site_web
+        ctx = {"series": [{"id": "s1", "nome": "S", "status": "ativa"}],
+               "aberta": {"serie": {"id": "s1", "nome": "S", "status": "ativa"},
+                          "itens": [{"id": "i1", "ref_tipo": "reserva", "ref_id": "r1",
+                                     "titulo": "R1", "data": "2026-08-10"}]},
+               "resultados": []}
+        html = site_web.pagina_series(ctx, "TK", confirmar_cancelar="s1")
+        self.assertIn("cancelar_confirmar", html)
+
 
 class _SeriesRotaStub:
     """Stub mínimo pro `self` de `do_GET`/`do_POST` quando `path == '/series'`. Não
@@ -629,6 +659,54 @@ class TestRotaSeries(unittest.TestCase):
         import urllib.parse as _up
         self.assertIn("já está na série", _up.unquote(location).lower())
         self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)
+
+    def test_post_cancelar_confirmar_sem_token_nem_sessao_403(self):
+        stub = self.Stub("/series", body=b"acao=cancelar_confirmar&serie=s1")
+        code, _ = stub.do_POST()
+        self.assertEqual(code, 403)
+
+    def test_post_cancelar_mostra_confirmacao_sem_cancelar_nada(self):
+        """`acao=cancelar` é só a etapa 1: redireciona pedindo confirmação e
+        NÃO pode mexer na série (senão a confirmação seria decorativa)."""
+        import series
+        sid = self._ativa_uma()
+        body = f"acao=cancelar&serie={sid}&token=segredo-teste".encode()
+        stub = self.Stub("/series", body=body)
+
+        tag, location = stub.do_POST()
+
+        self.assertEqual(tag, "REDIRECT")
+        self.assertIn("confirmar_cancelar=", location)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "ativa",
+                         "etapa 1 não cancela")
+
+    def test_post_cancelar_confirmar_devolve_serie_pra_rascunho(self):
+        sid = self._ativa_uma()
+        body = f"acao=cancelar_confirmar&serie={sid}&token=segredo-teste".encode()
+        stub = self.Stub("/series", body=body)
+
+        tag, location = stub.do_POST()
+
+        self.assertEqual(tag, "REDIRECT")
+        self.assertTrue(location.startswith("/series?"))
+        self.assertIn("msg=", location, "o resultado tem que chegar ao admin")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def _ativa_uma(self):
+        """Série ativa com 1 reserva, começando numa segunda futura."""
+        import series
+        from datetime import date, timedelta
+        base = date.today() + timedelta(days=14)
+        inicio = (base - timedelta(days=base.weekday())).isoformat()
+        sid = self.db.criar_serie("S")
+        rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "R0",
+                                      "resumo": "r", "tags": ["glp1"]})
+        self.db.adicionar_serie_item(sid, "reserva", rid, titulo="R0", tema="Obesidade")
+        ok, msg = series.ativar_serie(sid, inicio, db_mod=self.db,
+                                      dias_envio=["segunda", "terca", "quarta",
+                                                  "quinta", "sexta"])
+        self.assertTrue(ok, f"setup falhou: {msg}")
+        return sid
 
 
 class TestSeriesHardening(unittest.TestCase):
