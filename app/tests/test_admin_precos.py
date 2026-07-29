@@ -74,6 +74,20 @@ class TestPrecoResolver(unittest.TestCase):
         self.assertEqual(pl["base"], 1497.0)
         self.assertEqual(pl["preco"], "R$ 1.497")
 
+    def test_sem_override_base_padrao_igual_ao_base(self):
+        # sem override, base_padrao já vem presente (não só quando há override)
+        pl = self.cfg.plano_por_slug("anual")
+        self.assertEqual(pl["base_padrao"], 1497.0)
+        self.assertEqual(pl["base_padrao"], pl["base"])
+
+    def test_override_preserva_base_padrao_de_lancamento(self):
+        # o preço de lançamento sobrevive ao override — é o que renovacao.preco_renovacao
+        # usa pra não vazar aumento de preço pra assinante legado renovando
+        self.db.set_config("preco_base_anual", "1600")
+        pl = self.cfg.plano_por_slug("anual")
+        self.assertEqual(pl["base"], 1600.0)
+        self.assertEqual(pl["base_padrao"], 1497.0)
+
     def test_override_aplica_e_deriva(self):
         self.db.set_config("preco_base_anual", "1600")
         pl = self.cfg.plano_por_slug("anual")

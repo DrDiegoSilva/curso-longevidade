@@ -133,8 +133,14 @@ def _preco_override(slug):
 
 def _aplicar_override(plano):
     """CÓPIA do plano com base/base_pos e textos derivados do override (se houver).
-    Sem override -> cópia com os valores do código (nunca muta PLANOS)."""
+    Sem override -> cópia com os valores do código (nunca muta PLANOS).
+
+    `base_padrao` guarda o preço de LANÇAMENTO (o `base` do código, antes de qualquer
+    override) em toda cópia resolvida, com ou sem override ativo. É o que
+    `renovacao.preco_renovacao` usa como fallback para assinantes legado — sem isso, um
+    aumento de preço pelo admin vazaria pra renovação de quem já era assinante."""
     p = dict(plano)
+    p["base_padrao"] = float(plano["base"])
     ov = _preco_override(plano["slug"])
     if ov is None:
         return p
