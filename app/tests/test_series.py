@@ -234,3 +234,48 @@ class TestSeriesAtivar(unittest.TestCase):
         self.assertEqual(ctx["aberta"]["serie"]["id"], sid)
         self.assertEqual(ctx["resultados"][0]["titulo"], "Reta")
         self.assertEqual(series.contexto_pagina(db_mod=self.db)["resultados"], [])
+
+
+class TestPaginaSeries(unittest.TestCase):
+    def _ctx(self, aberta=None, resultados=None):
+        return {"series": [{"id": "s1", "nome": "Série GLP1", "status": "rascunho"}],
+                "aberta": aberta, "resultados": resultados or []}
+
+    def test_lista_e_form_nova(self):
+        import site_web
+        html = site_web.pagina_series(self._ctx(), "tok")
+        self.assertIn("Série GLP1", html)
+        self.assertIn("/series", html)
+        self.assertIn('name="acao"', html)          # form de criar
+        self.assertIn("value=\"criar\"", html)
+
+    def test_montador_com_itens_e_ativar(self):
+        import site_web
+        aberta = {"serie": {"id": "s1", "nome": "Série GLP1", "status": "rascunho", "data_inicio": ""},
+                  "itens": [{"id": "i1", "ordem": 0, "ref_tipo": "reserva", "ref_id": "r1",
+                             "titulo": "Retatrutida 24s", "tema": "Obesidade", "data": ""}]}
+        resultados = [{"tipo": "reserva", "id": "r2", "titulo": "Semaglutida", "tema": "Obesidade",
+                       "tags": ["semaglutida"]}]
+        html = site_web.pagina_series(self._ctx(aberta, resultados), "tok",
+                                      serie_aberta_id="s1", dia_min="2026-08-10")
+        self.assertIn("Retatrutida 24s", html)       # item na série
+        self.assertIn("Semaglutida", html)           # resultado da busca
+        self.assertIn('value="ativar"', html)        # form de ativar (rascunho)
+        self.assertIn("2026-08-10", html)            # min da data de início
+
+    def test_escapa_titulo_malicioso(self):
+        import site_web
+        aberta = {"serie": {"id": "s1", "nome": "S", "status": "rascunho", "data_inicio": ""},
+                  "itens": [{"id": "i1", "ordem": 0, "ref_tipo": "reserva", "ref_id": "r1",
+                             "titulo": "<script>x</script>", "tema": "", "data": ""}]}
+        html = site_web.pagina_series(self._ctx(aberta), "tok", serie_aberta_id="s1")
+        self.assertNotIn("<script>x</script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_ativa_nao_mostra_form_ativar(self):
+        import site_web
+        aberta = {"serie": {"id": "s1", "nome": "S", "status": "ativa", "data_inicio": "2026-08-10"},
+                  "itens": []}
+        html = site_web.pagina_series(self._ctx(aberta), "tok", serie_aberta_id="s1")
+        self.assertNotIn('value="ativar"', html)
+        self.assertIn("ativa", html.lower())
