@@ -194,6 +194,36 @@ class TestSeriesAtivar(unittest.TestCase):
                                       dias_envio=todos, preparado_fn=lambda d: d in preparado)
         self.assertGreater(dm, amanha.isoformat())   # pulou amanhã (já preparado)
 
+    def test_dias_envio_vazio_recusa_sem_raise(self):
+        """dias_envio=[] (admin em modo 'não envia') não pode derrubar ativar_serie
+        com ValueError vindo de _dias_uteis_validos — precisa devolver (False, msg)
+        sem escrever nada na agenda nem mudar o status da série."""
+        import series
+        sid, _ = self._serie_com(1)
+        ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=[])
+        self.assertFalse(ok)
+        self.assertIn("dia", msg.lower())
+        self.assertIsNone(self.db.agenda_slot(self.seg_iso))       # nada escrito na agenda
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")  # intocada
+
+    def test_libera_dia_com_fila_devolve_payload_a_fila(self):
+        """Um dia com tipo='fila' (materializar_agenda usa isso quando a reserva
+        está rasa) carrega um artigo já triado (custo de IA) no payload — ativar
+        uma série ali precisa devolver esse artigo à fila (queue_store.devolver),
+        não descartá-lo."""
+        import json
+        from unittest import mock
+        import series
+        sid, _ = self._serie_com(1)
+        payload = {"titulo": "Fila X", "tema": "Obesidade", "score": 5, "url": "https://x"}
+        self.db.agenda_upsert(self.seg_iso, tipo="fila", payload=json.dumps(payload))
+        with mock.patch("queue_store.devolver") as m_devolver:
+            ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok, msg)
+        m_devolver.assert_called_once_with(payload)
+        slot = self.db.agenda_slot(self.seg_iso)
+        self.assertEqual(slot["tipo"], "reserva")   # sobrescrito pelo item da série
+
     def test_contexto_pagina(self):
         import series
         sid = self.db.criar_serie("S")

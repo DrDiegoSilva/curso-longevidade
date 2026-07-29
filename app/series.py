@@ -49,16 +49,22 @@ def _dias_livres(db_mod, data_inicio, n, dias_envio):
 
 
 def _liberar_dia(db_mod, dia):
-    """Se o dia já tem estudo consumível (reserva/candidato), devolve ao estoque
-    ANTES de a série sobrescrever o slot — evita órfão (mesmo cuidado do Item 23).
-    Clássico não é consumido; vazio/fila não têm dono no estoque de estudos."""
+    """Se o dia já tem estudo consumível (reserva/candidato/fila), devolve ao
+    estoque ANTES de a série sobrescrever o slot — evita órfão e descarte de
+    artigo já triado (mesmo cuidado do Item 23 + db.agenda_devolver).
+    Clássico não é consumido; vazio/pulado não têm dono no estoque de estudos."""
     s = db_mod.agenda_slot(dia)
-    if not s or not s.get("ref_id"):
+    if not s:
         return
-    if s.get("tipo") == "reserva":
+    tipo = s.get("tipo")
+    if tipo == "reserva" and s.get("ref_id"):
         db_mod.marcar_reserva_pronto(s["ref_id"])
-    elif s.get("tipo") == "candidato":
+    elif tipo == "candidato" and s.get("ref_id"):
         db_mod.marcar_candidato_pronto(s["ref_id"])
+    elif tipo == "fila" and s.get("payload"):
+        import json
+        import queue_store
+        queue_store.devolver(json.loads(s["payload"]))
 
 
 def reconciliar(db_mod=None, hoje=None):
@@ -108,6 +114,11 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
     if dias_envio is None:
         import daily
         dias_envio = daily._dias_envio()
+    if not (set(dias_envio) & set(agenda_plan.DIAS)):
+        # daily._dias_envio() retorna vazio no modo "não envia" — sem isso,
+        # _eh_dia_util (via _dias_uteis_validos) levantaria ValueError e
+        # violaria o contrato de "nunca crasha" antes de qualquer escrita.
+        return (False, "Configure os dias de envio (nenhum dia útil ativo).")
     db_mod.init()
     reconciliar(db_mod=db_mod)                        # fecha vencidas antes da trava
     det = db_mod.obter_serie(serie_id)
@@ -142,8 +153,12 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
         except Exception as e:
             print(f"[series] falha ao gravar '{item.get('titulo','')}' em {dia}: {e}", flush=True)
             falhou = True
-    db_mod.atualizar_serie(serie_id, status="ativa", data_inicio=data_inicio,
-                           ativada_em=datetime.now().isoformat())
+    try:
+        db_mod.atualizar_serie(serie_id, status="ativa", data_inicio=data_inicio,
+                               ativada_em=datetime.now().isoformat())
+    except Exception as e:
+        print(f"[series] falha ao marcar série {serie_id} como ativa: {e}", flush=True)
+        return (False, "Série ativada nos dias, mas não consegui marcar como ativa — confira a /series.")
     if falhou:
         return (False, "Série ativada com falhas em alguns dias — confira a /agenda pra não faltar/repetir estudo.")
     return (True, f"Série ativada: {len(dias)} estudos a partir de {data_inicio}. Revise cada dia às 18h.")
