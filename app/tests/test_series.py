@@ -1237,3 +1237,41 @@ class TestCancelarSerie(unittest.TestCase):
         self.assertTrue(ok2, msg2)
         datas = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
         self.assertEqual(datas[0], nova, "reativou na data nova")
+
+    def test_aceita_status_incompleta(self):
+        """'incompleta' é um status aceito na whitelist (série que 'reconciliar' fechou
+        com item órfão) — alcançável de verdade, não só uma sigla no docstring."""
+        import series
+        sid = self.db.criar_serie("Incompleta")
+        self.db.atualizar_serie(sid, status="incompleta")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_preparado_fn_que_falha_nao_trava_os_outros_dias(self):
+        """`preparado_fn` (por padrão, uma leitura no banco via draft_store.carregar) pode
+        levantar com o banco travado — mesma falha que já tratamos pra `agenda_slot`. Uma
+        falha nela não pode: (1) travar o loop e deixar os OUTROS dias presos; (2) pular o
+        `atualizar_serie` final, deixando a série 'ativa' pra sempre — exatamente o estado
+        preso que esta função existe pra consertar, agora alcançável a partir dela mesma."""
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        def preparado_quebrado(d):
+            if d == dias[0]:
+                raise RuntimeError("banco travado")
+            return False
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=preparado_quebrado)
+
+        self.assertTrue(ok, msg)
+        self.assertIn(dias[0], msg, f"o dia que falhou tem que aparecer: {msg}")
+        self.assertEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio",
+                         "uma falha no preparado_fn não pode travar os outros dias")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho",
+                         "a série tem que voltar pra rascunho mesmo com falha parcial")

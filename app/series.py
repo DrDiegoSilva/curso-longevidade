@@ -348,10 +348,18 @@ def cancelar_serie(serie_id, db_mod=None, hoje=None, preparado_fn=None):
         if dia <= hoje:
             passados += 1
             continue
-        if preparado_fn(dia):
-            preparados += 1
-            continue
         try:
+            # preparado_fn ENTRA no try: o default é uma leitura no banco
+            # (draft_store.carregar -> db.obter_draft) e pode levantar com o
+            # banco travado — mesma falha que já tratamos em agenda_slot logo
+            # abaixo. Deixá-la fora do try derrubava a função inteira NO MEIO
+            # do loop, com os dias 0..k-1 já liberados (estudo devolvido, data
+            # limpa) e o `atualizar_serie` final nunca rodando — a própria
+            # série presa que esta função existe pra consertar, alcançável
+            # justamente por ESTE escape.
+            if preparado_fn(dia):
+                preparados += 1
+                continue
             slot = db_mod.agenda_slot(dia)
             if not slot or (slot.get("ref_id") or "") != (it.get("ref_id") or ""):
                 alheios += 1
@@ -367,13 +375,17 @@ def cancelar_serie(serie_id, db_mod=None, hoje=None, preparado_fn=None):
         db_mod.atualizar_serie(serie_id, status="rascunho", data_inicio="", ativada_em="")
     except Exception as e:
         print(f"[series] cancelar: não devolvi a série {serie_id} pra rascunho: {e}", flush=True)
-        return (False, f"Os {liberados} dia(s) foram liberados, mas a série NÃO voltou pra "
-                       f"rascunho ({e}) — ela vai continuar bloqueando a próxima ativação. "
-                       f"Confira a /series.")
+        msg = (f"Os {liberados} dia(s) foram liberados, mas a série NÃO voltou pra "
+              f"rascunho ({e}) — ela vai continuar bloqueando a próxima ativação. "
+              f"Confira a /series.")
+        if falhas:
+            msg += (f" Também falhou liberar {', '.join(falhas)} — confira a /agenda "
+                    f"(detalhe nos logs).")
+        return (False, msg)
 
     mantidos = []
     if passados:
-        mantidos.append(f"{passados} já enviado(s)")
+        mantidos.append(f"{passados} já enviado(s) ou de hoje")
     if preparados:
         mantidos.append(f"{preparados} com rascunho das 18h pronto")
     if alheios:
