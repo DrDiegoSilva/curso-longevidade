@@ -1,4 +1,5 @@
 """Fase 2 — séries de estudos (item 8)."""
+import contextlib
 import io
 import os
 import sys
@@ -786,7 +787,9 @@ class TestSeriesHardening(unittest.TestCase):
         tmp2 = tempfile.mkdtemp()
         try:
             caminho = os.path.join(tmp2, "duas_ativas.db")
-            with sqlite3.connect(caminho) as c:
+            # `with sqlite3.connect(...)` commita mas NÃO fecha — daí o closing()
+            # explícito, pra este teste não somar ResourceWarning à saída da suíte.
+            with contextlib.closing(sqlite3.connect(caminho)) as c, c:
                 c.execute("""CREATE TABLE series (id TEXT PRIMARY KEY, nome TEXT, status TEXT,
                              data_inicio TEXT, criado_em TEXT, ativada_em TEXT)""")
                 c.execute("INSERT INTO series VALUES ('a','A','ativa','','2026-01-01','2026-01-01')")
@@ -936,7 +939,7 @@ class TestSeriesHardening(unittest.TestCase):
         tmp2 = tempfile.mkdtemp()
         try:
             caminho = os.path.join(tmp2, "ordens_dup.db")
-            with sqlite3.connect(caminho) as c:
+            with contextlib.closing(sqlite3.connect(caminho)) as c, c:
                 c.execute("""CREATE TABLE serie_itens (
                              id TEXT PRIMARY KEY, serie_id TEXT, ordem INTEGER DEFAULT 0,
                              ref_tipo TEXT, ref_id TEXT, titulo TEXT DEFAULT '',
@@ -951,7 +954,7 @@ class TestSeriesHardening(unittest.TestCase):
             import db as _db
             importlib.reload(_db)
             _db.init()                       # não pode levantar
-            with sqlite3.connect(caminho) as c:
+            with contextlib.closing(sqlite3.connect(caminho)) as c:
                 ordens = [r[0] for r in c.execute(
                     "SELECT ordem FROM serie_itens WHERE serie_id='s1' ORDER BY ordem")]
             self.assertEqual(ordens, [0, 1, 2, 3, 4])     # renumerado, sem repetição
