@@ -119,6 +119,52 @@ class TestDbSeries(unittest.TestCase):
         self.assertEqual(len(set(resultados)), 1)   # todas as threads concordam no MESMO id
         self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)
 
+    def test_init_retroaplica_unique_index_em_serie_itens_pre_existente(self):
+        """FINDING 3c (achado na re-revisão): CREATE TABLE IF NOT EXISTS é
+        no-op numa tabela que já existe — então um banco de dev deixado por
+        uma sessão ANTERIOR desta Fase 2 (ex.: Tasks 1-2 em a136efb, antes da
+        UNIQUE(serie_id,ref_tipo,ref_id) inline) nunca ganha a constraint só
+        por rodar db.init() de novo. Sem um índice único aplicado à parte,
+        o INSERT...ON CONFLICT(serie_id,ref_tipo,ref_id) de
+        adicionar_serie_item quebra com sqlite3.OperationalError('ON CONFLICT
+        clause does not match any PRIMARY KEY or UNIQUE constraint') já no 1º
+        insert (não só no duplicado) — produção não é afetada (a tabela não
+        existe lá ainda), mas qualquer banco local de sessão anterior vira
+        crash na hora de adicionar o 1º estudo a uma série."""
+        import shutil
+        import sqlite3
+        tmp2 = tempfile.mkdtemp()
+        try:
+            caminho = os.path.join(tmp2, "pre_fix.db")
+            # simula o schema de ANTES desta rodada: serie_itens sem UNIQUE.
+            with sqlite3.connect(caminho) as c:
+                c.execute("""
+                    CREATE TABLE serie_itens (
+                        id TEXT PRIMARY KEY,
+                        serie_id TEXT,
+                        ordem INTEGER DEFAULT 0,
+                        ref_tipo TEXT,
+                        ref_id TEXT,
+                        titulo TEXT DEFAULT '',
+                        tema TEXT DEFAULT '',
+                        data TEXT DEFAULT '',
+                        enviado INTEGER DEFAULT 0
+                    )
+                """)
+            os.environ["DSCURSO_ARTIGOS_DB"] = caminho
+            os.environ.pop("DATABASE_URL", None)
+            import importlib
+            import db as _db
+            importlib.reload(_db)
+            _db.init()   # não pode levantar; precisa retroaplicar o índice único
+            sid = _db.criar_serie("S")
+            a = _db.adicionar_serie_item(sid, "reserva", "r1", titulo="A")  # 1º insert
+            b = _db.adicionar_serie_item(sid, "reserva", "r1", titulo="A de novo")  # dedup
+            self.assertEqual(a, b)
+            self.assertEqual(len(_db.obter_serie(sid)["itens"]), 1)
+        finally:
+            shutil.rmtree(tmp2, ignore_errors=True)
+
     def test_reordenar_troca_vizinho(self):
         sid = self.db.criar_serie("S")
         a = self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="A")

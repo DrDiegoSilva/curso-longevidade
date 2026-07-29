@@ -227,6 +227,8 @@ def init():
                 enviado INTEGER DEFAULT 0,
                 UNIQUE (serie_id, ref_tipo, ref_id)
             );
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_serie_itens_dedup
+                ON serie_itens(serie_id, ref_tipo, ref_id);
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
                 ativo INTEGER DEFAULT 1, criado_em TEXT
