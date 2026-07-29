@@ -972,3 +972,59 @@ class TestSeriesHardening(unittest.TestCase):
         self.assertFalse(ok)
         self.assertTrue(msg)
         self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    # ── IMPORTANT (introduzido pela própria correção): janela entre o claim e o rollback ──
+    def test_escape_entre_claim_e_gravacao_devolve_a_serie_pra_rascunho(self):
+        """A correção do CRITICAL 1 tomava o claim e SÓ depois entrava no try/except
+        por dia — `_dias_livres` (que chama db.agenda_slot) e o próprio rollback
+        ficavam de fora. Um erro ali (banco travado, timeout) deixava a série
+        'ativa' com zero itens datados: estado que o `reconciliar` se RECUSA a
+        fechar de propósito (pra não correr com o claim) e que a rota não sabe
+        cancelar — a trava permanente do Finding 1 por uma porta mais estreita."""
+        from unittest import mock
+        import series
+        sid, rids = self._serie_com(2)
+        with mock.patch.object(self.db, "agenda_slot",
+                               side_effect=RuntimeError("database is locked")):
+            ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok)
+        self.assertIn("database is locked", msg)          # erro real chega ao admin
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+        self.assertEqual(self.db.obter_reserva(rids[0])["status"], "pronto")   # nada consumido
+        # e a feature NÃO ficou trancada: a mesma série ativa normalmente depois
+        ok2, msg2 = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok2, msg2)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "ativa")
+
+    def test_demover_series_ativas_extras_nao_estoura_em_variavel_solta(self):
+        """MINOR: `extras` era ligada DENTRO do `with` e lida depois dele.
+
+        Com o `_Wrap.__exit__` real (devolve None, não suprime) o erro de dentro
+        do bloco propaga e a linha `if extras:` nunca roda — o NameError relatado
+        NÃO acontece hoje (medido, ver relatório). O que existe é a fragilidade:
+        a ligação só é segura por causa desse detalhe do context manager. Este
+        teste trava as DUAS pontas — o erro real continua propagando, e nem num
+        `__exit__` que suprima a função quebra por variável solta."""
+        from unittest import mock
+
+        class ConexaoQueLevanta:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return None          # igual ao _Wrap: NÃO suprime
+
+            def execute(self, *a):
+                raise RuntimeError("boom no banco")
+
+        class ConexaoQueSuprime(ConexaoQueLevanta):
+            def __exit__(self, *a):
+                return True          # suprime — única via pra variável solta
+
+        with mock.patch.object(self.db, "_conn", return_value=ConexaoQueLevanta()):
+            with self.assertRaises(RuntimeError) as ctx:
+                self.db._demover_series_ativas_extras()
+        self.assertIn("boom no banco", str(ctx.exception))   # erro real, não mascarado
+
+        with mock.patch.object(self.db, "_conn", return_value=ConexaoQueSuprime()):
+            self.db._demover_series_ativas_extras()          # não pode levantar

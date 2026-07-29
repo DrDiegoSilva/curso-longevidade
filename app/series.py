@@ -194,6 +194,24 @@ def dia_minimo_inicio(db_mod=None, hoje=None, dias_envio=None, preparado_fn=None
 _MSG_JA_ATIVA = "Já existe uma série ativa. Espere ela terminar antes de ativar outra."
 
 
+def _devolver_claim(db_mod, serie_id):
+    """Solta o claim de 'ativa' e devolve a série pra 'rascunho'. Retorna "" se
+    deu certo, ou um aviso pro admin se NEM isso deu.
+
+    Chamada em todo caminho que sai da ativação sem ter gravado dia nenhum. Sem
+    ela a série fica 'ativa' com zero itens datados — e esse estado hoje NÃO TEM
+    SAÍDA: `reconciliar` se recusa a fechar série sem data (de propósito, pra
+    não correr com o claim) e a rota não tem ação de cancelar. Não levanta: quem
+    chama já está tratando outra falha e não pode perder a mensagem original."""
+    try:
+        db_mod.atualizar_serie(serie_id, status="rascunho", data_inicio="", ativada_em="")
+        return ""
+    except Exception as e:
+        print(f"[series] NÃO consegui devolver a série {serie_id} pra rascunho: {e}", flush=True)
+        return (" ATENÇÃO: a série ficou ATIVA e vai bloquear a próxima ativação — "
+                f"confira a /series ({e}).")
+
+
 def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=None, hoje=None):
     """Grava os itens da série nos próximos N dias úteis livres a partir de
     data_inicio. Retorna (ok, msg). Não crasha: falha parcial → (False, aviso
@@ -249,31 +267,45 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
     inicio_iso = inicio.isoformat()
     if not db_mod.reivindicar_serie_ativa(serie_id, inicio_iso, datetime.now().isoformat()):
         return (False, _MSG_JA_ATIVA)
-    dias = _dias_livres(db_mod, inicio, len(itens), dias_envio)
+    # Daqui pra baixo a série JÁ está 'ativa' no banco. QUALQUER escape sem dia
+    # gravado (não só a falha por dia lá dentro: _dias_livres chama db.agenda_slot
+    # e pode levantar com o banco travado) precisa devolver o claim — senão sobra
+    # uma série 'ativa' sem item datado, que reconciliar não fecha e a rota não
+    # cancela. Era a trava permanente do Finding 1 voltando por uma porta estreita.
     gravados, falhas = 0, []
-    for dia, item in zip(dias, itens):
-        try:
-            _liberar_dia(db_mod, dia)
-            tipo, ref_id = item["ref_tipo"], item["ref_id"]
-            db_mod.agenda_upsert(dia, tipo=tipo, ref_id=ref_id, payload=None,
-                                 tema=item.get("tema", ""), titulo=item.get("titulo", ""), fixado=0)
-            if tipo == "reserva":
-                db_mod.marcar_reserva_agendado(ref_id)       # consome só APÓS gravar o slot
-            elif tipo == "candidato":
-                db_mod.marcar_candidato_agendado(ref_id)
-            # clássico: agenda_upsert basta (reusável, não consome)
-            db_mod.set_serie_item_data(item["id"], dia)
-            gravados += 1
-        except Exception as e:
-            print(f"[series] falha ao gravar '{item.get('titulo','')}' em {dia}: {e}", flush=True)
-            falhas.append(f"{dia} '{item.get('titulo','')}': {e}")
+    try:
+        dias = _dias_livres(db_mod, inicio, len(itens), dias_envio)
+        for dia, item in zip(dias, itens):
+            try:
+                _liberar_dia(db_mod, dia)
+                tipo, ref_id = item["ref_tipo"], item["ref_id"]
+                db_mod.agenda_upsert(dia, tipo=tipo, ref_id=ref_id, payload=None,
+                                     tema=item.get("tema", ""), titulo=item.get("titulo", ""),
+                                     fixado=0)
+                if tipo == "reserva":
+                    db_mod.marcar_reserva_agendado(ref_id)   # consome só APÓS gravar o slot
+                elif tipo == "candidato":
+                    db_mod.marcar_candidato_agendado(ref_id)
+                # clássico: agenda_upsert basta (reusável, não consome)
+                db_mod.set_serie_item_data(item["id"], dia)
+                gravados += 1
+            except Exception as e:
+                print(f"[series] falha ao gravar '{item.get('titulo','')}' em {dia}: {e}", flush=True)
+                falhas.append(f"{dia} '{item.get('titulo','')}': {e}")
+    except Exception as e:
+        print(f"[series] ativação de {serie_id} abortada antes de concluir: {e}", flush=True)
+        aviso = _devolver_claim(db_mod, serie_id) if not gravados else ""
+        if gravados:
+            return (False, f"Série ativada só em parte ({gravados} dia(s)) e a montagem abortou: "
+                           f"{e} — confira a /agenda pra não faltar/repetir estudo.")
+        return (False, f"Não consegui montar os dias da série — ela continua em rascunho. "
+                       f"Erro: {e}" + aviso)
     if not gravados:
         # Nada foi agendado: DEVOLVE o claim. Marcar 'ativa' aqui trancava a
         # feature pra sempre — sem item datado, reconciliar nunca fecha, e a rota
         # não tem ação de cancelar/concluir: só editando o banco na mão.
-        db_mod.atualizar_serie(serie_id, status="rascunho", data_inicio="", ativada_em="")
         return (False, "Não consegui agendar nenhum dia — a série continua em rascunho. "
-                       + " | ".join(falhas))
+                       + " | ".join(falhas) + _devolver_claim(db_mod, serie_id))
     if falhas:
         return (False, f"Série ativada com {len(falhas)} dia(s) com falha — confira a /agenda pra "
                        f"não faltar/repetir estudo. " + " | ".join(falhas))

@@ -330,7 +330,14 @@ def _demover_series_ativas_extras():
     """Deixa ATIVA só a série ativada primeiro; as outras viram 'incompleta' —
     status visível na /series que NÃO tranca a próxima ativação. Só é alcançável
     num banco escrito antes de ux_series_uma_ativa existir (a corrida de
-    check-then-act do series.ativar_serie deixava N séries ativas)."""
+    check-then-act do series.ativar_serie deixava N séries ativas).
+
+    `extras` nasce FORA do `with`: hoje o `_Wrap.__exit__` devolve None (não
+    suprime) e um erro do bloco propaga antes do log, mas a ligação só é segura
+    por causa desse detalhe. Se algum dia o wrapper passar a engolir exceção,
+    esta função — cujo trabalho INTEIRO é limpeza — quebraria com variável solta
+    em cima do erro de verdade."""
+    extras = []
     with _conn() as c:
         rows = c.execute("SELECT id FROM series WHERE status='ativa' "
                          "ORDER BY ativada_em ASC, criado_em ASC, id ASC").fetchall()
