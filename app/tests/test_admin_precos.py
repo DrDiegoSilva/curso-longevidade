@@ -101,3 +101,30 @@ class TestPrecoResolver(unittest.TestCase):
     def test_plano_por_base_enxerga_override(self):
         self.db.set_config("preco_base_anual", "1600")
         self.assertEqual(self.cfg.plano_por_base(1600.0)["slug"], "anual")
+
+
+class TestPaginaPrecos(unittest.TestCase):
+    def _planos(self):
+        return [
+            {"slug": "mensal", "nome": "Mensal", "base": 147.0, "preco": "R$ 147", "nota": ""},
+            {"slug": "anual", "nome": "Anual", "base": 1497.0, "preco": "R$ 1.497",
+             "nota": "≈ R$ 125/mês · em até 12x sem juros", "pix_desconto_pct": 5},
+        ]
+
+    def test_renderiza_planos_e_forms(self):
+        import site_web
+        html = site_web.pagina_precos(self._planos(), "tok")
+        self.assertIn("Mensal", html)
+        self.assertIn("Anual", html)
+        self.assertIn("R$ 1.497", html)                 # preview
+        self.assertIn('value="147"', html)              # input com base vigente (mensal)
+        self.assertIn('value="salvar_preco"', html)     # form salvar
+        self.assertIn('value="resetar_preco"', html)    # voltar ao padrão
+        self.assertIn("/admin/precos", html)
+
+    def test_escapa(self):
+        import site_web
+        maligno = [{"slug": "x", "nome": "<script>x</script>", "base": 1.0, "preco": "R$ 1", "nota": ""}]
+        html = site_web.pagina_precos(maligno, "tok")
+        self.assertNotIn("<script>x</script>", html)
+        self.assertIn("&lt;script&gt;", html)
