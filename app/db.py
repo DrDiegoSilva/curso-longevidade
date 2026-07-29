@@ -1409,13 +1409,15 @@ def agenda_fixar(data, on=True):
 
 def agenda_devolver(data):
     """Tira o item do slot e devolve ao estoque; slot vira 'vazio'. Preserva 'fixado'.
-    Se a devolução à fila falhar, a exceção propaga ANTES de limpar o slot — o item
-    não é perdido (o slot continua apontando pra ele)."""
+    Trata reserva/candidato/fila. Se a devolução à fila falhar, a exceção propaga
+    ANTES de limpar o slot — o item não é perdido (o slot continua apontando pra ele)."""
     s = agenda_slot(data)
     if not s:
         return
     if s.get("tipo") == "reserva" and s.get("ref_id"):
         marcar_reserva_pronto(s["ref_id"])
+    elif s.get("tipo") == "candidato" and s.get("ref_id"):
+        marcar_candidato_pronto(s["ref_id"])
     elif s.get("tipo") == "fila" and s.get("payload"):
         import json
         import queue_store

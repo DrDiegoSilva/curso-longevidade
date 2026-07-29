@@ -1028,3 +1028,48 @@ class TestSeriesHardening(unittest.TestCase):
 
         with mock.patch.object(self.db, "_conn", return_value=ConexaoQueSuprime()):
             self.db._demover_series_ativas_extras()          # não pode levantar
+
+
+class TestAgendaDevolverCandidato(unittest.TestCase):
+    """Task 1 (Cancelar série) — bug pré-existente: `agenda_devolver` trata
+    'reserva' e 'fila' mas ignorava 'candidato' — o slot virava 'vazio' e o
+    candidato nunca voltava pro estoque (fica preso em status 'agendado' pra
+    sempre). `series._liberar_dia` trata os três; a inconsistência era do
+    `db`. Efeito colateral ao vivo: o botão 'pular' (agenda_pular) num dia
+    de candidato vazava o candidato."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    def _novo_candidato(self, chave, titulo):
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": titulo, "chave": chave,
+                                    "score": 6, "tipo": "varredura"}])
+        return self.db.listar_candidatos(status="novo")[0]["id"]
+
+    def test_devolver_dia_de_candidato_volta_ao_estoque(self):
+        cid = self._novo_candidato("cser-cand-1", "C1")
+        self.db.marcar_candidato_agendado(cid)
+        self.db.agenda_upsert("2026-08-10", tipo="candidato", ref_id=cid, titulo="C1")
+
+        self.db.agenda_devolver("2026-08-10")
+
+        self.assertEqual(self.db.agenda_slot("2026-08-10")["tipo"], "vazio")
+        cand = self.db.obter_candidato(cid)
+        self.assertEqual(cand["status"], "novo",
+                         "candidato tem que voltar pro estoque, senão vaza")
+
+    def test_devolver_preserva_fixado(self):
+        cid = self._novo_candidato("cser-cand-2", "C2")
+        self.db.marcar_candidato_agendado(cid)
+        self.db.agenda_upsert("2026-08-11", tipo="candidato", ref_id=cid, titulo="C2", fixado=1)
+
+        self.db.agenda_devolver("2026-08-11")
+
+        self.assertEqual(self.db.agenda_slot("2026-08-11")["fixado"], 1)
