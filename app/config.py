@@ -98,14 +98,17 @@ PLANOS = [
 ]
 
 def parse_preco(s):
-    """Número > 0 com no máx. 2 casas (aceita vírgula ou ponto). None se inválido."""
+    """Número > 0 com no máx. 2 casas (aceita vírgula ou ponto). None se inválido.
+    Rejeita não-finitos ("inf", "Infinity", "1e400" etc.) — float()/round() não
+    levantam erro nesses casos e float('inf') > 0 é True."""
+    import math
     if s is None:
         return None
     try:
         v = round(float(str(s).replace(",", ".").strip()), 2)
     except (TypeError, ValueError):
         return None
-    return v if v > 0 else None
+    return v if v > 0 and math.isfinite(v) else None
 
 
 def _preco_str(base):

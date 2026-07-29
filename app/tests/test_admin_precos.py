@@ -47,6 +47,11 @@ class TestParsePreco(unittest.TestCase):
         for bad in ("", "0", "-5", "abc", None, "1.2.3"):
             self.assertIsNone(config.parse_preco(bad))
 
+    def test_rejeita_infinito(self):
+        import config
+        for bad in ("inf", "Infinity", "1e400", "-inf", "nan"):
+            self.assertIsNone(config.parse_preco(bad))
+
 
 class TestPrecoResolver(unittest.TestCase):
     def setUp(self):
