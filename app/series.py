@@ -37,16 +37,30 @@ def _dias_uteis_validos(dias_envio):
     return validos
 
 
-def _eh_dia_util(data_inicio, dias_envio):
-    d = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+def _normalizar_data(valor):
+    """'2026-6-29' -> date(2026, 6, 29). None/vazio/formato inválido -> None.
+
+    Toda data que entra em ativar_serie passa por aqui e vira `date` ANTES de
+    qualquer comparação. O <input type=date> manda zero-padded, mas um POST
+    urlencoded direto não: '2026-6-29' PASSA no strptime e, comparado como TEXTO
+    com o piso '2026-07-30', fica MAIOR ('6' > '0'). O piso era burlado — uma
+    segunda-feira 30 dias no passado virava slot da agenda com a reserva
+    consumida (estudo curado gasto e nunca enviado). TypeError entra no except
+    de propósito: `data_inicio=None` é o caso do contrato "não crasha"."""
+    try:
+        return datetime.strptime(valor, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def _eh_dia_util(d, dias_envio):
     return agenda_plan.DIAS[d.weekday()] in _dias_uteis_validos(dias_envio)
 
 
-def _dias_livres(db_mod, data_inicio, n, dias_envio):
-    """Próximos n dias úteis (YYYY-MM-DD) a partir de data_inicio que NÃO estão
+def _dias_livres(db_mod, d, n, dias_envio):
+    """Próximos n dias úteis (YYYY-MM-DD) a partir de `d` (date) que NÃO estão
     fixados nem pulados. Pula dias fixados/pulados (usa o próximo livre)."""
     validos = _dias_uteis_validos(dias_envio)
-    d = datetime.strptime(data_inicio, "%Y-%m-%d").date()
     out = []
     while len(out) < n:
         if agenda_plan.DIAS[d.weekday()] in validos:
@@ -76,9 +90,57 @@ def _liberar_dia(db_mod, dia):
         queue_store.devolver(json.loads(s["payload"]))
 
 
+def _indisponiveis(db_mod, itens):
+    """Itens da série que NÃO podem ser agendados agora, já com o motivo em texto
+    de admin. Lista vazia = pode ativar.
+
+    `db.buscar_por_tag` (db.py:1023) filtra SÓ por tag, nunca por status — então
+    um estudo já agendado, ou já ENVIADO, entra na série pelo montador e seria
+    re-agendado: o mesmo ref_id em dois slots é o mesmo estudo preparado e
+    mandado duas vezes, e um 'enviado' voltava pra 'agendado' e ia de novo.
+    `daily.materializar` já guarda as duas coisas (daily.py:165-166 — lê só
+    status='pronto' e pula ref_id que já está preso a um slot); ativar_serie
+    reusava o mecanismo de escrita mas não as guardas."""
+    problemas = []
+    na_agenda = {t: db_mod.agenda_ref_ids(t) for t in ("reserva", "candidato", "classico")}
+    for it in itens:
+        tipo, rid = it.get("ref_tipo"), it.get("ref_id")
+        nome = it.get("titulo") or rid or "(sem título)"
+        if rid and rid in na_agenda.get(tipo, set()):
+            problemas.append(f"'{nome}' já ocupa um dia da agenda")
+            continue
+        if tipo == "reserva":
+            r = db_mod.obter_reserva(rid)
+            if not r:
+                problemas.append(f"'{nome}' não está mais na reserva")
+            elif r.get("status") != "pronto":
+                problemas.append(f"'{nome}' está '{r.get('status')}' (só dá pra agendar estudo 'pronto')")
+        elif tipo == "candidato":
+            c = db_mod.obter_candidato(rid)
+            if not c:
+                problemas.append(f"'{nome}' não está mais na curadoria")
+            elif c.get("status") != "novo":
+                problemas.append(f"'{nome}' está '{c.get('status')}' (só dá pra agendar candidato 'novo')")
+        elif tipo == "classico":
+            if not db_mod.obter_classico(rid):
+                problemas.append(f"'{nome}' não está mais no banco de clássicos")
+    return problemas
+
+
 def reconciliar(db_mod=None, hoje=None):
     """Fecha séries ATIVAS cujo último dia atribuído já passou (< hoje). Libera
-    ativar outra. Retorna os ids concluídos."""
+    ativar outra. Retorna os ids fechados.
+
+    Fecha como 'concluida' quando TODO item foi agendado, e como 'incompleta'
+    quando sobrou item sem data — antes o `if i.get("data")` descartava os órfãos
+    e a série vencida virava 'concluida' calada, escondendo que um estudo curado
+    da sequência nunca foi ao ar.
+
+    Série ativa com ZERO itens datados não é fechada aqui de propósito: esse é
+    exatamente o estado de uma ativação NO MEIO do caminho (o claim de
+    `reivindicar_serie_ativa` acontece antes do loop que grava os dias), e fechar
+    ali seria uma corrida nova. Quem impede o estado permanente é ativar_serie,
+    que devolve a série pra 'rascunho' quando nenhum dia é gravado."""
     if db_mod is None:
         import db as db_mod
     hoje = hoje or date.today().isoformat()
@@ -88,9 +150,15 @@ def reconciliar(db_mod=None, hoje=None):
             continue
         det = db_mod.obter_serie(s["id"])
         datas = [i.get("data") for i in det["itens"] if i.get("data")]
-        if datas and max(datas) < hoje:
-            db_mod.atualizar_serie(s["id"], status="concluida")
-            fechados.append(s["id"])
+        if not datas or max(datas) >= hoje:
+            continue
+        orfaos = [i for i in det["itens"] if not i.get("data")]
+        db_mod.atualizar_serie(s["id"], status="incompleta" if orfaos else "concluida")
+        if orfaos:
+            titulos = ", ".join(f"'{i.get('titulo') or i.get('ref_id')}'" for i in orfaos)
+            print(f"[series] série {s['id']} fechada INCOMPLETA — nunca agendado(s): {titulos}",
+                  flush=True)
+        fechados.append(s["id"])
     return fechados
 
 
@@ -123,9 +191,17 @@ def dia_minimo_inicio(db_mod=None, hoje=None, dias_envio=None, preparado_fn=None
         d = d + timedelta(days=1)
 
 
-def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=None):
+_MSG_JA_ATIVA = "Já existe uma série ativa. Espere ela terminar antes de ativar outra."
+
+
+def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=None, hoje=None):
     """Grava os itens da série nos próximos N dias úteis livres a partir de
-    data_inicio. Retorna (ok, msg). Não crasha: falha parcial → (False, aviso)."""
+    data_inicio. Retorna (ok, msg). Não crasha: falha parcial → (False, aviso
+    com o erro real de cada dia). `hoje` só existe pra teste (default: hoje).
+
+    Ordem que importa: TODA validação e a guarda de disponibilidade rodam antes
+    de `reivindicar_serie_ativa`, e o claim roda antes da primeira escrita na
+    agenda — quem perde a corrida para sem ter tocado em slot nenhum."""
     if db_mod is None:
         import db as db_mod
     if dias_envio is None:
@@ -137,7 +213,7 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
         # violaria o contrato de "nunca crasha" antes de qualquer escrita.
         return (False, "Configure os dias de envio (nenhum dia útil ativo).")
     db_mod.init()
-    reconciliar(db_mod=db_mod)                        # fecha vencidas antes da trava
+    reconciliar(db_mod=db_mod, hoje=hoje)             # fecha vencidas antes da trava
     det = db_mod.obter_serie(serie_id)
     if not det:
         return (False, "Série não encontrada.")
@@ -147,22 +223,34 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
     if not itens:
         return (False, "A série está vazia — adicione estudos antes de ativar.")
     if any(s.get("status") == "ativa" for s in db_mod.listar_series()):
-        return (False, "Já existe uma série ativa. Espere ela terminar antes de ativar outra.")
-    try:
-        util = _eh_dia_util(data_inicio, dias_envio)
-    except ValueError:
-        # data_inicio malformada/vazia chega direto num POST urlencoded (o
+        return (False, _MSG_JA_ATIVA)                 # atalho amigável; a trava é o claim
+    inicio = _normalizar_data(data_inicio)
+    if inicio is None:
+        # data_inicio malformada/vazia/None chega direto num POST urlencoded (o
         # <input type=date> do navegador não é a única porta) — sem isso,
         # datetime.strptime derrubava a rota com 500 (Fail-safe do plano:
         # "falha parcial -> avisa, não fica silenciosa").
         return (False, "Data de início inválida — escolha uma data no formato AAAA-MM-DD.")
-    if not util:
+    if not _eh_dia_util(inicio, dias_envio):
         return (False, "A data de início precisa cair num dia de envio (dia útil configurado).")
-    if dia_min and data_inicio < dia_min:
-        return (False, f"Escolha uma data a partir de {dia_min} — dias anteriores já podem ter o "
-                       f"preview pronto. Pro 1º dia já preparado, use o 🔁 Trocar na revisão.")
-    dias = _dias_livres(db_mod, data_inicio, len(itens), dias_envio)
-    falhou = False
+    # Regra PRÓPRIA de "não no passado": antes ela só existia de carona no
+    # `dia_min` que o único chamador de produção passa — uma chamada direta com
+    # data passada escrevia um slot histórico na agenda e queimava o estudo.
+    if inicio < (_normalizar_data(hoje) or date.today()):
+        return (False, "A data de início não pode estar no passado — escolha hoje ou um dia à frente.")
+    piso = _normalizar_data(dia_min)
+    if piso and inicio < piso:
+        return (False, f"Escolha uma data a partir de {piso.isoformat()} — dias anteriores já podem "
+                       f"ter o preview pronto. Pro 1º dia já preparado, use o 🔁 Trocar na revisão.")
+    problemas = _indisponiveis(db_mod, itens)
+    if problemas:
+        return (False, "Não dá pra ativar: " + "; ".join(problemas) +
+                       ". Tire esses estudos da série (🗑️) e ative de novo.")
+    inicio_iso = inicio.isoformat()
+    if not db_mod.reivindicar_serie_ativa(serie_id, inicio_iso, datetime.now().isoformat()):
+        return (False, _MSG_JA_ATIVA)
+    dias = _dias_livres(db_mod, inicio, len(itens), dias_envio)
+    gravados, falhas = 0, []
     for dia, item in zip(dias, itens):
         try:
             _liberar_dia(db_mod, dia)
@@ -175,15 +263,19 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
                 db_mod.marcar_candidato_agendado(ref_id)
             # clássico: agenda_upsert basta (reusável, não consome)
             db_mod.set_serie_item_data(item["id"], dia)
+            gravados += 1
         except Exception as e:
             print(f"[series] falha ao gravar '{item.get('titulo','')}' em {dia}: {e}", flush=True)
-            falhou = True
-    try:
-        db_mod.atualizar_serie(serie_id, status="ativa", data_inicio=data_inicio,
-                               ativada_em=datetime.now().isoformat())
-    except Exception as e:
-        print(f"[series] falha ao marcar série {serie_id} como ativa: {e}", flush=True)
-        return (False, "Série ativada nos dias, mas não consegui marcar como ativa — confira a /series.")
-    if falhou:
-        return (False, "Série ativada com falhas em alguns dias — confira a /agenda pra não faltar/repetir estudo.")
-    return (True, f"Série ativada: {len(dias)} estudos a partir de {data_inicio}. Revise cada dia às 18h.")
+            falhas.append(f"{dia} '{item.get('titulo','')}': {e}")
+    if not gravados:
+        # Nada foi agendado: DEVOLVE o claim. Marcar 'ativa' aqui trancava a
+        # feature pra sempre — sem item datado, reconciliar nunca fecha, e a rota
+        # não tem ação de cancelar/concluir: só editando o banco na mão.
+        db_mod.atualizar_serie(serie_id, status="rascunho", data_inicio="", ativada_em="")
+        return (False, "Não consegui agendar nenhum dia — a série continua em rascunho. "
+                       + " | ".join(falhas))
+    if falhas:
+        return (False, f"Série ativada com {len(falhas)} dia(s) com falha — confira a /agenda pra "
+                       f"não faltar/repetir estudo. " + " | ".join(falhas))
+    return (True, f"Série ativada: {len(dias)} estudos a partir de {inicio_iso}. "
+                  f"Revise cada dia às 18h.")

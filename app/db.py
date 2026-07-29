@@ -67,6 +67,16 @@ class _Wrap:
             self._c.close()
 
 
+def _integrity_error():
+    """Classe de IntegrityError do driver em uso — pra distinguir "violou uma
+    constraint" (esperado, tratável) de "o banco caiu" (não tratável) sem
+    inspecionar a mensagem de erro."""
+    if _is_pg():
+        import psycopg2
+        return psycopg2.IntegrityError
+    return sqlite3.IntegrityError
+
+
 def _conn():
     if _is_pg():
         import psycopg2
@@ -240,6 +250,7 @@ def init():
             """
         )
     _migrar_colunas()
+    _migrar_indices()
     _seed_cupons()
     _seed_automacoes()
     _migrar_texto_seed0()
@@ -303,6 +314,68 @@ def _migrar_colunas():
         _add_coluna(c, "curadoria_candidatos", "tags", "TEXT DEFAULT '[]'")
         _add_coluna(c, "reserva_resumos", "tags", "TEXT DEFAULT '[]'")
         _add_coluna(c, "classicos", "tags", "TEXT DEFAULT '[]'")
+
+
+# Índices ÚNICOS que podem falhar num banco já povoado (linhas já em conflito).
+# Por isso ficam FORA do executescript do init(): um CREATE INDEX que levanta lá
+# dentro aborta o script inteiro e o app sobe sem schema. Cada um tem um reparo
+# determinístico que roda antes da 2ª tentativa.
+_IDX_SERIE_ATIVA = ("CREATE UNIQUE INDEX IF NOT EXISTS ux_series_uma_ativa "
+                    "ON series(status) WHERE status='ativa'")
+_IDX_SERIE_ITENS_ORDEM = ("CREATE UNIQUE INDEX IF NOT EXISTS ux_serie_itens_ordem "
+                          "ON serie_itens(serie_id, ordem)")
+
+
+def _demover_series_ativas_extras():
+    """Deixa ATIVA só a série ativada primeiro; as outras viram 'incompleta' —
+    status visível na /series que NÃO tranca a próxima ativação. Só é alcançável
+    num banco escrito antes de ux_series_uma_ativa existir (a corrida de
+    check-then-act do series.ativar_serie deixava N séries ativas)."""
+    with _conn() as c:
+        rows = c.execute("SELECT id FROM series WHERE status='ativa' "
+                         "ORDER BY ativada_em ASC, criado_em ASC, id ASC").fetchall()
+        extras = [dict(r)["id"] for r in rows][1:]
+        for sid in extras:
+            c.execute("UPDATE series SET status='incompleta' WHERE id=?", (sid,))
+    if extras:
+        print(f"[db] {len(extras)} série(s) ativa(s) extra(s) marcadas 'incompleta': {extras}",
+              flush=True)
+
+
+def _renumerar_serie_itens():
+    """Renumera 'ordem' 0..n-1 por série preservando a ordem visível (ordem, id).
+    Repara bancos onde a corrida do `MAX(ordem)+1` já deixou ordens repetidas —
+    pré-requisito pra ux_serie_itens_ordem existir."""
+    with _conn() as c:
+        rows = c.execute("SELECT id, serie_id FROM serie_itens "
+                         "ORDER BY serie_id, ordem, id").fetchall()
+        atual, n = object(), 0
+        for r in rows:
+            d = dict(r)
+            if d["serie_id"] != atual:
+                atual, n = d["serie_id"], 0
+            c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (n, d["id"]))
+            n += 1
+
+
+def _criar_indice(sql):
+    with _conn() as c:
+        c.execute(sql)
+
+
+def _migrar_indices():
+    """Cria os índices únicos retroativos: tenta, repara o conflito, tenta de novo.
+    Uma 2ª falha propaga (o banco está num estado que o reparo não previu — melhor
+    barulho no boot do que uma constraint que o código acha que existe e não existe)."""
+    for sql, reparo, nome in ((_IDX_SERIE_ATIVA, _demover_series_ativas_extras, "ux_series_uma_ativa"),
+                              (_IDX_SERIE_ITENS_ORDEM, _renumerar_serie_itens, "ux_serie_itens_ordem")):
+        try:
+            _criar_indice(sql)
+            continue
+        except _integrity_error() as e:
+            print(f"[db] {nome}: {e} — reparando as linhas em conflito", flush=True)
+        reparo()
+        _criar_indice(sql)
 
 
 def _habilitar_rls():
@@ -870,6 +943,14 @@ def marcar_candidatos(ids, status):
             c.execute("UPDATE curadoria_candidatos SET status=? WHERE id=?", (status, i))
 
 
+def obter_candidato(cid):
+    """Um candidato da curadoria por id (ou None). Espelha obter_reserva — usado
+    por series._indisponiveis pra checar o status antes de agendar."""
+    with _conn() as c:
+        r = c.execute("SELECT * FROM curadoria_candidatos WHERE id=?", (cid,)).fetchone()
+    return dict(r) if r else None
+
+
 def marcar_candidato_agendado(cid):
     """Prende um candidato na agenda (sai do pool 'novo' até enviar/soltar)."""
     with _conn() as c:
@@ -1066,14 +1147,21 @@ def listar_series():
 
 
 def obter_serie(serie_id):
-    """{"serie": dict, "itens": [dict, ...]} ordenados por 'ordem', ou None se não existir."""
+    """{"serie": dict, "itens": [dict, ...]} ordenados por 'ordem', ou None se não existir.
+    O desempate por 'id' deixa a leitura DETERMINÍSTICA mesmo num banco antigo que
+    ainda tenha ordens repetidas (ver _renumerar_serie_itens): series.ativar_serie
+    casa esta lista 1:1 com os dias de envio, então "ordem instável" = sequência
+    curada embaralhada."""
     with _conn() as c:
         s = c.execute("SELECT * FROM series WHERE id=?", (serie_id,)).fetchone()
         if not s:
             return None
-        itens = c.execute("SELECT * FROM serie_itens WHERE serie_id=? ORDER BY ordem",
+        itens = c.execute("SELECT * FROM serie_itens WHERE serie_id=? ORDER BY ordem, id",
                            (serie_id,)).fetchall()
     return {"serie": dict(s), "itens": [dict(i) for i in itens]}
+
+
+_TENTATIVAS_ORDEM = 8       # colisões de 'ordem' entre threads: recomeça com MAX fresco
 
 
 def adicionar_serie_item(serie_id, ref_tipo, ref_id, titulo="", tema=""):
@@ -1092,31 +1180,45 @@ def adicionar_serie_item(serie_id, ref_tipo, ref_id, titulo="", tema=""):
     comprovado com um teste de 8 threads concorrentes, que produzia 3 linhas
     em vez de 1 antes desta constraint). A tabela é nova nesta Fase 2 (ainda
     não deployada) — dá pra declarar a UNIQUE de cara, sem migração em tabela
-    de produção existente. Retorna o id do item."""
+    de produção existente. Retorna o id do item.
+
+    A 'ordem' tinha o MESMO TOCTOU, e ele era pior: `SELECT MAX(ordem)+1` seguido
+    de um INSERT sem UNIQUE(serie_id, ordem) atrás deixava 10 threads com 10 itens
+    DISTINTOS gravarem ordem = [0,0,0,0,0,1,1,2,2,2] — sem erro nenhum, só a
+    sequência curada (o ponto inteiro de uma série) embaralhada. Agora o índice
+    ux_serie_itens_ordem recusa a colisão e a tentativa recomeça com um MAX fresco."""
     import secrets
-    with _conn() as c:
-        existente = c.execute(
-            "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
-            (serie_id, ref_tipo, ref_id)).fetchone()
-        if existente:
-            return dict(existente)["id"]
-        iid = secrets.token_hex(8)
-        r = c.execute("SELECT COALESCE(MAX(ordem), -1) AS m FROM serie_itens WHERE serie_id=?",
-                      (serie_id,)).fetchone()
-        ordem = int(dict(r)["m"]) + 1
-        cur = c.execute(
-            "INSERT INTO serie_itens (id,serie_id,ordem,ref_tipo,ref_id,titulo,tema,data,enviado) "
-            "VALUES (?,?,?,?,?,?,?, '', 0) "
-            "ON CONFLICT (serie_id, ref_tipo, ref_id) DO NOTHING",
-            (iid, serie_id, ordem, ref_tipo, ref_id, titulo or "", tema or ""))
-        if cur.rowcount > 0:
-            return iid
-        # perdeu a corrida pro ON CONFLICT: outra thread inseriu entre o
-        # pré-check e este INSERT — devolve o id de quem venceu.
-        vencedor = c.execute(
-            "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
-            (serie_id, ref_tipo, ref_id)).fetchone()
-    return dict(vencedor)["id"]
+    erro = None
+    for _ in range(_TENTATIVAS_ORDEM):
+        try:
+            with _conn() as c:
+                existente = c.execute(
+                    "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+                    (serie_id, ref_tipo, ref_id)).fetchone()
+                if existente:
+                    return dict(existente)["id"]
+                iid = secrets.token_hex(8)
+                r = c.execute("SELECT COALESCE(MAX(ordem), -1) AS m FROM serie_itens WHERE serie_id=?",
+                              (serie_id,)).fetchone()
+                ordem = int(dict(r)["m"]) + 1
+                # ON CONFLICT com alvo explícito só cobre o alvo: uma colisão em
+                # (serie_id, ordem) levanta IntegrityError e cai no retry abaixo.
+                cur = c.execute(
+                    "INSERT INTO serie_itens (id,serie_id,ordem,ref_tipo,ref_id,titulo,tema,data,enviado) "
+                    "VALUES (?,?,?,?,?,?,?, '', 0) "
+                    "ON CONFLICT (serie_id, ref_tipo, ref_id) DO NOTHING",
+                    (iid, serie_id, ordem, ref_tipo, ref_id, titulo or "", tema or ""))
+                if cur.rowcount > 0:
+                    return iid
+                # perdeu a corrida pro ON CONFLICT: outra thread inseriu entre o
+                # pré-check e este INSERT — devolve o id de quem venceu.
+                vencedor = c.execute(
+                    "SELECT id FROM serie_itens WHERE serie_id=? AND ref_tipo=? AND ref_id=?",
+                    (serie_id, ref_tipo, ref_id)).fetchone()
+                return dict(vencedor)["id"]
+        except _integrity_error() as e:
+            erro = e            # (serie_id, ordem) ocupado por outra thread: recomeça
+    raise erro
 
 
 def serie_item_existe(serie_id, ref_tipo, ref_id):
@@ -1136,7 +1238,14 @@ def remover_serie_item(item_id):
 
 
 def reordenar_serie_item(item_id, direcao):
-    """Troca a 'ordem' do item com o vizinho ('cima' = ordem menor, 'baixo' = maior)."""
+    """Troca a 'ordem' do item com o vizinho ('cima' = ordem menor, 'baixo' = maior).
+
+    O swap passa por uma SENTINELA porque ux_serie_itens_ordem é imediato (checado
+    a cada statement, não no commit): um swap ingênuo em dois UPDATEs viola a
+    constraint já no primeiro, quando os dois itens ficariam com a mesma 'ordem'.
+    A sentinela é MIN(ordem)-1 da própria série, calculada na MESMA transação —
+    sempre livre, e não depende de nenhum valor mágico que uma reordenação
+    interrompida pudesse ter deixado pra trás."""
     with _conn() as c:
         it = c.execute("SELECT * FROM serie_itens WHERE id=?", (item_id,)).fetchone()
         if not it:
@@ -1151,8 +1260,39 @@ def reordenar_serie_item(item_id, direcao):
         if not viz:
             return
         viz = dict(viz)
-        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (viz["ordem"], it["id"]))
+        r = c.execute("SELECT COALESCE(MIN(ordem), 0) - 1 AS s FROM serie_itens WHERE serie_id=?",
+                      (it["serie_id"],)).fetchone()
+        sentinela = int(dict(r)["s"])
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (sentinela, it["id"]))
         c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (it["ordem"], viz["id"]))
+        c.execute("UPDATE serie_itens SET ordem=? WHERE id=?", (viz["ordem"], it["id"]))
+
+
+def reivindicar_serie_ativa(serie_id, data_inicio, ativada_em):
+    """Claim ATÔMICO do único slot de "série ativa". True se ESTA chamada virou a
+    série (que precisa estar em 'rascunho') a ativa; False se perdeu.
+
+    Duas travas, as duas no banco: (1) o UPDATE é condicional em
+    status='rascunho', então N cliques na MESMA série só passam uma vez
+    (rowcount==0 nos perdedores); (2) o índice único PARCIAL ux_series_uma_ativa
+    recusa a segunda série DIFERENTE. Sem isso, o "uma série ativa" de
+    series.ativar_serie era check-then-act com o loop inteiro de escrita na
+    janela — e serve.py é ThreadingHTTPServer, uma thread por clique: 8 ativações
+    concorrentes deixavam 8 séries ativas, e 8 cliques na mesma série
+    consumiam/devolviam a mesma reserva várias vezes.
+
+    O claim vem ANTES de escrever os dias justamente pra que o perdedor pare sem
+    ter tocado na agenda (desfazer um agenda_upsert que já sobrescreveu o slot
+    anterior não é reversível — o ocupante antigo já voltou pro estoque)."""
+    try:
+        with _conn() as c:
+            cur = c.execute(
+                "UPDATE series SET status='ativa', data_inicio=?, ativada_em=? "
+                "WHERE id=? AND status='rascunho'", (data_inicio, ativada_em, serie_id))
+            venceu = cur.rowcount > 0
+    except _integrity_error():
+        return False        # outra série já ocupa o slot de 'ativa'
+    return venceu
 
 
 def atualizar_serie(serie_id, **campos):

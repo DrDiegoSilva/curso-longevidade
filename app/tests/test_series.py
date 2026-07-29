@@ -628,3 +628,344 @@ class TestRotaSeries(unittest.TestCase):
         import urllib.parse as _up
         self.assertIn("já está na série", _up.unquote(location).lower())
         self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)
+
+
+class TestSeriesHardening(unittest.TestCase):
+    """Task 5 — endurecimento do caminho de ATIVAÇÃO (2 Critical + 5 Important
+    da revisão final em 3 fatias, todos reproduzidos com código rodando).
+    Cada teste nomeia o achado que trava."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+        self.dias = ["segunda", "terca", "quarta", "quinta", "sexta"]
+        base = date.today() + timedelta(days=14)
+        self.seg = base - timedelta(days=base.weekday())     # uma segunda no futuro
+        self.seg_iso = self.seg.isoformat()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    # ── helpers ──
+    def _reserva(self, titulo="R"):
+        return self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": titulo,
+                                       "resumo": "r", "tags": ["glp1"]})
+
+    def _serie_com(self, n, nome="S"):
+        sid = self.db.criar_serie(nome)
+        ids = []
+        for k in range(n):
+            rid = self._reserva(f"R{k}")
+            self.db.adicionar_serie_item(sid, "reserva", rid, titulo=f"R{k}", tema="Obesidade")
+            ids.append(rid)
+        return sid, ids
+
+    def _segunda_mes_1_digito(self):
+        """Primeira segunda-feira futura cujo MÊS tem 1 dígito — condição pro bug
+        de comparação-como-texto do piso ('2026-6-29' > '2026-07-30' porque
+        '6' > '0'). Calculada a partir de hoje pra não vencer com o calendário."""
+        d = date.today() + timedelta(days=14)
+        d = d - timedelta(days=d.weekday())
+        while d.month >= 10:
+            d = d + timedelta(days=7)
+        return d
+
+    # ── CRITICAL 1: falha na ativação não pode trancar a feature ──
+    def test_c1_falha_total_deixa_serie_em_rascunho_e_nao_tranca(self):
+        """CRITICAL 1: com TODOS os dias falhando, o `atualizar_serie(status='ativa')`
+        rodava incondicional. A série virava 'ativa' com zero itens datados, e
+        `reconciliar` (que filtra `if i.get("data")`) nunca fechava — 'Já existe uma
+        série ativa' pra sempre, sem ação de cancelar/concluir na rota."""
+        from unittest import mock
+        import series
+        sid, rids = self._serie_com(3)
+        with mock.patch.object(self.db, "agenda_upsert",
+                               side_effect=RuntimeError("UNIQUE constraint failed: agenda.data")):
+            ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok)
+        det = self.db.obter_serie(sid)
+        self.assertEqual(det["serie"]["status"], "rascunho")      # NÃO ficou ativa
+        self.assertEqual([i["data"] for i in det["itens"]], ["", "", ""])
+        self.assertIn("agenda.data", msg)                          # erro real chega ao admin
+        # e a feature continua utilizável: a mesma série ativa de novo depois
+        ok2, msg2 = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok2, msg2)
+
+    def test_c1_falha_parcial_fecha_como_incompleta_e_nao_ignora_item_sem_data(self):
+        """CRITICAL 1 (irmão): com ALGUNS itens datados, `reconciliar` fechava a
+        série como 'concluida' ignorando calado o item órfão (nunca agendado)."""
+        from unittest import mock
+        import series
+        sid, _ = self._serie_com(3)
+        real = self.db.agenda_upsert
+        n = {"i": 0}
+
+        def falha_no_terceiro(*a, **kw):
+            n["i"] += 1
+            if n["i"] == 3:
+                raise RuntimeError("boom no 3º dia")
+            return real(*a, **kw)
+
+        with mock.patch.object(self.db, "agenda_upsert", side_effect=falha_no_terceiro):
+            ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok)                     # falha parcial AVISA
+        self.assertIn("boom no 3º dia", msg)
+        det = self.db.obter_serie(sid)
+        self.assertEqual(det["serie"]["status"], "ativa")          # 2 dias foram gravados
+        self.assertEqual([i["data"] for i in det["itens"]].count(""), 1)
+        fechados = series.reconciliar(db_mod=self.db, hoje="2099-01-01")
+        self.assertIn(sid, fechados)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "incompleta")
+
+    # ── CRITICAL 2: "uma série ativa" era check-then-act ──
+    def test_c2_ativacao_concorrente_de_series_diferentes_deixa_so_uma_ativa(self):
+        """CRITICAL 2: o check (series.py:149) e a escrita (:182) tinham o loop de
+        gravação inteiro no meio. ThreadingHTTPServer = 1 thread por clique:
+        8 ativações concorrentes deixavam 8 séries 'ativa'."""
+        import threading
+        import series
+        sids = [self._serie_com(1, nome=f"S{k}")[0] for k in range(8)]
+        barreira = threading.Barrier(len(sids))
+        res, erros = [], []
+
+        def worker(sid):
+            barreira.wait()
+            try:
+                res.append(series.ativar_serie(sid, self.seg_iso, db_mod=self.db,
+                                               dias_envio=self.dias))
+            except Exception as e:          # noqa: BLE001 — o contrato é "não crasha"
+                erros.append(e)
+
+        ths = [threading.Thread(target=worker, args=(s,)) for s in sids]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
+        self.assertEqual(erros, [])
+        ativas = [s for s in self.db.listar_series() if s["status"] == "ativa"]
+        self.assertEqual(len(ativas), 1)
+        self.assertEqual(sum(1 for ok, _ in res if ok), 1)
+
+    def test_c2_duplo_clique_na_mesma_serie_ativa_uma_vez_so(self):
+        """CRITICAL 2 (caso realista): 8 cliques na MESMA série devolviam ok=True
+        em 7-8 deles e a reserva era consumida/devolvida várias vezes
+        (_liberar_dia do 2º clique devolve ao pool o que o 1º acabou de prender)."""
+        import threading
+        import series
+        sid, rids = self._serie_com(1)
+        barreira = threading.Barrier(8)
+        res, erros = [], []
+
+        def worker():
+            barreira.wait()
+            try:
+                res.append(series.ativar_serie(sid, self.seg_iso, db_mod=self.db,
+                                               dias_envio=self.dias))
+            except Exception as e:          # noqa: BLE001
+                erros.append(e)
+
+        ths = [threading.Thread(target=worker) for _ in range(8)]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
+        self.assertEqual(erros, [])
+        self.assertEqual(sum(1 for ok, _ in res if ok), 1)
+        self.assertEqual(self.db.obter_reserva(rids[0])["status"], "agendado")
+        self.assertEqual(self.db.agenda_slot(self.seg_iso)["ref_id"], rids[0])
+
+    def test_c2_init_retroaplica_indice_de_serie_ativa_com_duplicatas(self):
+        """CRITICAL 2, retrofit: `db.init()` roda em bancos que JÁ têm linhas em
+        `series` — se duas já estiverem 'ativa' (estado deixado pela corrida
+        antiga), o CREATE UNIQUE INDEX falha e derrubaria o init inteiro."""
+        import shutil
+        import sqlite3
+        tmp2 = tempfile.mkdtemp()
+        try:
+            caminho = os.path.join(tmp2, "duas_ativas.db")
+            with sqlite3.connect(caminho) as c:
+                c.execute("""CREATE TABLE series (id TEXT PRIMARY KEY, nome TEXT, status TEXT,
+                             data_inicio TEXT, criado_em TEXT, ativada_em TEXT)""")
+                c.execute("INSERT INTO series VALUES ('a','A','ativa','','2026-01-01','2026-01-01')")
+                c.execute("INSERT INTO series VALUES ('b','B','ativa','','2026-01-02','2026-01-02')")
+            os.environ["DSCURSO_ARTIGOS_DB"] = caminho
+            os.environ.pop("DATABASE_URL", None)
+            import importlib
+            import db as _db
+            importlib.reload(_db)
+            _db.init()                       # não pode levantar
+            ativas = [s for s in _db.listar_series() if s["status"] == "ativa"]
+            self.assertEqual(len(ativas), 1)
+            self.assertEqual(ativas[0]["id"], "a")       # mantém a ativada primeiro
+            self.assertEqual(_db.obter_serie("b")["serie"]["status"], "incompleta")
+            # e a trava passa a valer de verdade
+            self.assertFalse(_db.reivindicar_serie_ativa("b", "2026-08-10", "2026-08-01"))
+        finally:
+            shutil.rmtree(tmp2, ignore_errors=True)
+
+    # ── IMPORTANT 3: data sem zero-padding burlava o piso ──
+    def test_i3_data_sem_zero_padding_respeita_o_piso(self):
+        """IMPORTANT 3: strptime aceita '2026-6-29', mas o piso era comparado como
+        TEXTO — '2026-6-29' < '2026-07-30' é False ('6' > '0'). Resultado provado:
+        ok=True, slot escrito num dia anterior ao piso e reserva consumida."""
+        import series
+        sid, rids = self._serie_com(1)
+        d = self._segunda_mes_1_digito()
+        crua = f"{d.year}-{d.month}-{d.day}"          # sem zero-padding
+        piso = (d + timedelta(days=7)).isoformat()    # piso uma semana DEPOIS
+        ok, msg = series.ativar_serie(sid, crua, dia_min=piso, db_mod=self.db,
+                                      dias_envio=self.dias)
+        self.assertFalse(ok, msg)
+        self.assertIsNone(self.db.agenda_slot(d.isoformat()))          # nada na agenda
+        self.assertEqual(self.db.obter_reserva(rids[0])["status"], "pronto")  # não gastou
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_i3_data_sem_zero_padding_e_gravada_normalizada(self):
+        """Minor: `data_inicio` era persistida crua, então '2026-6-29' ficava
+        gravado assim e ordena errado em qualquer comparação textual da coluna."""
+        import series
+        sid, _ = self._serie_com(1)
+        d = self._segunda_mes_1_digito()
+        crua = f"{d.year}-{d.month}-{d.day}"
+        ok, msg = series.ativar_serie(sid, crua, db_mod=self.db, dias_envio=self.dias)
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["data_inicio"], d.isoformat())
+
+    # ── IMPORTANT 4: sem regra própria de "não no passado" ──
+    def test_i4_recusa_data_no_passado_mesmo_sem_dia_min(self):
+        """IMPORTANT 4: o piso só existia porque o ÚNICO chamador de produção passa
+        `dia_min`. Sem ele, uma segunda no passado virava slot histórico na agenda."""
+        import series
+        sid, rids = self._serie_com(1)
+        passado = date.today() - timedelta(days=7)
+        passado = passado - timedelta(days=passado.weekday())    # segunda no passado
+        ok, msg = series.ativar_serie(sid, passado.isoformat(), db_mod=self.db,
+                                      dias_envio=self.dias)
+        self.assertFalse(ok, msg)
+        self.assertIsNone(self.db.agenda_slot(passado.isoformat()))
+        self.assertEqual(self.db.obter_reserva(rids[0])["status"], "pronto")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    # ── IMPORTANT 5: sem guarda de "já agendado" / "já enviado" ──
+    def test_i5_recusa_estudo_que_ja_ocupa_um_dia_da_agenda(self):
+        """IMPORTANT 5: `db.buscar_por_tag` filtra só por tag — nunca por status.
+        Uma reserva já presa a um slot entrava na série e era gravada num SEGUNDO
+        dia: mesmo ref_id em dois slots = mesmo estudo preparado e enviado 2x.
+        `daily.materializar` já guarda isso (daily.py:166)."""
+        import series
+        sid = self.db.criar_serie("S")
+        rid = self._reserva("Já agendada")
+        outro = (self.seg + timedelta(days=30)).isoformat()
+        self.db.agenda_upsert(outro, tipo="reserva", ref_id=rid, tema="Obesidade",
+                              titulo="Já agendada")
+        self.db.marcar_reserva_agendado(rid)
+        self.db.adicionar_serie_item(sid, "reserva", rid, titulo="Já agendada", tema="Obesidade")
+        ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok, msg)
+        self.assertIn("Já agendada", msg)                   # o admin sabe QUAL estudo
+        self.assertIsNone(self.db.agenda_slot(self.seg_iso))
+        self.assertEqual(self.db.agenda_slot(outro)["ref_id"], rid)   # slot original intacto
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_i5_recusa_estudo_ja_enviado(self):
+        """IMPORTANT 5 (irmão): uma reserva com status='enviado' era aceita e o
+        `marcar_reserva_agendado` a devolvia pra 'agendado' — estudo já mandado
+        seria mandado de novo. `daily.materializar` só lê status='pronto'
+        (daily.py:165)."""
+        import series
+        sid = self.db.criar_serie("S")
+        rid = self._reserva("Já enviada")
+        self.db.marcar_reserva_enviado(rid)
+        self.db.adicionar_serie_item(sid, "reserva", rid, titulo="Já enviada", tema="Obesidade")
+        ok, msg = series.ativar_serie(sid, self.seg_iso, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok, msg)
+        self.assertEqual(self.db.obter_reserva(rid)["status"], "enviado")   # não voltou
+        self.assertIsNone(self.db.agenda_slot(self.seg_iso))
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    # ── IMPORTANT 6: 'ordem' com TOCTOU reembaralhava a sequência curada ──
+    def test_i6_ordens_concorrentes_nao_se_repetem(self):
+        """IMPORTANT 6: `SELECT MAX(ordem)+1` + INSERT simples, sem
+        UNIQUE(serie_id, ordem) atrás. 10 threads com 10 itens DISTINTOS produziam
+        ordem = [0,0,0,0,0,1,1,2,2,2] — a sequência curada, que é o ponto da série,
+        reembaralhava sem erro nenhum."""
+        import threading
+        sid = self.db.criar_serie("S")
+        barreira = threading.Barrier(10)
+        erros = []
+
+        def worker(k):
+            barreira.wait()
+            try:
+                self.db.adicionar_serie_item(sid, "reserva", f"r{k}", titulo=f"R{k}")
+            except Exception as e:          # noqa: BLE001
+                erros.append(e)
+
+        ths = [threading.Thread(target=worker, args=(k,)) for k in range(10)]
+        for t in ths:
+            t.start()
+        for t in ths:
+            t.join()
+        self.assertEqual(erros, [])
+        itens = self.db.obter_serie(sid)["itens"]
+        self.assertEqual(len(itens), 10)
+        self.assertEqual(sorted(i["ordem"] for i in itens), list(range(10)))
+
+    def test_i6_reordenar_continua_funcionando_com_a_constraint(self):
+        """IMPORTANT 6, armadilha: `reordenar_serie_item` troca duas 'ordem'. Um
+        UNIQUE(serie_id, ordem) ingênuo faz o estado INTERMEDIÁRIO do swap violar
+        a constraint — a correção não pode quebrar a reordenação."""
+        sid = self.db.criar_serie("S")
+        a = self.db.adicionar_serie_item(sid, "reserva", "r1", titulo="A")
+        b = self.db.adicionar_serie_item(sid, "reserva", "r2", titulo="B")
+        c = self.db.adicionar_serie_item(sid, "reserva", "r3", titulo="C")
+        self.db.reordenar_serie_item(c, "cima")
+        self.assertEqual([i["id"] for i in self.db.obter_serie(sid)["itens"]], [a, c, b])
+        self.db.reordenar_serie_item(a, "baixo")
+        self.assertEqual([i["id"] for i in self.db.obter_serie(sid)["itens"]], [c, a, b])
+        self.assertEqual([i["ordem"] for i in self.db.obter_serie(sid)["itens"]], [0, 1, 2])
+
+    def test_i6_init_repara_ordens_duplicadas_pre_existentes(self):
+        """IMPORTANT 6, retrofit: um banco escrito pela versão com TOCTOU já tem
+        ordens repetidas — o CREATE UNIQUE INDEX falharia e mataria o init."""
+        import shutil
+        import sqlite3
+        tmp2 = tempfile.mkdtemp()
+        try:
+            caminho = os.path.join(tmp2, "ordens_dup.db")
+            with sqlite3.connect(caminho) as c:
+                c.execute("""CREATE TABLE serie_itens (
+                             id TEXT PRIMARY KEY, serie_id TEXT, ordem INTEGER DEFAULT 0,
+                             ref_tipo TEXT, ref_id TEXT, titulo TEXT DEFAULT '',
+                             tema TEXT DEFAULT '', data TEXT DEFAULT '', enviado INTEGER DEFAULT 0)""")
+                for k, ordem in enumerate([0, 0, 0, 1, 1]):
+                    c.execute("INSERT INTO serie_itens (id,serie_id,ordem,ref_tipo,ref_id,titulo) "
+                              "VALUES (?,?,?,?,?,?)",
+                              (f"i{k}", "s1", ordem, "reserva", f"r{k}", f"R{k}"))
+            os.environ["DSCURSO_ARTIGOS_DB"] = caminho
+            os.environ.pop("DATABASE_URL", None)
+            import importlib
+            import db as _db
+            importlib.reload(_db)
+            _db.init()                       # não pode levantar
+            with sqlite3.connect(caminho) as c:
+                ordens = [r[0] for r in c.execute(
+                    "SELECT ordem FROM serie_itens WHERE serie_id='s1' ORDER BY ordem")]
+            self.assertEqual(ordens, [0, 1, 2, 3, 4])     # renumerado, sem repetição
+        finally:
+            shutil.rmtree(tmp2, ignore_errors=True)
+
+    # ── minor: data_inicio None não pode crashar ──
+    def test_minor_data_inicio_none_nao_levanta(self):
+        """Minor: o guard capturava só ValueError, então `data_inicio=None` batia
+        num TypeError do strptime. Não alcançável pela rota atual (serve.py:494
+        sempre entrega string), mas o contrato declarado é 'não crasha'."""
+        import series
+        sid, _ = self._serie_com(1)
+        ok, msg = series.ativar_serie(sid, None, db_mod=self.db, dias_envio=self.dias)
+        self.assertFalse(ok)
+        self.assertTrue(msg)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
