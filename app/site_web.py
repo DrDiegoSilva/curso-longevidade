@@ -1550,7 +1550,8 @@ def pagina_precos(planos, token, msg=""):
              f'<h2>💰 Preços dos planos</h2>{aviso}'
              f'<p class=hint>O valor editado vale nas vendas novas. Assinantes atuais mantêm o valor '
              f'que contrataram.</p>{linhas}</div>')
-    return _pagina("Preços · Admin", corpo, logado=True, atual="precos")
+    return _pagina("Preços · Admin", corpo, logado=True, atual="precos",
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_agenda(semanas, estoque, token, msg=""):

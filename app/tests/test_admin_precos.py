@@ -1,8 +1,10 @@
 """Admin de preços editáveis (resolver + página + rotas). Standalone."""
+import io
 import os
 import sys
 import tempfile
 import unittest
+import urllib.parse as _urlp
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -128,3 +130,102 @@ class TestPaginaPrecos(unittest.TestCase):
         html = site_web.pagina_precos(maligno, "tok")
         self.assertNotIn("<script>x</script>", html)
         self.assertIn("&lt;script&gt;", html)
+
+
+class _RouteStub:
+    """Stub mínimo pro `self` de do_GET/do_POST: implementa só o que essas rotas
+    usam (self.path, self.headers, self.rfile, self._html, self._redirect) — não
+    abre socket, não é uma requisição HTTP real. Estende o mesmo padrão do
+    `_RotaStub` de test_reaceite.py / `_HandlerStub` de test_cancelamento_estorno.py
+    pros métodos não-extraídos do_GET/do_POST."""
+
+    def __init__(self, path, body=b""):
+        self.path = path
+        self.rfile = io.BytesIO(body)
+        self.headers = {"Content-Length": str(len(body)),
+                         "Content-Type": "application/x-www-form-urlencoded"}
+
+    def _html(self, s, code=200):
+        return {"code": code, "body": s}
+
+    def _redirect(self, location, token=None, clear=False):
+        return {"redirect": location}
+
+
+class TestRotaAdminPrecos(unittest.TestCase):
+    """Rota /admin/precos (GET + POST) chamada direto no do_GET/do_POST do Handler
+    via stub — sem harness de servidor real (não existe um no projeto ainda pra
+    esses métodos não-extraídos; ver `_RouteStub` acima)."""
+
+    def setUp(self):
+        self.snap = _snapshot_env()
+        self.snap_token = os.environ.get("DSCURSO_ADMIN_TOKEN")
+        self.tmp = tempfile.mkdtemp()
+        self.db = _reload_db(self.tmp)
+        os.environ["DSCURSO_ADMIN_TOKEN"] = "tok123"
+        import importlib, config, serve
+        importlib.reload(config)
+        importlib.reload(serve)
+        self.cfg, self.serve = config, serve
+
+    def tearDown(self):
+        import shutil, importlib, config
+        if self.snap_token is None:
+            os.environ.pop("DSCURSO_ADMIN_TOKEN", None)
+        else:
+            os.environ["DSCURSO_ADMIN_TOKEN"] = self.snap_token
+        importlib.reload(config)
+        _restore_db(self.snap)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _get(self, qs=""):
+        stub = _RouteStub("/admin/precos" + (f"?{qs}" if qs else ""))
+        return self.serve.Handler.do_GET(stub)
+
+    def _post(self, campos):
+        body = _urlp.urlencode(campos).encode("utf-8")
+        stub = _RouteStub("/admin/precos", body)
+        return self.serve.Handler.do_POST(stub)
+
+    def test_get_sem_token_403(self):
+        r = self._get()
+        self.assertEqual(r["code"], 403)
+
+    def test_get_com_token_mostra_planos(self):
+        r = self._get("token=tok123")
+        self.assertEqual(r["code"], 200)
+        self.assertIn("Mensal", r["body"])
+        self.assertIn("Anual", r["body"])
+
+    def test_get_token_errado_403(self):
+        r = self._get("token=errado")
+        self.assertEqual(r["code"], 403)
+
+    def test_post_sem_token_403_nao_grava(self):
+        r = self._post({"acao": "salvar_preco", "slug": "anual", "preco": "1600"})
+        self.assertEqual(r["code"], 403)
+        self.assertEqual(self.db.get_config("preco_base_anual", ""), "")
+
+    def test_post_salvar_preco_grava_e_resolver_enxerga(self):
+        r = self._post({"token": "tok123", "acao": "salvar_preco", "slug": "anual", "preco": "1600"})
+        self.assertIn("redirect", r)
+        self.assertEqual(self.db.get_config("preco_base_anual", ""), "1600.0")
+        self.assertEqual(self.cfg.plano_por_slug("anual")["base"], 1600.0)
+
+    def test_post_preco_invalido_nao_grava(self):
+        self._post({"token": "tok123", "acao": "salvar_preco", "slug": "anual", "preco": "abc"})
+        self.assertEqual(self.db.get_config("preco_base_anual", ""), "")
+
+    def test_post_slug_fora_da_lista_nao_grava(self):
+        self._post({"token": "tok123", "acao": "salvar_preco", "slug": "trimestral", "preco": "300"})
+        self.assertEqual(self.db.get_config("preco_base_trimestral", ""), "")
+
+    def test_post_resetar_preco_limpa(self):
+        self.db.set_config("preco_base_anual", "1600")
+        r = self._post({"token": "tok123", "acao": "resetar_preco", "slug": "anual"})
+        self.assertIn("redirect", r)
+        self.assertEqual(self.db.get_config("preco_base_anual", ""), "")
+
+
+if __name__ == "__main__":
+    unittest.main()

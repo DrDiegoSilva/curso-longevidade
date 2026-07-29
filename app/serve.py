@@ -252,6 +252,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.init()
             return self._html(site_web.pagina_admin_envio(
                 daily._dias_envio(), config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
+        if path == "/admin/precos":
+            import config, site_web
+            q = up.parse_qs(up.urlparse(self.path).query)
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            visiveis = {p["slug"]: p for p in config.planos_venda()}
+            planos = [visiveis[s] for s in ("mensal", "anual") if s in visiveis]
+            return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
+                                                      msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -580,6 +590,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.set_config("dias_envio", ",".join(form.get("dia", [])))
             return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg=Dias+salvos"
                                   if token_ok else "/admin/envio?msg=Dias+salvos")
+        if path == "/admin/precos":
+            import config, db
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            slug, acao = g("slug"), g("acao")
+            msg = ""
+            if slug not in ("mensal", "anual"):
+                msg = "Plano inválido."
+            elif acao == "resetar_preco":
+                db.set_config(f"preco_base_{slug}", "")
+                pl = config.plano_por_slug(slug) or {}
+                msg = f"{slug.capitalize()} voltou ao padrão ({pl.get('preco','')})."
+            elif acao == "salvar_preco":
+                valor = config.parse_preco(g("preco"))
+                if valor is None:
+                    msg = "Preço inválido — use um número maior que zero (ex.: 1600)."
+                else:
+                    db.set_config(f"preco_base_{slug}", str(valor))
+                    msg = f"✅ {slug.capitalize()}: {config._preco_str(valor)}."
+            return self._redirect(f"/admin/precos?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/admin":
             import config, subscribers, auth_web, db, phone
             sess = self._sessao()
