@@ -326,6 +326,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 estado, amanha, cands, db.listar_reserva(), classicos, config.ADMIN_TOKEN,
                 aba=q.get("aba", ["triagem"])[0], tema=q.get("tema", [""])[0],
                 msg=q.get("msg", [""])[0]), 200)
+        if path == "/series":
+            import config, series, site_web
+            q = up.parse_qs(up.urlparse(self.path).query)
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            sid = q.get("serie", [""])[0] or None
+            termo = q.get("termo", [""])[0]
+            ctx = series.contexto_pagina(serie_aberta_id=sid, termo=termo)
+            dia_min = series.dia_minimo_inicio()
+            return self._html(site_web.pagina_series(
+                ctx, config.ADMIN_TOKEN or "", serie_aberta_id=sid or "",
+                dia_min=dia_min, msg=q.get("msg", [""])[0]))
         if self._site():
             return self._site_get(path)
         # fallback: ebook (host curso./demais) — comportamento original
@@ -474,6 +487,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ctype = self.headers.get("Content-Type", "")
         if path == "/curadoria" and ctype.startswith("multipart/form-data"):
             return self._curadoria_upload(raw, ctype)   # upload de PDF do estudo
+        if path == "/series" and ctype.startswith("multipart/form-data"):
+            return self._series_upload(raw, ctype)       # upload do meu estudo p/ a série
         form = up.parse_qs(raw.decode("utf-8"))
         g = lambda k: form.get(k, [""])[0]
         if path.startswith("/revisar/"):
@@ -734,6 +749,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
             destino = (f"/curadoria?token={config.ADMIN_TOKEN}&aba={up.quote(aba)}"
                        f"&tema={up.quote(tema)}&msg={up.quote(msg)}{ancora}")
             return self._redirect(destino)
+        if path == "/series":
+            import config, db, series
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            acao, sid, msg = g("acao"), g("serie"), ""
+            if acao == "criar":
+                sid = db.criar_serie(g("nome"))
+            elif acao == "buscar":
+                import urllib.parse as _up
+                return self._redirect(
+                    f"/series?serie={_up.quote(sid)}&token={config.ADMIN_TOKEN}"
+                    f"&termo={_up.quote(g('termo'))}")
+            elif acao == "add_item":
+                db.adicionar_serie_item(sid, g("tipo"), g("id"), titulo=g("titulo"), tema=g("tema"))
+                msg = "Adicionado."
+            elif acao == "remover_item":
+                db.remover_serie_item(g("item"))
+                msg = "Removido."
+            elif acao == "reordenar":
+                db.reordenar_serie_item(g("item"), g("direcao"))
+            elif acao == "ativar":
+                ok, msg = series.ativar_serie(sid, g("data_inicio"), dia_min=series.dia_minimo_inicio())
+            import urllib.parse as _up
+            alvo = f"/series?serie={_up.quote(sid)}&token={config.ADMIN_TOKEN}"
+            if msg:
+                alvo += f"&msg={_up.quote(msg)}"
+            return self._redirect(alvo)
         if path == "/entrar":
             if not self._rate_ok("login", 15, 300):   # 15 tentativas / 5 min por IP
                 return
@@ -944,6 +988,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msg = "Falha ao processar o estudo (ver logs)."
         import urllib.parse as _up
         return self._redirect(f"/curadoria?token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
+
+    def _series_upload(self, raw, ctype):
+        """POST /series (multipart) -> adicionar meu estudo à reserva e à série aberta."""
+        import config, db, curadoria
+        campos, arquivos = self._parse_multipart(ctype, raw)
+        if not config.ADMIN_TOKEN or campos.get("token") != config.ADMIN_TOKEN:
+            return self._html("<h3>Acesso negado</h3>", 403)
+        db.init()
+        sid = campos.get("serie", "")
+        msg = ""
+        try:
+            texto = ""
+            _, pdf = arquivos.get("pdf", (None, None))
+            if pdf:
+                texto = curadoria.extrair_texto_pdf(pdf)
+            if not (texto or "").strip():
+                texto = campos.get("texto", "")     # fallback: colado
+            if not (texto or "").strip():
+                msg = "Envie um PDF com texto selecionável, ou cole o resumo do estudo."
+            else:
+                rid, tit = curadoria.adicionar_meu_estudo(texto, titulo=campos.get("titulo", ""))
+                db.adicionar_serie_item(sid, "reserva", rid, titulo=tit, tema="Meus estudos")
+                msg = f"✅ Adicionado à série: {tit}"
+        except ValueError as e:
+            msg = str(e)                            # motivo claro p/ o Diego (ex.: PDF sem texto)
+        except Exception as e:
+            print(f"[series] add meu estudo erro: {e}", flush=True)
+            msg = "Falha ao processar o estudo (ver logs)."
+        import urllib.parse as _up
+        return self._redirect(f"/series?serie={_up.quote(sid)}&token={config.ADMIN_TOKEN}&msg={_up.quote(msg)}")
 
     # B4 (revisão final #2): `asaas.montar_checkout` monta TODO checkout de cartão como
     # `chargeTypes: ["RECURRENT"]`. Quem já tem `asaas_subscription_id` (cartão à vista) já é
