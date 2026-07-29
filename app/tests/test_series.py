@@ -443,6 +443,10 @@ class TestPaginaSeries(unittest.TestCase):
                "resultados": []}
         html = site_web.pagina_series(ctx, "TK", confirmar_cancelar="s1")
         self.assertIn("cancelar_confirmar", html)
+        # nomeia o efeito (devolve ao estoque, volta pra rascunho) sem prender o teste
+        # à frase exata — evita quebrar em todo ajuste de copy.
+        self.assertIn("estoque", html)
+        self.assertIn("rascunho", html)
 
 
 class _SeriesRotaStub:

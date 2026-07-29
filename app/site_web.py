@@ -1702,8 +1702,9 @@ def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg="", confirmar_
                 n_dias = sum(1 for i in aberta.get("itens", []) if i.get("data"))
                 cancelar_html = (
                     f'<div style="margin:12px 0;padding:10px;border:1px solid var(--ouro2)">'
-                    f'<p>Cancelar libera os dias <b>futuros</b> ({n_dias} dia(s) marcado(s)) e '
-                    f'devolve os estudos pro estoque. Dias já enviados ficam como estão. '
+                    f'<p>Cancelar libera os dias <b>futuros</b> que ainda não foram preparados '
+                    f'e devolve esses estudos pro estoque. Esta série tem {n_dias} dia(s) '
+                    f'marcado(s) — os já enviados ou com rascunho pronto ficam como estão. '
                     f'A série volta pra rascunho.</p>'
                     f'<form method="post" action="/series" style="display:inline">'
                     f'<input type="hidden" name="acao" value="cancelar_confirmar">'
