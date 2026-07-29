@@ -23,7 +23,7 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(p["billingTypes"], ["PIX"])
         self.assertEqual(p["chargeTypes"], ["DETACHED"])          # Pix não recorre
         self.assertNotIn("subscription", p)
-        self.assertEqual(p["items"][0]["value"], 99.0)
+        self.assertEqual(p["items"][0]["value"], 147.0)
         self.assertEqual(p["externalReference"], "tok1")
         self.assertNotIn("customerData", p)                       # Asaas coleta
 
@@ -32,7 +32,7 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(p["billingTypes"], ["CREDIT_CARD"])
         self.assertEqual(p["chargeTypes"], ["RECURRENT"])
         self.assertEqual(p["subscription"]["cycle"], "MONTHLY")
-        self.assertEqual(p["items"][0]["value"], self.p.valor_cartao(99.0, 1))
+        self.assertEqual(p["items"][0]["value"], self.p.valor_cartao(147.0, 1))
         self.assertNotIn("installmentCount", p)
 
     def test_anual_cartao_parcelado(self):
@@ -48,7 +48,7 @@ class TestPayload(unittest.TestCase):
         p = self.a.montar_checkout(self._plano("anual"), "PIX", 1, self.dados, "t", "https://x")
         self.assertEqual(p["billingTypes"], ["PIX"])
         self.assertEqual(p["chargeTypes"], ["DETACHED"])
-        self.assertEqual(p["items"][0]["value"], self._plano("anual")["base"])   # 997 (PIX = base)
+        self.assertEqual(p["items"][0]["value"], self._plano("anual")["base"])   # 1497 (PIX = base)
         self.assertNotIn("subscription", p)
 
     def test_item_nome_curto(self):

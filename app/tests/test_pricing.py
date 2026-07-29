@@ -26,10 +26,10 @@ class TestPricing(unittest.TestCase):
             self.assertEqual(o["total"], 997.0)                       # total = base (sem juros)
             self.assertEqual(o["por_parcela"], round(997.0 / o["parcelas"], 2))
 
-    def test_anual_1099(self):
+    def test_anual_1497(self):
         pl = self.cfg.plano_por_slug("anual")
-        self.assertEqual(pl["base"], 1099.0)
-        self.assertEqual(pl["preco"], "R$ 1.099")
+        self.assertEqual(pl["base"], 1497.0)
+        self.assertEqual(pl["preco"], "R$ 1.497")
         self.assertEqual(pl["pix_desconto_pct"], 5)
 
     def test_fmt_brl(self):
@@ -39,10 +39,10 @@ class TestPricing(unittest.TestCase):
 
     def test_preco_vigente_founder_e_pos(self):
         anual = self.cfg.plano_por_slug("anual")
-        self.assertEqual(self.p.preco_vigente(anual, 0), 1099.0)
+        self.assertEqual(self.p.preco_vigente(anual, 0), 1497.0)
         self.assertEqual(self.p.preco_vigente(anual, self.cfg.FOUNDER_LIMITE), 1497.0)
         mensal = self.cfg.plano_por_slug("mensal")
-        self.assertEqual(self.p.preco_vigente(mensal, 0), 99.0)
+        self.assertEqual(self.p.preco_vigente(mensal, 0), 147.0)
         self.assertEqual(self.p.preco_vigente(mensal, 999), 147.0)
         tri = self.cfg.plano_por_slug("trimestral")      # sem base_pos -> sempre base
         self.assertEqual(self.p.preco_vigente(tri, 999), float(tri["base"]))
@@ -55,7 +55,7 @@ class TestPricing(unittest.TestCase):
 
     def test_preco_str_vigente(self):
         anual = self.cfg.plano_por_slug("anual")
-        self.assertEqual(self.p.preco_str_vigente(anual, 0), "R$ 1.099")
+        self.assertEqual(self.p.preco_str_vigente(anual, 0), "R$ 1.497")
         self.assertEqual(self.p.preco_str_vigente(anual, self.cfg.FOUNDER_LIMITE), "R$ 1.497")
 
     def test_valor_com_desconto(self):

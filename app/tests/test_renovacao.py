@@ -48,6 +48,22 @@ class TestPrecoRenovacao(unittest.TestCase):
         self.assertEqual(self.r.preco_renovacao(self._sub(float("inf")), PLANO), 1099.0)
         self.assertEqual(self.r.preco_renovacao(self._sub(float("nan")), PLANO), 1099.0)
 
+    def test_sem_valor_contratado_usa_base_padrao_imune_ao_override_admin(self):
+        # legado (sem valor_contratado) + plano com override do admin (base=1600, tabela
+        # subiu) -> tem que cair no base_padrao (preço de lançamento, 1497), NUNCA no base
+        # (preço atual de tabela) — senão o admin subindo o preço vaza pra renovação de
+        # quem já era assinante.
+        plano_com_override = {"slug": "anual", "base": 1600.0, "base_padrao": 1497.0}
+        sub = {"plano": "anual"}  # sem valor_contratado = legado
+        self.assertEqual(self.r.preco_renovacao(sub, plano_com_override), 1497.0)
+
+    def test_plano_sem_base_padrao_cai_no_base_back_compat(self):
+        # chamador/teste antigo que monta um plano à mão sem base_padrao continua
+        # funcionando: o .get(..., base) segura a barra
+        plano_sem_base_padrao = {"slug": "anual", "base": 1099.0}
+        sub = {"plano": "anual"}
+        self.assertEqual(self.r.preco_renovacao(sub, plano_sem_base_padrao), 1099.0)
+
 
 class TestNovoVencimento(unittest.TestCase):
     def setUp(self):

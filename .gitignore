@@ -7,3 +7,6 @@ app/resumos_enviados.jsonl
 .claude/
 .playwright-mcp/
 .serena/
+
+# subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

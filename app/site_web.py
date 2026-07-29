@@ -431,7 +431,7 @@ def landing():
         f'<div class="pr">{_esc(pricing.preco_str_vigente(p, n_ativos)) if p.get("preco") else "sob consulta"}</div>'
         f'<div class="pe">{_esc(p["periodo"])}</div>'
         + (f'<div class="pn">{_esc(pricing.nota_str_vigente(p, n_ativos))}</div>' if pricing.nota_str_vigente(p, n_ativos) else "")
-        + '<span class="pick2">Assinar</span></a>' for p in config.PLANOS if not p.get("oculto"))
+        + '<span class="pick2">Assinar</span></a>' for p in config.planos_venda())
     corpo = f"""
     <div class="wrap">
       <section class="hero">
@@ -653,6 +653,7 @@ def _admin_nav(token="", atual=""):
             + lk("/admin", "👥 Assinantes", "assinantes")
             + lk("/curadoria", "🔬 Curadoria", "curadoria")
             + lk("/agenda", "📅 Agenda", "agenda")
+            + lk("/admin/precos", "💰 Preços", "precos")
             + lk("/admin/envio", "🗓️ Dias", "envio")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
             + lk("/admin/mensagens", "📝 Mensagens", "mensagens")
@@ -1516,6 +1517,43 @@ def _slot_card(s, token, opcoes_html):
             f'<div class="slot-acts">{b_fixar}{b_pular}{mover}</div></div>')
 
 
+def pagina_precos(planos, token, msg=""):
+    """Admin: editar o preço (base) de cada plano. planos = dicts vigentes."""
+    import pricing
+    tk = _esc(token)
+    aviso = f'<p class="hint">{_esc(msg)}</p>' if msg else ""
+    linhas = ""
+    for p in planos:
+        slug = _esc(p["slug"])
+        base = float(p.get("base") or 0)
+        extra = ""
+        if p.get("slug") == "anual":
+            ops = pricing.opcoes_parcelas(base)
+            extra = f' · 12x de {_esc(pricing.fmt_brl(ops[-1]["por_parcela"]))}'
+        preview = f'{_esc(p.get("preco") or "")} <span class=hint>{_esc(p.get("nota") or "")}{extra}</span>'
+        linhas += (
+            f'<div style="margin:14px 0;padding:12px;border:1px solid #333;border-radius:8px">'
+            f'<b>{_esc(p.get("nome") or slug)}</b> — vigente: {preview}<br>'
+            f'<form method="post" action="/admin/precos" style="display:inline-block;margin-top:6px">'
+            f'<input type="hidden" name="acao" value="salvar_preco">'
+            f'<input type="hidden" name="token" value="{tk}">'
+            f'<input type="hidden" name="slug" value="{slug}">'
+            f'R$ <input name="preco" inputmode="decimal" value="{_esc(f"{base:.0f}" if base == int(base) else base)}" '
+            f'style="padding:6px;width:120px"> '
+            f'<button type="submit">Salvar</button></form> '
+            f'<form method="post" action="/admin/precos" style="display:inline">'
+            f'<input type="hidden" name="acao" value="resetar_preco">'
+            f'<input type="hidden" name="token" value="{tk}">'
+            f'<input type="hidden" name="slug" value="{slug}">'
+            f'<button type="submit">Voltar ao padrão</button></form></div>')
+    corpo = (f'<div class="wrap">{_admin_nav(token, "precos")}'
+             f'<h2>💰 Preços dos planos</h2>{aviso}'
+             f'<p class=hint>O valor editado vale nas vendas novas. Assinantes atuais mantêm o valor '
+             f'que contrataram.</p>{linhas}</div>')
+    return _pagina("Preços · Admin", corpo, logado=True, atual="precos",
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
 def pagina_agenda(semanas, estoque, token, msg=""):
     opcoes = "".join(
         f'<option value="{_esc(s["data"])}">{_esc(s["data"][8:10])}/{_esc(s["data"][5:7])}</option>'
@@ -1833,7 +1871,7 @@ def _pick_planos():
     cards = "".join(
         f'<a href="/assinar?plano={_esc(p["slug"])}"><div class="nm">{_esc(p["nome"])}</div>'
         f'<div class="pr">{_esc(p["preco"])}</div><div class="pe">{_esc(p["periodo"])}</div></a>'
-        for p in config.PLANOS if not p.get("oculto"))
+        for p in config.planos_venda())
     return (f'<div class="wrap"><section class="sec"><h2 class="disp">Escolha seu plano</h2>'
             f'<p class="sub">O mensal renova sozinho (cancela quando quiser). O anual '
             f'sai mais barato por mês.</p><div class="pick">{cards}</div>'

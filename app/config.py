@@ -87,21 +87,84 @@ PLANOS = [
     # mensal é sempre 1x (parcelas travado), logo é RECURRENT puro e renova sozinho; já o Pix
     # mensal nunca renovaria (cobrança mensal manual/WhatsApp todo mês). Tirar o Pix tira o
     # mensal inteiro da régua. Diego confirmou: não existe assinante mensal pago via Pix hoje.
-    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 99.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 99",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147", "aceita_pix": False},
+    {"slug": "mensal",      "nome": "Mensal",     "periodo": "por mês",        "base": 147.0,  "cycle": "MONTHLY",      "recorrente_pix": True,  "preco": "R$ 147",  "nota": "", "base_pos": 147.0, "preco_pos": "R$ 147", "aceita_pix": False},
     # Trimestral/Semestral OCULTOS da venda (decisão do Diego 2026-07-20: só Mensal e Anual).
     # Mantidos na lista p/ o backend ainda resolver esses ciclos de assinantes antigos (plano_por_cycle/base).
     {"slug": "trimestral",  "nome": "Trimestral", "periodo": "a cada 3 meses", "base": 269.0, "cycle": "QUARTERLY",    "recorrente_pix": False, "preco": "R$ 269", "nota": "≈ R$ 90/mês", "oculto": True},
     {"slug": "semestral",   "nome": "Semestral",  "periodo": "a cada 6 meses", "base": 499.0, "cycle": "SEMIANNUALLY", "recorrente_pix": False, "preco": "R$ 499", "nota": "≈ R$ 83/mês", "oculto": True},
-    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 1099.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 1.099", "nota": "≈ R$ 92/mês · em até 12x sem juros", "pix_desconto_pct": 5, "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
+    {"slug": "anual",       "nome": "Anual",      "periodo": "por ano",        "base": 1497.0, "cycle": "YEARLY",       "recorrente_pix": False, "preco": "R$ 1.497", "nota": "≈ R$ 125/mês · em até 12x sem juros", "pix_desconto_pct": 5, "base_pos": 1497.0, "preco_pos": "R$ 1.497", "nota_pos": "≈ R$ 125/mês · em até 12x sem juros"},
     # Plano de TESTE (R$5) — OCULTO da landing; só via link direto /assinar?plano=teste. Pagar por Pix (à vista).
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
 ]
 
+def parse_preco(s):
+    """Número > 0 com no máx. 2 casas (aceita vírgula ou ponto). None se inválido.
+    Rejeita não-finitos ("inf", "Infinity", "1e400" etc.) — float()/round() não
+    levantam erro nesses casos e float('inf') > 0 é True."""
+    import math
+    if s is None:
+        return None
+    try:
+        v = round(float(str(s).replace(",", ".").strip()), 2)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 and math.isfinite(v) else None
+
+
+def _preco_str(base):
+    """Estilo 'R$ 1.497' (sem centavos, milhar com '.')."""
+    return "R$ " + f"{float(base):,.0f}".replace(",", ".")
+
+
+def _nota_derivada(slug, base):
+    if slug == "anual":
+        return f"≈ R$ {round(float(base) / 12)}/mês · em até 12x sem juros"
+    return ""
+
+
+def _preco_override(slug):
+    """Override salvo em settings (float > 0) ou None. Defensivo: qualquer falha -> None."""
+    try:
+        import db
+        return parse_preco(db.get_config(f"preco_base_{slug}", ""))
+    except Exception:
+        return None
+
+
+def _aplicar_override(plano):
+    """CÓPIA do plano com base/base_pos e textos derivados do override (se houver).
+    Sem override -> cópia com os valores do código (nunca muta PLANOS).
+
+    `base_padrao` guarda o preço de LANÇAMENTO (o `base` do código, antes de qualquer
+    override) em toda cópia resolvida, com ou sem override ativo. É o que
+    `renovacao.preco_renovacao` usa como fallback para assinantes legado — sem isso, um
+    aumento de preço pelo admin vazaria pra renovação de quem já era assinante."""
+    p = dict(plano)
+    p["base_padrao"] = float(plano["base"])
+    ov = _preco_override(plano["slug"])
+    if ov is None:
+        return p
+    p["base"] = ov
+    p["preco"] = _preco_str(ov)
+    p["nota"] = _nota_derivada(plano["slug"], ov)
+    if "base_pos" in plano:
+        p["base_pos"] = ov
+        p["preco_pos"] = _preco_str(ov)
+    if "nota_pos" in plano:
+        p["nota_pos"] = _nota_derivada(plano["slug"], ov)
+    return p
+
+
 def plano_por_slug(slug):
     for p in PLANOS:
         if p["slug"] == slug:
-            return p
+            return _aplicar_override(p)
     return None
+
+
+def planos_venda():
+    """Planos visíveis (não ocultos) com o preço vigente (override aplicado). P/ a landing."""
+    return [_aplicar_override(p) for p in PLANOS if not p.get("oculto")]
 
 
 def plano_por_cycle(cycle):
@@ -112,14 +175,15 @@ def plano_por_cycle(cycle):
 
 
 def plano_por_base(valor):
-    """Casa o valor pago com a base do plano (Pix à vista cobra a base cheia)."""
+    """Casa o valor pago com a base VIGENTE do plano (override aplicado)."""
     try:
         v = float(valor)
     except (TypeError, ValueError):
         return None
     for p in PLANOS:
-        if abs(float(p["base"]) - v) < 0.01:
-            return p
+        pr = _aplicar_override(p)
+        if abs(float(pr["base"]) - v) < 0.01:
+            return pr
     return None
 
 # ── Asaas (checkout hospedado + webhook) ──

@@ -139,7 +139,8 @@ def init():
                 PRIMARY KEY (payment_id, event)
             );
             CREATE TABLE IF NOT EXISTS cupons (
-                codigo TEXT PRIMARY KEY, ativo INTEGER DEFAULT 1, descricao TEXT, criado_em TEXT
+                codigo TEXT PRIMARY KEY, ativo INTEGER DEFAULT 1, descricao TEXT, criado_em TEXT,
+                desconto_valor REAL DEFAULT 0, plano_slug TEXT DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS afiliados (
                 id TEXT PRIMARY KEY, nome TEXT, contato TEXT, codigo TEXT UNIQUE,
@@ -255,6 +256,8 @@ def _migrar_colunas():
         _add_coluna(c, "cupons", "usos", "INTEGER DEFAULT 0")
         _add_coluna(c, "cupons", "uso_unico", "INTEGER DEFAULT 1")
         _add_coluna(c, "cupons", "dias_acesso", "INTEGER DEFAULT 0")
+        _add_coluna(c, "cupons", "desconto_valor", "REAL DEFAULT 0")
+        _add_coluna(c, "cupons", "plano_slug", "TEXT DEFAULT ''")
         _add_coluna(c, "reserva_resumos", "prioridade", "INTEGER DEFAULT 0")
         _add_coluna(c, "reserva_resumos", "origem", "TEXT DEFAULT 'varredura'")
         _add_coluna(c, "reserva_resumos", "enviado_em", "TEXT")
@@ -289,13 +292,29 @@ def _habilitar_rls():
 def _seed_cupons():
     from datetime import datetime
     codigos = config.cupons_seed()
-    if not codigos:
-        return
-    with _conn() as c:
-        for cod in codigos:
-            # cupons do env = multi-uso (o Diego compartilha o mesmo código)
-            c.execute("INSERT INTO cupons (codigo,ativo,descricao,uso_unico,criado_em) VALUES (?,1,'seed',0,?) "
-                      "ON CONFLICT (codigo) DO UPDATE SET uso_unico=0", (cod, datetime.now().isoformat()))
+    if codigos:
+        with _conn() as c:
+            for cod in codigos:
+                # cupons do env = multi-uso (o Diego compartilha o mesmo código)
+                c.execute("INSERT INTO cupons (codigo,ativo,descricao,uso_unico,criado_em) VALUES (?,1,'seed',0,?) "
+                          "ON CONFLICT (codigo) DO UPDATE SET uso_unico=0", (cod, datetime.now().isoformat()))
+    # Cupom de lançamento (-R$500 no anual). UPSERT (não DO NOTHING) porque uma linha
+    # "LANCAMENTO" pré-existente como CORTESIA (ex.: alguém pôs o código no env
+    # DSCURSO_CUPONS, cujo loop roda ANTES deste seed e grava desconto_valor=0/
+    # dias_acesso=0 = acesso grátis) tem que ser corrigida pro formato promocional, nunca
+    # deixada como está — senão `_eh_cortesia` (que olha desconto_valor==0) manda todo
+    # comprador de LANCAMENTO pro caminho grátis. Blindado em try/except pra uma falha
+    # aqui nunca derrubar o boot.
+    try:
+        with _conn() as c:
+            c.execute(
+                "INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,dias_acesso,criado_em,desconto_valor,plano_slug) "
+                "VALUES ('LANCAMENTO',1,'Lançamento: -R$500 no anual',0,0,0,?,500,'anual') "
+                "ON CONFLICT (codigo) DO UPDATE SET ativo=1, uso_unico=0, dias_acesso=0, "
+                "desconto_valor=500, plano_slug='anual'",
+                (datetime.now().isoformat(),))
+    except Exception as e:
+        print(f"[db] seed LANCAMENTO falhou: {e}", flush=True)
 
 
 def criar_pending(dados):
@@ -526,16 +545,18 @@ def cupom_valido(codigo):
     return bool(r and r["ativo"])
 
 
-def criar_cupom(descricao="", uso_unico=True, dias_acesso=0, codigo=None):
-    """Gera um cupom de cortesia. dias_acesso=0 => acesso permanente; N => N dias.
-    Sem código informado, cria um aleatório. Retorna o código."""
+def criar_cupom(descricao="", uso_unico=True, dias_acesso=0, codigo=None, desconto_valor=0, plano_slug=""):
+    """Gera um cupom. dias_acesso>0 => cortesia (N dias grátis). desconto_valor>0 =>
+    cupom PROMOCIONAL de valor fixo (R$ off no checkout pago), escopável por plano_slug
+    ('' = qualquer). Retorna o código (UPPER)."""
     import secrets
     from datetime import datetime
     cod = (codigo or secrets.token_hex(4)).strip().upper()
     with _conn() as c:
-        c.execute("INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,dias_acesso,criado_em) VALUES (?,1,?,0,?,?,?) "
-                  "ON CONFLICT (codigo) DO NOTHING",
-                  (cod, descricao or "", 1 if uso_unico else 0, int(dias_acesso or 0), datetime.now().isoformat()))
+        c.execute("INSERT INTO cupons (codigo,ativo,descricao,usos,uso_unico,dias_acesso,criado_em,desconto_valor,plano_slug) "
+                  "VALUES (?,1,?,0,?,?,?,?,?) ON CONFLICT (codigo) DO NOTHING",
+                  (cod, descricao or "", 1 if uso_unico else 0, int(dias_acesso or 0),
+                   datetime.now().isoformat(), float(desconto_valor or 0), (plano_slug or "").strip()))
     return cod
 
 
@@ -543,6 +564,21 @@ def obter_cupom(codigo):
     with _conn() as c:
         r = c.execute("SELECT * FROM cupons WHERE codigo=?", ((codigo or "").strip().upper(),)).fetchone()
     return dict(r) if r else None
+
+
+def cupom_desconto(codigo, plano_slug):
+    """R$ de desconto fixo de um cupom PROMOCIONAL ativo cujo escopo casa o plano.
+    0 se não existe, está inativo, não é promocional, ou o escopo não bate."""
+    info = obter_cupom(codigo)
+    if not info or not info.get("ativo"):
+        return 0.0
+    val = float(info.get("desconto_valor") or 0)
+    if val <= 0:
+        return 0.0
+    escopo = (info.get("plano_slug") or "").strip()
+    if escopo and escopo != plano_slug:
+        return 0.0
+    return val
 
 
 def listar_cupons():
