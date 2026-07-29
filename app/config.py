@@ -97,11 +97,65 @@ PLANOS = [
     {"slug": "teste",       "nome": "Teste",      "periodo": "pagamento único", "base": 5.0,  "cycle": "MONTHLY",      "recorrente_pix": False, "preco": "R$ 5",   "nota": "plano de teste", "oculto": True},
 ]
 
+def parse_preco(s):
+    """Número > 0 com no máx. 2 casas (aceita vírgula ou ponto). None se inválido."""
+    if s is None:
+        return None
+    try:
+        v = round(float(str(s).replace(",", ".").strip()), 2)
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
+def _preco_str(base):
+    """Estilo 'R$ 1.497' (sem centavos, milhar com '.')."""
+    return "R$ " + f"{float(base):,.0f}".replace(",", ".")
+
+
+def _nota_derivada(slug, base):
+    if slug == "anual":
+        return f"≈ R$ {round(float(base) / 12)}/mês · em até 12x sem juros"
+    return ""
+
+
+def _preco_override(slug):
+    """Override salvo em settings (float > 0) ou None. Defensivo: qualquer falha -> None."""
+    try:
+        import db
+        return parse_preco(db.get_config(f"preco_base_{slug}", ""))
+    except Exception:
+        return None
+
+
+def _aplicar_override(plano):
+    """CÓPIA do plano com base/base_pos e textos derivados do override (se houver).
+    Sem override -> cópia com os valores do código (nunca muta PLANOS)."""
+    p = dict(plano)
+    ov = _preco_override(plano["slug"])
+    if ov is None:
+        return p
+    p["base"] = ov
+    p["preco"] = _preco_str(ov)
+    p["nota"] = _nota_derivada(plano["slug"], ov)
+    if "base_pos" in plano:
+        p["base_pos"] = ov
+        p["preco_pos"] = _preco_str(ov)
+    if "nota_pos" in plano:
+        p["nota_pos"] = _nota_derivada(plano["slug"], ov)
+    return p
+
+
 def plano_por_slug(slug):
     for p in PLANOS:
         if p["slug"] == slug:
-            return p
+            return _aplicar_override(p)
     return None
+
+
+def planos_venda():
+    """Planos visíveis (não ocultos) com o preço vigente (override aplicado). P/ a landing."""
+    return [_aplicar_override(p) for p in PLANOS if not p.get("oculto")]
 
 
 def plano_por_cycle(cycle):
@@ -112,14 +166,15 @@ def plano_por_cycle(cycle):
 
 
 def plano_por_base(valor):
-    """Casa o valor pago com a base do plano (Pix à vista cobra a base cheia)."""
+    """Casa o valor pago com a base VIGENTE do plano (override aplicado)."""
     try:
         v = float(valor)
     except (TypeError, ValueError):
         return None
     for p in PLANOS:
-        if abs(float(p["base"]) - v) < 0.01:
-            return p
+        pr = _aplicar_override(p)
+        if abs(float(pr["base"]) - v) < 0.01:
+            return pr
     return None
 
 # ── Asaas (checkout hospedado + webhook) ──
