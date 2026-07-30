@@ -2081,7 +2081,7 @@ def pagina_assinar(plano_slug=None, erro=""):
             f'<div class="paytiles" id="parcelas-field">'
             f'<label class="paytile"><input type="radio" name="parcelas" value="1" checked>'
             f'<span class="pt-ico">1️⃣</span><span class="pt-nome">À vista</span>'
-            f'<span class="pt-desc">renova todo ano</span></label>'
+            f'<span class="pt-desc">cobrança única</span></label>'
             f'<label class="paytile"><input type="radio" name="parcelas" value="12">'
             f'<span class="pt-ico">🗓️</span><span class="pt-nome">Parcelado</span>'
             f'<span class="pt-desc" id="pt-desc-parcelado" data-base="{_esc(parc_desc)}">'

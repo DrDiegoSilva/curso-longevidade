@@ -118,7 +118,11 @@ def figuras_assinar(plano, metodo, base_vig, cupom_pct=0.0, cupom_valor=0.0):
         # (à vista renova, parcelado não), e a escolha aparece logo abaixo do tile.
         "cartao_desc": (f"{fmt_brl(valor_cartao(base_cartao, 1))}/mês · renova"
                         if plano.get("recorrente_pix") else "à vista ou parcelado"),
-        "parcelado_desc": f"até {teto['parcelas']}x de {fmt_brl(teto['por_parcela'])} · não renova",
+        # Sem menção a renovação (decisão do Diego, 2026-07-30): a escolha à vista/
+        # parcelado existe por NECESSIDADE técnica — só o à vista vira assinatura, porque
+        # o Asaas não parcela assinatura. Mas explicar isso no checkout é ruído; quem
+        # cobre a regra são os Termos (cláusulas 2 e 3), que o cliente aceita ali mesmo.
+        "parcelado_desc": f"em até {teto['parcelas']}x de {fmt_brl(teto['por_parcela'])}",
         "parcelas": [{"parcelas": o["parcelas"],
                       "por_parcela": fmt_brl(o["por_parcela"]),
                       "total": fmt_brl(o["total"])}
