@@ -1314,7 +1314,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone
+        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone, ratelimit
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
@@ -1346,6 +1346,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             parcelas = 1
         cupom = g("cupom").strip()
+        # Fecha o oráculo de força-bruta: um cupom não-vazio só é avaliado se o IP
+        # ainda tem cota. Cupom vazio (a maioria das compras) nunca passa por aqui —
+        # não é tentativa, não pode ser barrado.
+        if cupom and not ratelimit.permitir(ip_cliente):
+            return self._html(site_web.pagina_assinar(
+                plano["slug"], "Muitas tentativas com código de cupom. Aguarde alguns "
+                                "minutos e tente novamente."))
         _cup = db.obter_cupom(cupom) if cupom else None
         # Cortesia = cupom ATIVO sem desconto_valor (dias grátis, sem Asaas). Um cupom
         # PROMOCIONAL (desconto_valor>0, ex.: LANCAMENTO) também é "válido" mas NUNCA pode
@@ -1386,6 +1393,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         promo_valor = db.cupom_desconto(cupom, plano["slug"]) if cupom else 0.0
         af = db.afiliado_por_codigo(cupom) if cupom else None
         af_codigo = af["codigo"] if af else ""
+        if cupom and promo_valor <= 0 and not af:
+            # Chegou até aqui e não é cortesia (já teria retornado acima) nem desconto
+            # promocional/afiliado válido -> cupom não serve pra nada. Só AQUI conta
+            # como tentativa falha; um código bom nunca gasta cota de quem o digitou.
+            ratelimit.registrar_falha(ip_cliente)
         base_final = pricing.base_cobrada(plano, metodo, base_vig,
                                           af["pct_desconto"] if af else 0.0, promo_valor)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final
