@@ -498,6 +498,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(s.encode("utf-8"))
 
+    def _json(self, obj, code=200):
+        import json
+        corpo = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(corpo)))
+        self.end_headers()
+        self.wfile.write(corpo)
+
     def do_POST(self):
         import urllib.parse as up
         path = up.urlparse(self.path).path
@@ -916,6 +925,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msgs = {"nao_confere": "As senhas não conferem. Digite a mesma senha nos dois campos.",
                     "fraca": "Senha fraca. Use pelo menos 6 caracteres, com letra e número."}
             return self._html(site_web.pagina_criar_senha(tok, erro=msgs.get(status, "Tente novamente.")))
+        if path == "/assinar/cupom":
+            # Registrada ANTES do bloco "/assinar" pra não ser engolida por ele.
+            # Prévia LEITURA-ONLY: nunca escreve no banco (não consome cupom, não
+            # cria assinante) — só devolve o que o fechamento cobraria. Reusa
+            # `pricing.base_cobrada` (o mesmo cálculo do checkout) de propósito: uma
+            # cópia divergente prometeria um preço na tela e cobraria outro no Asaas.
+            import config, db, pricing, ratelimit
+            ip = self._ip_cliente()
+            plano = config.plano_por_slug(g("plano"))
+            if not plano:
+                return self._json({"ok": False, "msg": "Plano inválido."}, 400)
+            if not ratelimit.permitir(ip):
+                return self._json({"ok": False, "bloqueado": True,
+                                   "msg": "Muitas tentativas. Tente de novo em alguns minutos."})
+            db.init()
+            metodo = "PIX" if (g("metodo") or "").upper() == "PIX" else "CARTAO"
+            # `cupom_desconto` devolve 0.0 pra: inexistente, inativo, CORTESIA
+            # (desconto 0) e escopo de outro plano -> um único caminho de falha,
+            # indistinguível (senão a prévia vira detector de cupom-cortesia).
+            desconto = db.cupom_desconto(g("cupom").strip().upper(), plano["slug"])
+            if desconto <= 0:
+                ratelimit.registrar_falha(ip)
+                return self._json({"ok": False, "msg": "Cupom inválido."})
+            base = pricing.base_cobrada(plano, metodo, float(plano["base"]),
+                                        cupom_valor=desconto)
+            return self._json({
+                "ok": True,
+                "preco": pricing.fmt_brl(base),
+                "msg": f"−{pricing.fmt_brl(desconto)} aplicado",
+                "parcelas": [{"parcelas": o["parcelas"],
+                              "por_parcela": pricing.fmt_brl(o["por_parcela"]),
+                              "total": pricing.fmt_brl(o["total"])}
+                             for o in pricing.opcoes_parcelas(base)],
+            })
         if path == "/assinar":
             return self._post_assinar(g)
         if path == "/cancelar":

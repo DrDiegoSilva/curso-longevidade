@@ -3,6 +3,7 @@
 Fecha um oráculo já exposto: POST /assinar aceitava chutar códigos de cupom sem
 nenhum limite, e um cupom de CORTESIA acertado cria assinante ATIVO na hora, sem
 passar pelo Asaas (serve.py:1356) — acesso de graça, não desconto."""
+import io
 import os
 import sys
 import tempfile
@@ -318,6 +319,171 @@ class TestIpClienteNoAceiteDeTermos(unittest.TestCase):
     def test_sem_xff_ainda_cai_no_client_address(self):
         stub = _AceitarTermosStub(self.reg, ip_real="203.0.113.44")
         self.assertEqual(self._aceitar(stub), "203.0.113.44")
+
+
+class _CupomPreviaStub:
+    """Stub mínimo pro `self` de `do_POST` quando `path == '/assinar/cupom'`. A rota
+    vive INLINE em `do_POST` (não é um método próprio como `_post_assinar`), então o
+    padrão certo pra exercitá-la de verdade é o de `_SeriesRotaStub`/`_make_stub_cls`
+    (test_series.py::TestRotaSeries): herdar de `serve.Handler` pra rodar o `do_POST`
+    real, e sobrescrever só o que dependeria de socket — `path`/`headers`/`rfile` na
+    entrada, e agora também `_json` na saída (a rota nova escreve JSON, não HTML/
+    redirect, então este stub estende o mesmo padrão com o único método de saída que
+    faltava, em vez de inventar uma terceira forma de stub)."""
+
+    def __init__(self, path, body=b"", ip="203.0.113.9"):
+        self.path = path
+        self.headers = {"Content-Length": str(len(body)),
+                        "Content-Type": "application/x-www-form-urlencoded"}
+        self.rfile = io.BytesIO(body)
+        self.client_address = (ip, 54321)
+
+    def _json(self, obj, code=200):
+        # devolve o dict puro em vez de escrever bytes num socket — o `do_POST` real
+        # faz `return self._json(...)`, então `stub.do_POST()` já devolve o dict.
+        return obj
+
+    def _html(self, s, code=200):
+        # mesmo padrão de `_SeriesRotaStub._html`: se `do_POST` cair no fallback
+        # (rota não bateu), devolve algo inspecionável em vez de tentar escrever
+        # num socket que não existe (`BaseHTTPRequestHandler.send_response` crash
+        # com AttributeError confuso — `requestline` etc.).
+        return (code, s)
+
+    def _redirect(self, location, token=None, clear=False):
+        return ("REDIRECT", location)
+
+
+def _make_cupom_previa_stub_cls():
+    """Mesma justificativa de `_make_stub_cls` (test_series.py): `_CupomPreviaStub`
+    precisa herdar de `serve.Handler` (não `object`) pra ter o `do_POST` de verdade,
+    mas `serve` só existe depois do `import` dentro de cada teste. `_CupomPreviaStub`
+    PRIMEIRO na MRO pra que `_json` sobrescrito vença a resolução de nome."""
+    import serve
+    return type("_CupomPreviaStubHandler", (_CupomPreviaStub, serve.Handler), {})
+
+
+class TestPreviaCupom(unittest.TestCase):
+    """A prévia usa a MESMA `base_cobrada` do fechamento — os testes conferem contra
+    ela, nunca contra aritmética duplicada aqui."""
+
+    def setUp(self):
+        # Divergência do brief: o `setUp` do Step 1 só fazia `ratelimit.zerar()`,
+        # assumindo um `db` já inicializado e utilizável. Descoberto ao rodar a
+        # suíte completa (não isolado): `TestLimiteCupomNaRotaAssinar`, que roda
+        # ANTES desta classe em ordem alfabética (`dir(module)` — é assim que
+        # `unittest` descobre classes dentro de um módulo), deixa
+        # `DSCURSO_ARTIGOS_DB` apontando pra um tmpdir que o próprio `tearDown`
+        # dela já apagou (`shutil.rmtree`), sem restaurar a env var. `db._INITED`
+        # continua `True` no módulo `db` já carregado, então `db.init()` aqui
+        # seria NO-OP; a próxima chamada real (`db.criar_cupom`/`cupom_desconto`)
+        # abriria um sqlite NOVO E VAZIO no diretório recriado por `_conn()`
+        # (`os.makedirs`) — sem tabela `cupons` (`no such table`). Uso o mesmo
+        # padrão isolado de tmpdir+reimport das outras classes deste arquivo pra
+        # não depender da ordem de execução.
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
+        os.environ.pop("DATABASE_URL", None)
+        for m in ("config", "db", "subscribers", "serve", "site_web", "legal",
+                  "asaas", "pricing", "ratelimit"):
+            sys.modules.pop(m, None)
+        import db, ratelimit
+        db._INITED = False
+        db.init()
+        ratelimit.zerar()
+        self.ratelimit = ratelimit
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        self.ratelimit.zerar()
+
+    def _resp(self, plano="anual", cupom="LANCAMENTO", metodo="CARTAO", ip="ip-teste"):
+        """POSTa em /assinar/cupom (via `do_POST` real, socket stubado) e devolve o
+        dict do JSON."""
+        import urllib.parse as up
+        Stub = _make_cupom_previa_stub_cls()
+        body = up.urlencode({"plano": plano, "cupom": cupom, "metodo": metodo}).encode("utf-8")
+        stub = Stub("/assinar/cupom", body=body, ip=ip)
+        return stub.do_POST()
+
+    def test_cupom_valido_devolve_preco_e_parcelas_com_desconto(self):
+        import config, pricing, db
+        db.init()
+        plano = config.plano_por_slug("anual")
+        esperado = pricing.base_cobrada(plano, "CARTAO", float(plano["base"]),
+                                        cupom_valor=db.cupom_desconto("LANCAMENTO", "anual"))
+        r = self._resp(cupom="LANCAMENTO")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["preco"], pricing.fmt_brl(esperado))
+        self.assertTrue(r["parcelas"], "o dropdown de parcelas tem que vir atualizado")
+
+    def test_cupom_valido_pix_empilha_desconto_via_base_cobrada(self):
+        """Mutação (c) do Step 5: `base_cobrada` empilha o desconto Pix (5%) SOBRE o
+        valor já reduzido pelo cupom; uma troca por `base - desconto` na mão não
+        empilha nada. Sem este caso, uma regressão desse tipo passaria despercebida —
+        o teste CARTAO acima não distingue as duas fórmulas quando o método não é Pix."""
+        import config, pricing, db
+        db.init()
+        plano = config.plano_por_slug("anual")
+        esperado = pricing.base_cobrada(plano, "PIX", float(plano["base"]),
+                                        cupom_valor=db.cupom_desconto("LANCAMENTO", "anual"))
+        r = self._resp(cupom="LANCAMENTO", metodo="PIX")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["preco"], pricing.fmt_brl(esperado))
+
+    def test_cortesia_responde_invalido_generico(self):
+        """Cortesia (desconto 0) daria acesso GRATIS no fechamento. A previa nao pode
+        confirmar que o codigo existe, senao vira detector de jackpot."""
+        import db
+        db.init()
+        db.criar_cupom(descricao="cortesia teste", uso_unico=False, dias_acesso=0,
+                       codigo="CORTESIATESTE")
+        r = self._resp(cupom="CORTESIATESTE")
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["msg"], self._resp(cupom="NAOEXISTEZZZ")["msg"],
+                         "cortesia e inexistente tem que ser INDISTINGUIVEIS")
+
+    def test_cupom_de_outro_plano_invalido_generico(self):
+        import db
+        db.init()
+        r = self._resp(plano="mensal", cupom="LANCAMENTO")   # LANCAMENTO e do anual
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["msg"], self._resp(cupom="NAOEXISTEZZZ", plano="mensal")["msg"])
+
+    def test_cupom_desativado_no_admin_invalido(self):
+        import db
+        db.init()
+        db.toggle_cupom("LANCAMENTO", False)
+        try:
+            r = self._resp(cupom="LANCAMENTO")
+            self.assertFalse(r["ok"])
+        finally:
+            db.toggle_cupom("LANCAMENTO", True)
+
+    def test_previa_nao_escreve_nada_no_banco(self):
+        """Nem consome cupom, nem cria assinante. Se a previa gastasse o cupom,
+        conferir o preco queimaria o desconto."""
+        import db, subscribers
+        db.init()
+        antes_usos = (db.obter_cupom("LANCAMENTO") or {}).get("usos", 0)
+        antes_assin = len(subscribers.listar())
+        self._resp(cupom="LANCAMENTO")
+        self.assertEqual((db.obter_cupom("LANCAMENTO") or {}).get("usos", 0), antes_usos)
+        self.assertEqual(len(subscribers.listar()), antes_assin)
+
+    def test_bloqueia_depois_de_5_invalidos_e_valido_nao_gasta_cota(self):
+        for _ in range(5):
+            self.assertFalse(self._resp(cupom="NAOEXISTEZZZ", ip="ip-bloq")["ok"])
+        r = self._resp(cupom="NAOEXISTEZZZ", ip="ip-bloq")
+        self.assertTrue(r.get("bloqueado"), f"6a tentativa devia bloquear: {r}")
+
+        import ratelimit
+        ratelimit.zerar()
+        for _ in range(5):
+            self.assertTrue(self._resp(cupom="LANCAMENTO", ip="ip-ok")["ok"])
+        self.assertTrue(self._resp(cupom="LANCAMENTO", ip="ip-ok")["ok"],
+                        "cupom valido nao gasta cota")
 
 
 if __name__ == "__main__":
