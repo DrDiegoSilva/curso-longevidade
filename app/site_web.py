@@ -2106,7 +2106,7 @@ def pagina_assinar(plano_slug=None, erro=""):
                 <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
             </div>
             {parcelas_html}
-            <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" style="text-transform:uppercase" placeholder="cortesia ou afiliado"></div>
+            <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" style="text-transform:uppercase" placeholder="cupom"></div>
             <label class="check-termos">
               <input type="checkbox" name="aceito" value="1" required>
               <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Assinatura</a>
