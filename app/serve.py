@@ -61,6 +61,13 @@ def _destino_seguro(destino):
     return destino
 
 
+def _pct_str(pct):
+    """Percentual pra exibição: 10.0 -> "10%", 7.5 -> "7,5%" (vírgula decimal, sem
+    zeros à direita). Usado na mensagem da prévia do cupom de AFILIADO, cujo desconto
+    é % (o promocional é R$ e usa `pricing.fmt_brl`)."""
+    return ("%g" % float(pct)).replace(".", ",") + "%"
+
+
 def agendador():
     """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
@@ -112,9 +119,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _rate_ok(self, nome, maximo, janela_seg):
         """Rate-limit por IP nos endpoints sensíveis (login/OTP/recuperação). Se estourar,
-        já responde 429 e retorna False -> o handler deve dar `return`."""
+        já responde 429 e retorna False -> o handler deve dar `return`.
+        Chaveia por `_ip_cliente()` (não por `client_address`): atrás do proxy
+        reverso deste deploy, `client_address` é o IP do PRÓPRIO PROXY, idêntico pra
+        todo visitante — chavear por ele juntava todo mundo num balde só (os 5
+        códigos de OTP por 10 min viravam 5 códigos pro site inteiro, e uma pessoa
+        exaurindo a cota trancava o login de todo mundo). `_ip_cliente()` lê o
+        último elemento do X-Forwarded-For (escrito pelo proxy, não forjável pelo
+        cliente), com fallback pro `client_address` se o cabeçalho vier ausente."""
         import rate_limit
-        ip = self.client_address[0] if self.client_address else "?"
+        ip = self._ip_cliente()
         if rate_limit.limitado(f"{nome}:{ip}", maximo, janela_seg):
             self._html("<h3>Muitas tentativas. Aguarde alguns minutos e tente de novo.</h3>", 429)
             return False
@@ -135,6 +149,70 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if clear:
             self.send_header("Set-Cookie", "sid=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure")
         self.end_headers()
+
+    def _ip_cliente(self):
+        """IP real do cliente, mesmo atrás do proxy reverso (Traefik, neste deploy).
+        O proxy ANEXA o IP real ao fim do X-Forwarded-For que o cliente mandar: um
+        cliente que envia 'X-Forwarded-For: 1.2.3.4' chega aqui como
+        '1.2.3.4, <ip-real>'. Pegar o PRIMEIRO elemento (bug corrigido aqui) devolve
+        um valor que o próprio cliente escolhe — forjável à vontade, request a
+        request. Só o ÚLTIMO elemento não-vazio é o hop que o cliente não controla;
+        correto tanto com proxy que ANEXA quanto com proxy que SUBSTITUI (cabeçalho
+        de 1 elemento só) e cai no `client_address` se o cabeçalho vier ausente,
+        vazio, só espaço, ou com um elemento final vazio (vírgula sobrando).
+        Único ponto de verdade: usado tanto pelo limite de tentativas de cupom
+        (`_post_assinar`) quanto pelo registro de aceite dos Termos
+        (`_aceitar_termos`, onde o IP é evidência legal do aceite).
+
+        Lê TODAS as linhas do cabeçalho, não só a primeira (Minor da revisão final):
+        `headers.get()` devolve só a 1ª ocorrência, então um cliente que manda
+        'X-Forwarded-For: 1.2.3.4' numa linha própria fazia o valor ESCOLHIDO por ele
+        voltar a ser o resultado (o valor do proxy ficava na 2ª linha, ignorada) — o
+        limite e o IP do aceite voltavam a ser forjáveis. Pelo RFC 9110, várias linhas
+        do mesmo cabeçalho equivalem a uma só lista separada por vírgula, na ordem
+        recebida: concatenar as linhas e pegar o último elemento não-vazio é o mesmo
+        último hop nos dois formatos. `get_all` só existe no `HTTPMessage` real —
+        stubs de teste usam `dict`, daí o fallback pro `get`."""
+        get_all = getattr(self.headers, "get_all", None)
+        linhas = (get_all("X-Forwarded-For") if get_all else None) or \
+            [self.headers.get("X-Forwarded-For", "")]
+        partes = [p.strip() for linha in linhas for p in (linha or "").split(",")]
+        validas = [p for p in partes if p]
+        if validas:
+            return validas[-1]
+        # guard restaurado (Minor da revisão final): perdido na mudança de `_rate_ok`
+        # pra cá. `client_address` é vazio/None quando o socket já caiu — sem o guard,
+        # um IndexError/TypeError derruba a resposta em vez de degradar pra "?".
+        return self.client_address[0] if self.client_address else "?"
+
+    def _mesma_origem(self):
+        """False quando a requisição veio declaradamente de OUTRA origem.
+
+        Usado só na prévia do cupom (`POST /assinar/cupom`), que existe exclusivamente
+        pro fetch da própria página /assinar. Fecha o amplificador apontado na revisão
+        final: o endpoint aceita `application/x-www-form-urlencoded`, que não dispara
+        preflight, então QUALQUER página de terceiro conseguia — do navegador do
+        visitante, em silêncio — queimar a cota de tentativas de cupom DELE e fazer o
+        cupom bom dele ser recusado no fechamento. `Origin` é setado pelo navegador em
+        todo POST via fetch (inclusive same-origin) e não é forjável por script.
+
+        NÃO afeta o caminho sem JS: sem JS o formulário inteiro vai pro `/assinar`
+        normal, que não passa por aqui (e continua sem checagem de origem — mudar o
+        gate da rota de compra é decisão do dono, não efeito colateral deste fix).
+
+        Ausência dos DOIS cabeçalhos libera (fail-open) DE PROPÓSITO: se algum proxy
+        removesse `Origin` e `Referer`, fail-closed desligaria a prévia pra todo mundo,
+        e um atacante sem navegador (curl) nunca precisou do IP da vítima — o ataque
+        que este gate fecha é justamente o que EXIGE o navegador dela."""
+        import urllib.parse as up
+        host = (self.headers.get("Host") or "").strip().lower()
+        for cab in ("Origin", "Referer"):
+            valor = (self.headers.get(cab) or "").strip()
+            if valor:
+                # "Origin: null" (iframe sandbox, alguns redirects) tem netloc "" ->
+                # não casa com host nenhum -> recusado, que é o certo.
+                return up.urlparse(valor).netloc.lower() == host
+        return True
 
     def do_GET(self):
         import urllib.parse as up
@@ -480,6 +558,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         self.wfile.write(s.encode("utf-8"))
+
+    def _json(self, obj, code=200):
+        import json
+        corpo = json.dumps(obj).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(corpo)))
+        self.end_headers()
+        self.wfile.write(corpo)
 
     def do_POST(self):
         import urllib.parse as up
@@ -899,6 +986,81 @@ class Handler(http.server.BaseHTTPRequestHandler):
             msgs = {"nao_confere": "As senhas não conferem. Digite a mesma senha nos dois campos.",
                     "fraca": "Senha fraca. Use pelo menos 6 caracteres, com letra e número."}
             return self._html(site_web.pagina_criar_senha(tok, erro=msgs.get(status, "Tente novamente.")))
+        if path == "/assinar/cupom":
+            # Registrada ANTES do bloco "/assinar" pra não ser engolida por ele.
+            # Prévia LEITURA-ONLY: nunca escreve no banco (não consome cupom, não
+            # cria assinante) — só devolve o que o fechamento cobraria. Reusa
+            # `pricing.base_cobrada` (o mesmo cálculo do checkout) de propósito: uma
+            # cópia divergente prometeria um preço na tela e cobraria outro no Asaas.
+            import config, db, pricing, rate_limit, subscribers
+            ip = self._ip_cliente()
+            if not self._mesma_origem():
+                return self._json({"ok": False, "msg": "Requisição inválida."}, 403)
+            plano = config.plano_por_slug(g("plano"))
+            if not plano:
+                return self._json({"ok": False, "msg": "Plano inválido."}, 400)
+            cupom = g("cupom").strip().upper()
+            if not cupom:
+                # Campo em branco NÃO é tentativa e nem chega a consultar nada (Important
+                # da revisão final): antes, "" caía em `cupom_desconto("")` -> 0.0 ->
+                # contava tentativa, então 5 cliques no Aplicar com o campo vazio
+                # esgotavam a cota do PRÓPRIO visitante e o cupom BOM dele passava a ser
+                # recusado — na prévia e no fechamento.
+                return self._json({"ok": False, "msg": "Digite um cupom."})
+            chave = f"cupom:{ip}"
+            # CONTAR-E-PERDOA (fix do CRITICAL da revisão final). Antes: PEEK aqui +
+            # `registrar_tentativa` depois do lookup -> sob ThreadingHTTPServer a
+            # rajada inteira lia contagem 0 e passava (50/50 medidos, teto 5). Agora
+            # `limitado` conta e checa na MESMA seção crítica, e a cota é DEVOLVIDA
+            # (`perdoar_tentativa`) se o cupom se revelar válido — as duas propriedades
+            # juntas, sem janela entre checar e contar.
+            # Mesma chave ("cupom:<ip>") do checkout (`_post_assinar`) DE PROPÓSITO: as
+            # duas rotas compartilham UM balde de cota — senão um atacante ganharia 5
+            # tentativas grátis aqui (a prévia, mais barata/rápida) e mais 5 no
+            # checkout, dobrando o orçamento de chute.
+            if rate_limit.limitado(chave, 5, 600):
+                return self._json({"ok": False, "bloqueado": True,
+                                   "msg": "Muitas tentativas. Tente de novo em alguns minutos."})
+            db.init()
+            metodo = "PIX" if (g("metodo") or "").upper() == "PIX" else "CARTAO"
+            # AS DUAS consultas, SEMPRE, na MESMA ordem, pra qualquer código — inclusive
+            # quando a primeira já resolveu. É o que mantém indistinguíveis as classes de
+            # falha (inexistente / inativo / CORTESIA / escopo de outro plano): mesmo
+            # status, mesmo corpo, mesma mensagem e MESMO TEMPO (2 lookups indexados).
+            # Consultar afiliado só quando `desconto <= 0` daria o mesmo tempo entre as 4
+            # falhas, mas criaria diferença entre válido e inválido; incondicional não
+            # cria diferença nenhuma. `cupom_desconto` devolve 0.0 pras 4 classes e
+            # `afiliado_por_codigo` devolve None pra inexistente E inativo.
+            desconto = db.cupom_desconto(cupom, plano["slug"])
+            af = db.afiliado_por_codigo(cupom)
+            if desconto <= 0 and not af:
+                return self._json({"ok": False, "msg": "Cupom inválido."})
+            # Código bom não gasta cota de quem o digitou (a tentativa contada acima é
+            # devolvida aqui, depois de a validade estar decidida).
+            rate_limit.perdoar_tentativa(chave)
+            # Base VIGENTE, do mesmo jeito que o fechamento (`_post_assinar`): preço
+            # pós-founder quando o limite de ativos já passou, override do admin quando
+            # existe (`config.plano_por_slug` já resolve o override). `plano["base"]`
+            # cru coincide hoje, mas divergiria justamente na classe de bug que esta
+            # tela existe pra impedir: mostrar um valor e cobrar outro.
+            base_vig = pricing.preco_vigente(plano, len(subscribers.ativos()))
+            # Cupom de AFILIADO (D3, no ar) é desconto % e o fechamento o HONRA — a
+            # prévia consultava só os promocionais, então respondia "Cupom inválido"
+            # (e queimava cota) pra um código de afiliado válido. Mesma `base_cobrada`
+            # do checkout, com o argumento certo: `cupom_pct` pro %, `cupom_valor` pro R$.
+            base = pricing.base_cobrada(plano, metodo, base_vig,
+                                        af["pct_desconto"] if af else 0.0, desconto)
+            partes = ([pricing.fmt_brl(desconto)] if desconto > 0 else []) + \
+                     ([_pct_str(af["pct_desconto"])] if af else [])
+            return self._json({
+                "ok": True,
+                "preco": pricing.fmt_brl(base),
+                "msg": "−" + " −".join(partes) + " aplicado",
+                "parcelas": [{"parcelas": o["parcelas"],
+                              "por_parcela": pricing.fmt_brl(o["por_parcela"]),
+                              "total": pricing.fmt_brl(o["total"])}
+                             for o in pricing.opcoes_parcelas(base)],
+            })
         if path == "/assinar":
             return self._post_assinar(g)
         if path == "/cancelar":
@@ -1152,8 +1314,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect("/entrar")
         if g("aceito") != "1":
             return self._html(site_legal.pagina_aceite_termos(_destino_seguro(g("destino"))))
-        ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-              or self.client_address[0])
+        ip = self._ip_cliente()
         subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
         return self._redirect(_destino_seguro(g("destino")))
 
@@ -1314,7 +1475,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone
+        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone, rate_limit
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
@@ -1333,8 +1494,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_assinar(
                 plano["slug"], "É preciso aceitar os Termos e a Política de Privacidade."))
         # Mesmo padrão de _aceitar_termos: atrás de proxy, o IP real vem no cabeçalho.
-        ip_cliente = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-                      or self.client_address[0])
+        ip_cliente = self._ip_cliente()
         dados["cpf"] = cpfval.so_digitos(dados["cpf"])          # guarda só os dígitos
         ja = subscribers.por_cpf(dados["cpf"]) or subscribers.por_whatsapp(dados["whatsapp"])
         if ja and subscribers.tem_acesso(ja):                   # já tem assinatura ativa -> não duplica
@@ -1346,6 +1506,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError:
             parcelas = 1
         cupom = g("cupom").strip()
+        chave_cupom = f"cupom:{ip_cliente}"
+        # Fecha o oráculo de força-bruta: um cupom não-vazio só é avaliado se o IP
+        # ainda tem cota. Cupom vazio (a maioria das compras) nunca passa por aqui —
+        # não é tentativa, não pode ser barrado.
+        # CONTAR-E-PERDOA (fix do CRITICAL da revisão final): `limitado` conta e checa
+        # ATOMICAMENTE, na mesma seção crítica, e a cota é devolvida
+        # (`perdoar_tentativa`) nos dois caminhos de cupom VÁLIDO abaixo (cortesia e
+        # promocional/afiliado) — um código bom continua não gastando cota de quem o
+        # digitou. Antes era PEEK aqui + registro depois do lookup: sob
+        # ThreadingHTTPServer a rajada inteira lia contagem 0 e passava (40/40 medidos,
+        # teto 5), e este é o caminho em que um cupom de CORTESIA acertado vira
+        # assinante ATIVO na hora, sem Asaas — acesso de graça.
+        # Mesma chave ("cupom:<ip>") da prévia em /assinar/cupom (do_POST) DE PROPÓSITO:
+        # as duas rotas compartilham UM balde — senão um atacante ganharia 5
+        # tentativas na prévia (mais barata) e mais 5 aqui, dobrando de graça o
+        # orçamento de chute.
+        if cupom and rate_limit.limitado(chave_cupom, 5, 600):
+            return self._html(site_web.pagina_assinar(
+                plano["slug"], "Muitas tentativas com código de cupom. Aguarde alguns "
+                                "minutos e tente novamente."))
         _cup = db.obter_cupom(cupom) if cupom else None
         # Cortesia = cupom ATIVO sem desconto_valor (dias grátis, sem Asaas). Um cupom
         # PROMOCIONAL (desconto_valor>0, ex.: LANCAMENTO) também é "válido" mas NUNCA pode
@@ -1354,6 +1534,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         _eh_cortesia = bool(_cup and _cup.get("ativo") and float(_cup.get("desconto_valor") or 0) == 0)
         # Cupom de cortesia: ativa na hora, sem Asaas
         if cupom and _eh_cortesia:
+            # Cortesia é cupom VÁLIDO: devolve a cota contada acima (quem recebeu uma
+            # cortesia legítima não pode gastar tentativa por usá-la).
+            rate_limit.perdoar_tentativa(chave_cupom)
             info = _cup
             reg = subscribers.criar_de_pagamento(
                 {**dados, "plano": plano["slug"], "metodo": "CUPOM",
@@ -1386,6 +1569,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         promo_valor = db.cupom_desconto(cupom, plano["slug"]) if cupom else 0.0
         af = db.afiliado_por_codigo(cupom) if cupom else None
         af_codigo = af["codigo"] if af else ""
+        if cupom and (promo_valor > 0 or af):
+            # Código bom (promocional ou afiliado): devolve a cota contada lá em cima —
+            # um cupom válido nunca gasta tentativa de quem o digitou. O caminho de
+            # cupom que não serve pra nada (nem cortesia, nem promocional, nem afiliado)
+            # é justamente o que NÃO perdoa: a tentativa fica contada.
+            rate_limit.perdoar_tentativa(chave_cupom)
         base_final = pricing.base_cobrada(plano, metodo, base_vig,
                                           af["pct_desconto"] if af else 0.0, promo_valor)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final

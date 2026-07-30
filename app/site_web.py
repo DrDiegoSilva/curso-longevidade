@@ -2077,6 +2077,97 @@ def pagina_assinar(plano_slug=None, erro=""):
                 f'<span class="pt-ico">⚡</span><span class="pt-nome">Pix</span>'
                 f'<span class="pt-desc">{_esc(pix_desc)}</span></label>')
     cartao_checked = " checked" if sem_pix else ""
+    # Prévia do cupom sem recarregar a página (Task 2, spec 2026-07-29-cupom-previa).
+    # Degradação sem JS: o campo continua um <input name="cupom"> normal dentro do
+    # <form> — sem JS, digitar o código e enviar o formulário aplica o desconto no
+    # servidor exatamente como antes (o botão Aplicar é só conveniência). String
+    # plana (não f-string) de propósito: o JS tem chaves `{}` demais pra escapar.
+    cupom_js = """<script>
+    (function(){
+      var btn = document.getElementById('cupom-aplicar');
+      if (!btn) return;
+      var input = document.getElementById('cupom-input');
+      var msg = document.getElementById('cupom-msg');
+      var sumPrice = document.getElementById('sum-price');
+      // guarda o <span> do período (ex.: "por ano") pra reencaixar depois — nunca
+      // via innerHTML, só a mesma referência de nó (sem risco de injeção nenhuma).
+      var periodoSpan = sumPrice ? sumPrice.querySelector('span') : null;
+      // sem id proprio de propósito: um teste de regressão trava o markup exato
+      // da tag de parcelas sem atributo extra nenhum; seletor por atributo em
+      // vez de id evita mexer nessa tag.
+      var select = document.querySelector('select[name="parcelas"]');
+      var planoInput = document.querySelector('input[name="plano"]');
+      function aviso(texto, ok){
+        msg.textContent = texto;
+        msg.style.color = ok ? 'var(--gold2)' : '#e08a8a';
+      }
+      function pintarParcelas(lista){
+        if (!select || !lista) return;
+        // PRESERVA a escolha do visitante (Important da revisão): o rebuild antigo
+        // limpava o <select> e reanexava opções sem nenhuma marcada, então o
+        // navegador auto-selecionava a 1a (1x) — quem tinha escolhido 12x era movido
+        // pra 1x EM SILENCIO e podia fechar o pedido sem perceber (uma cobrança de
+        // R$ 997 em vez de 12x de R$ 83).
+        var anterior = select.value;
+        select.textContent = '';
+        lista.forEach(function(o){
+          var opt = document.createElement('option');
+          opt.value = o.parcelas;
+          opt.textContent = o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total;
+          select.appendChild(opt);
+        });
+        select.value = anterior;      // opção inexistente -> selectedIndex fica -1
+        if (select.selectedIndex < 0) {
+          select.selectedIndex = 0;   // fallback: 1a opção...
+          // ...mas NUNCA em silêncio: a troca aparece junto da mensagem do cupom.
+          msg.textContent = msg.textContent + ' · parcelas ajustadas para ' + select.value + 'x';
+        }
+      }
+      function aplicar(){
+        var codigo = (input.value || '').trim();
+        if (!codigo) {
+          // Campo em branco não vira requisição: no servidor ele nem conta tentativa,
+          // e aqui evita gastar uma ida ao servidor pra dizer o óbvio.
+          aviso('Digite um cupom.', false);
+          return;
+        }
+        var metodoEl = document.querySelector('input[name="metodo"]:checked');
+        var body = new URLSearchParams({
+          plano: planoInput ? planoInput.value : '',
+          cupom: codigo,
+          metodo: metodoEl ? metodoEl.value : ''
+        });
+        btn.disabled = true;
+        msg.textContent = '';
+        fetch('/assinar/cupom', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: body
+        }).then(function(r){ return r.json(); }).then(function(d){
+          btn.disabled = false;
+          aviso(d.msg || '', d.ok);
+          if (!d.ok) return;
+          if (sumPrice) {
+            sumPrice.textContent = d.preco;               // some com o <span> junto
+            if (periodoSpan) sumPrice.appendChild(periodoSpan);  // reencaixa o mesmo nó
+          }
+          pintarParcelas(d.parcelas);
+        }).catch(function(){
+          btn.disabled = false;
+          aviso('Não foi possível conferir o cupom agora. Tente de novo.', false);
+        });
+      }
+      btn.addEventListener('click', aplicar);
+      // Enter no campo do cupom = clicar em Aplicar (Minor da revisão): sem isto o
+      // Enter submetia o PEDIDO INTEIRO em vez de conferir o cupom.
+      input.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          e.preventDefault();
+          aplicar();
+        }
+      });
+    })();
+    </script>"""
     corpo = f"""
     <div class="wrap">
       <div class="sectag" style="margin-top:8px">Finalizar assinatura</div>
@@ -2085,7 +2176,7 @@ def pagina_assinar(plano_slug=None, erro=""):
         <aside class="summary">
           <div class="sum-eyebrow">{_esc(PRODUTO)}</div>
           <div class="sum-plan">Plano {_esc(plano["nome"])}</div>
-          <div class="sum-price">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
+          <div class="sum-price" id="sum-price">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
           <ul class="sum-list">{inclui}</ul>
           <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>7 dias de garantia com reembolso integral.</div>
         </aside>
@@ -2106,7 +2197,15 @@ def pagina_assinar(plano_slug=None, erro=""):
                 <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
             </div>
             {parcelas_html}
-            <div class="field"><label>Cupom (opcional)</label><input type="text" name="cupom" style="text-transform:uppercase" placeholder="cupom"></div>
+            <div class="field">
+              <label>Cupom (opcional)</label>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="cupom-input" name="cupom" style="text-transform:uppercase" placeholder="cupom">
+                <button type="button" id="cupom-aplicar" style="flex:none;font-family:var(--ui);font-weight:700;font-size:13px;letter-spacing:.02em;color:var(--gold2);background:transparent;border:1px solid rgba(201,162,39,.5);border-radius:100px;padding:0 20px;cursor:pointer">Aplicar</button>
+              </div>
+              <div style="margin-top:7px;font-family:var(--ui);font-size:11.5px;color:var(--muted);line-height:1.4">Conferir o cupom aqui é só uma prévia — o valor final é sempre calculado no fechamento da compra.</div>
+              <span id="cupom-msg" style="display:block;margin-top:4px;font-family:var(--ui);font-size:12.5px"></span>
+            </div>
             <label class="check-termos">
               <input type="checkbox" name="aceito" value="1" required>
               <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener">Termos de Assinatura</a>
@@ -2118,7 +2217,7 @@ def pagina_assinar(plano_slug=None, erro=""):
           <p class="hint" style="margin-top:16px;text-align:center"><a href="/assinar" style="color:var(--suave)">← trocar de plano</a></p>
         </div>
       </div>
-    </div>"""
+    </div>""" + cupom_js
     return _pagina(f"Assinar {plano['nome']} · {PRODUTO}", corpo, logado=False,
                    meta_extra='<meta name="robots" content="noindex">')
 
