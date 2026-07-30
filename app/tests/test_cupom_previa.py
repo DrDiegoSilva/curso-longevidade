@@ -201,6 +201,42 @@ class TestIpCliente(unittest.TestCase):
         stub = _IpClienteStub(xff="   ", ip_real="203.0.113.79")
         self.assertEqual(self.serve.Handler._ip_cliente(stub), "203.0.113.79")
 
+    def test_duas_LINHAS_de_xff_ainda_pegam_o_ultimo_hop(self):
+        """Minor da revisão final: `headers.get()` devolve só a PRIMEIRA ocorrência do
+        cabeçalho. Um cliente que manda o X-Forwarded-For dele em linha própria fazia o
+        valor ESCOLHIDO por ele voltar a ser o resultado (o do proxy ficava na 2ª linha,
+        ignorada) — bypass do limite de cupom e IP forjável gravado como prova de aceite
+        dos Termos. Pelo RFC 9110 várias linhas equivalem a uma lista separada por
+        vírgula, na ordem recebida: o último hop é o último elemento da ÚLTIMA linha.
+        Usa `email.message.Message` porque é a base do `HTTPMessage` real do
+        `http.server` (é ele que tem `get_all`; os outros stubs usam `dict`)."""
+        from email.message import Message
+        h = Message()
+        h["X-Forwarded-For"] = "1.2.3.4"        # forjado pelo cliente, 1a linha
+        h["X-Forwarded-For"] = "198.51.100.70"  # anexado pelo proxy, 2a linha
+        stub = _IpClienteStub(ip_real="203.0.113.1")
+        stub.headers = h
+        self.assertEqual(self.serve.Handler._ip_cliente(stub), "198.51.100.70")
+
+    def test_tres_linhas_com_lista_na_ultima(self):
+        from email.message import Message
+        h = Message()
+        h["X-Forwarded-For"] = "9.9.9.9"
+        h["X-Forwarded-For"] = "8.8.8.8, 198.51.100.71"
+        stub = _IpClienteStub()
+        stub.headers = h
+        self.assertEqual(self.serve.Handler._ip_cliente(stub), "198.51.100.71")
+
+    def test_sem_client_address_degrada_em_vez_de_derrubar(self):
+        """Minor da revisão final: o guard `if self.client_address else "?"` que o
+        `_rate_ok` tinha se perdeu na mudança pro helper. Sem XFF e com o socket já
+        derrubado, `client_address` vem vazio e o acesso `[0]` derrubaria a resposta."""
+        stub = _IpClienteStub(xff=None)
+        stub.client_address = ()
+        self.assertEqual(self.serve.Handler._ip_cliente(stub), "?")
+        stub.client_address = None
+        self.assertEqual(self.serve.Handler._ip_cliente(stub), "?")
+
     def test_virgula_final_nao_vira_string_vazia(self):
         # "1.2.3.4, 10.0.0.1, " (trailing comma / elemento final vazio) tem que
         # devolver "10.0.0.1" — "" como chave de rate-limit juntaria todo mundo num
@@ -289,10 +325,14 @@ class _CupomPreviaStub:
     redirect, então este stub estende o mesmo padrão com o único método de saída que
     faltava, em vez de inventar uma terceira forma de stub)."""
 
-    def __init__(self, path, body=b"", ip="203.0.113.9"):
+    def __init__(self, path, body=b"", ip="203.0.113.9", extra=None):
         self.path = path
         self.headers = {"Content-Length": str(len(body)),
                         "Content-Type": "application/x-www-form-urlencoded"}
+        # `extra` (Origin/Referer/Host) só pros testes do gate de mesma origem — os
+        # outros seguem sem esses cabeçalhos de propósito: ausência dos dois libera
+        # (fail-open), então nada abaixo mudou de comportamento por causa do gate.
+        self.headers.update(extra or {})
         self.rfile = io.BytesIO(body)
         self.client_address = (ip, 54321)
 
@@ -374,7 +414,23 @@ class TestPreviaCupom(unittest.TestCase):
         r = self._resp(cupom="LANCAMENTO")
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["preco"], pricing.fmt_brl(esperado))
-        self.assertTrue(r["parcelas"], "o dropdown de parcelas tem que vir atualizado")
+        # FORMATO, não só truthiness (Important da revisão final): `assertTrue(r["parcelas"])`
+        # passava com QUALQUER lista não-vazia — renomear uma chave que o JS lê deixava a
+        # suíte verde e o dropdown renderizando "undefinedx de undefined".
+        opcoes = pricing.opcoes_parcelas(esperado)
+        self.assertEqual(len(r["parcelas"]), len(opcoes),
+                         "o dropdown tem que vir com todas as opções")
+        self.assertEqual(
+            r["parcelas"],
+            [{"parcelas": o["parcelas"], "por_parcela": pricing.fmt_brl(o["por_parcela"]),
+              "total": pricing.fmt_brl(o["total"])} for o in opcoes],
+            "as 3 chaves que o JS lê (parcelas/por_parcela/total), com os MESMOS valores "
+            "de pricing.opcoes_parcelas e já formatados em R$")
+        for item in r["parcelas"]:
+            self.assertEqual(sorted(item), ["parcelas", "por_parcela", "total"])
+            self.assertIsInstance(item["parcelas"], int)
+            self.assertTrue(item["por_parcela"].startswith("R$ "), item)
+            self.assertTrue(item["total"].startswith("R$ "), item)
 
     def test_cupom_valido_pix_empilha_desconto_via_base_cobrada(self):
         """Mutação (c) do Step 5: `base_cobrada` empilha o desconto Pix (5%) SOBRE o
@@ -389,6 +445,10 @@ class TestPreviaCupom(unittest.TestCase):
         r = self._resp(cupom="LANCAMENTO", metodo="PIX")
         self.assertTrue(r["ok"], r)
         self.assertEqual(r["preco"], pricing.fmt_brl(esperado))
+        # o valor de hoje, escrito à mão: anual 1497 − 500 (LANCAMENTO) = 997, e o Pix
+        # tira 5% POR CIMA disso -> 947,15. "R$ 997,00" aqui significaria que o
+        # empilhamento do Pix se perdeu.
+        self.assertEqual(r["preco"], "R$ 947,15")
 
     def test_cortesia_responde_invalido_generico(self):
         """Cortesia (desconto 0) daria acesso GRATIS no fechamento. A previa nao pode
@@ -442,6 +502,294 @@ class TestPreviaCupom(unittest.TestCase):
             self.assertTrue(self._resp(cupom="LANCAMENTO", ip="ip-ok")["ok"])
         self.assertTrue(self._resp(cupom="LANCAMENTO", ip="ip-ok")["ok"],
                         "cupom valido nao gasta cota")
+
+
+class _BasePrevia(unittest.TestCase):
+    """Mesmo isolamento de `TestPreviaCupom` (tmpdir + reimport por teste, sem
+    depender da ordem de execução das classes)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
+        os.environ.pop("DATABASE_URL", None)
+        self._limpar_modulos()
+        import db, rate_limit
+        db._INITED = False
+        db.init()
+        rate_limit.resetar()
+        self.db, self.rate_limit = db, rate_limit
+
+    def _limpar_modulos(self):
+        for m in ("config", "db", "subscribers", "serve", "site_web", "legal",
+                  "asaas", "pricing", "rate_limit", "renovacao"):
+            sys.modules.pop(m, None)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        self.rate_limit.resetar()
+
+    def _resp(self, plano="anual", cupom="LANCAMENTO", metodo="CARTAO", ip="ip-teste",
+              extra=None):
+        import urllib.parse as up
+        Stub = _make_cupom_previa_stub_cls()
+        body = up.urlencode({"plano": plano, "cupom": cupom, "metodo": metodo}).encode("utf-8")
+        return Stub("/assinar/cupom", body=body, ip=ip, extra=extra).do_POST()
+
+
+class TestPreviaCupomVazio(_BasePrevia):
+    """Important da revisão final: `g("cupom").strip().upper()` == "" caía em
+    `cupom_desconto("")` -> 0.0 -> CONTAVA tentativa. Provado: 5 cliques no Aplicar
+    com o campo em branco esgotavam a cota do PRÓPRIO visitante, e depois disso o
+    cupom BOM dele era recusado — na prévia E no fechamento. Campo vazio não é
+    tentativa de chute nenhum: não pode custar cota."""
+
+    def test_vinte_cliques_em_branco_nao_gastam_cota(self):
+        ip = "203.0.113.30"
+        for i in range(20):                      # 4x o teto
+            r = self._resp(cupom="", ip=ip)
+            self.assertFalse(r["ok"])
+            self.assertFalse(r.get("bloqueado"), f"clique {i+1} em branco foi barrado")
+        self.assertTrue(self._resp(cupom="LANCAMENTO", ip=ip)["ok"],
+                        "o cupom BOM do visitante tem que continuar funcionando depois "
+                        "de cliques com o campo em branco")
+
+    def test_so_espacos_tambem_nao_gastam_cota(self):
+        ip = "203.0.113.31"
+        for _ in range(20):
+            self.assertFalse(self._resp(cupom="   ", ip=ip).get("bloqueado"))
+        self.assertTrue(self._resp(cupom="LANCAMENTO", ip=ip)["ok"])
+
+    def test_campo_vazio_pede_o_codigo_em_vez_de_dizer_invalido(self):
+        r = self._resp(cupom="", ip="203.0.113.32")
+        self.assertFalse(r["ok"])
+        self.assertNotEqual(r["msg"], "Cupom inválido.",
+                            "campo em branco não é cupom inválido — é campo em branco")
+        self.assertTrue(r["msg"].strip(), "tem que dizer alguma coisa ao visitante")
+
+    def test_vazio_nem_consulta_o_banco(self):
+        """Corolário: o caminho do campo vazio retorna ANTES de qualquer lookup — não
+        é só "não conta", é "não chega a olhar cupom nenhum"."""
+        chamadas = []
+        orig = self.db.cupom_desconto
+        self.db.cupom_desconto = lambda c, p: chamadas.append(c) or orig(c, p)
+        try:
+            self._resp(cupom="", ip="203.0.113.33")
+        finally:
+            self.db.cupom_desconto = orig
+        self.assertEqual(chamadas, [])
+
+
+class TestPreviaCupomAfiliado(_BasePrevia):
+    """Important da revisão final (lacuna de SPEC, não do implementador): a prévia
+    consultava só `db.cupom_desconto` e nunca `db.afiliado_por_codigo` — mas o
+    fechamento HONRA códigos de afiliado (D3, no ar). Um código de afiliado válido
+    respondia "Cupom inválido." e ainda queimava cota; depois de 5 tentativas o
+    MESMO código era recusado no checkout."""
+
+    def _afiliado(self, codigo="PARCEIRO1", pct=10):
+        return self.db.criar_afiliado("Parceiro", "p@example.com", codigo,
+                                      pct_desconto=pct, pct_comissao=3)
+
+    def test_codigo_de_afiliado_valido_mostra_o_desconto(self):
+        import config, pricing, subscribers
+        self._afiliado()
+        plano = config.plano_por_slug("anual")
+        esperado = pricing.base_cobrada(
+            plano, "CARTAO", pricing.preco_vigente(plano, len(subscribers.ativos())),
+            10.0, 0.0)
+        r = self._resp(cupom="PARCEIRO1")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["preco"], pricing.fmt_brl(esperado))
+        self.assertIn("10%", r["msg"], f"a mensagem tem que mostrar o % do afiliado: {r}")
+
+    def test_afiliado_valido_nao_gasta_cota(self):
+        self._afiliado()
+        ip = "203.0.113.40"
+        for i in range(12):                      # mais que o dobro do teto
+            self.assertTrue(self._resp(cupom="PARCEIRO1", ip=ip)["ok"],
+                            f"tentativa {i+1} com código de afiliado válido foi barrada")
+
+    def test_afiliado_inativo_cai_na_falha_generica(self):
+        self._afiliado(codigo="PARCEIRO2")
+        afs = [a for a in self.db.listar_afiliados() if a["codigo"] == "PARCEIRO2"]
+        self.db.toggle_afiliado(afs[0]["id"], False)
+        r = self._resp(cupom="PARCEIRO2", ip="203.0.113.41")
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["msg"], self._resp(cupom="NAOEXISTEZZZ", ip="203.0.113.42")["msg"],
+                         "afiliado INATIVO e código inexistente têm que ser indistinguíveis")
+
+    def test_previa_promete_exatamente_o_que_o_checkout_cobra_com_afiliado(self):
+        """A propriedade que a feature inteira existe pra garantir: mostrado == cobrado.
+        Compara o `preco` da prévia com a `base` que o `_post_assinar` manda pro Asaas."""
+        import asaas, pricing
+        self._afiliado(codigo="PARCEIRO3", pct=10)
+        previa = self._resp(cupom="PARCEIRO3", metodo="PIX", ip="203.0.113.43")
+        self.assertTrue(previa["ok"], previa)
+
+        import serve
+        capt = {}
+        orig_montar, orig_criar = asaas.montar_checkout, asaas.criar_checkout
+        asaas.montar_checkout = (lambda plano, metodo, parcelas, dados, token, base_url,
+                                 base=None: capt.update(base=base) or {"p": 1})
+        asaas.criar_checkout = lambda payload: {"url": "https://checkout.asaas.example/x"}
+        g = {"plano": "anual", "nome": "Cliente Teste", "email": "c@example.com",
+             "cpf": "11144477735", "whatsapp": "43999990000", "metodo": "PIX",
+             "parcelas": "1", "cupom": "PARCEIRO3", "aceito": "1"}
+        try:
+            serve.Handler._post_assinar(_AssinarStub(ip="203.0.113.43"),
+                                        lambda k: g.get(k, ""))
+        finally:
+            asaas.montar_checkout, asaas.criar_checkout = orig_montar, orig_criar
+        self.assertIn("base", capt, "o checkout não chegou a montar o payload")
+        self.assertEqual(previa["preco"], pricing.fmt_brl(capt["base"]),
+                         "a prévia mostrou um valor e o checkout cobraria outro")
+
+
+class TestPreviaBaseVigente(_BasePrevia):
+    """Important da revisão final: a prévia precificava sobre `plano["base"]` cru,
+    enquanto o fechamento usa o preço VIGENTE (`pricing.preco_vigente`). Coincidem
+    hoje, mas divergem com preço pós-founder — e divergir aqui é exatamente a classe
+    de bug (mostrar um valor, cobrar outro) que esta tela existe pra impedir."""
+
+    def setUp(self):
+        super().setUp()
+        import config, subscribers
+        # Patch no MÓDULO (não em env var): `DSCURSO_FOUNDER_LIMITE` é lido no import de
+        # `config`, então mexer no ambiente vazaria pra qualquer módulo que já tivesse
+        # importado `config` e ficaria dependente da ordem dos testes.
+        self.PLANOS_orig, self.LIMITE_orig = config.PLANOS, config.FOUNDER_LIMITE
+        config.FOUNDER_LIMITE = 1
+        # anual com preço pós-founder DIFERENTE do de lançamento
+        config.PLANOS = [dict(p, base_pos=1997.0, preco_pos="R$ 1.997") if p["slug"] == "anual"
+                         else p for p in config.PLANOS]
+        subscribers.criar_de_pagamento(
+            {"nome": "Ativo", "whatsapp": "43999991111", "email": "a@e.com",
+             "plano": "anual"}, {}, status="ATIVO")   # 1 ativo >= FOUNDER_LIMITE=1
+
+    def tearDown(self):
+        import config
+        config.PLANOS, config.FOUNDER_LIMITE = self.PLANOS_orig, self.LIMITE_orig
+        super().tearDown()
+
+    def test_previa_usa_o_preco_vigente_e_nao_o_de_lancamento(self):
+        import config, pricing, subscribers
+        plano = config.plano_por_slug("anual")
+        n = len(subscribers.ativos())
+        self.assertEqual(pricing.preco_vigente(plano, n), 1997.0,
+                         "cenário do teste: tem que estar pós-founder")
+        desconto = self.db.cupom_desconto("LANCAMENTO", "anual")
+        vigente = pricing.base_cobrada(plano, "CARTAO", 1997.0, cupom_valor=desconto)
+        lancamento = pricing.base_cobrada(plano, "CARTAO", float(plano["base"]),
+                                          cupom_valor=desconto)
+        self.assertNotEqual(vigente, lancamento, "cenário do teste: têm que divergir")
+        r = self._resp(cupom="LANCAMENTO", ip="203.0.113.50")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["preco"], pricing.fmt_brl(vigente),
+                         "a prévia tem que precificar sobre a base VIGENTE (a mesma do "
+                         "fechamento), não sobre plano['base']")
+
+    def test_parcelas_tambem_saem_da_base_vigente(self):
+        import pricing
+        r = self._resp(cupom="LANCAMENTO", ip="203.0.113.51")
+        totais = {o["total"] for o in r["parcelas"]}
+        self.assertEqual(totais, {r["preco"]},
+                         "todas as opções somam o mesmo total (cartão sem juros) e esse "
+                         "total é o preço mostrado")
+        self.assertEqual(len(r["parcelas"]), len(pricing.opcoes_parcelas(1497.0)))
+
+
+class TestClassesDeFalhaIndistinguiveis(_BasePrevia):
+    """A prévia não pode virar detector de cupom: um cupom de CORTESIA acertado dá
+    acesso GRÁTIS no fechamento, então "existe mas não serve" tem que ser
+    indistinguível de "não existe". Com a consulta de afiliado adicionada (Important
+    3), as classes passaram de 4 pra 5 — todas continuam com o MESMO status, o MESMO
+    corpo e a MESMA mensagem, e as duas consultas rodam SEMPRE, na mesma ordem, pra
+    qualquer código (é o que mantém o tempo igual também)."""
+
+    def _resp_com_status(self, cupom, plano="anual"):
+        import urllib.parse as up
+        Stub = _make_cupom_previa_stub_cls()
+        # captura o código HTTP também (o `_json` do stub padrão devolve só o corpo)
+        Stub = type("_ComStatus", (Stub,),
+                    {"_json": lambda self, obj, code=200: (code, obj)})
+        body = up.urlencode({"plano": plano, "cupom": cupom,
+                             "metodo": "CARTAO"}).encode("utf-8")
+        return Stub("/assinar/cupom", body=body, ip=f"ip-{cupom}").do_POST()
+
+    def test_as_cinco_classes_de_falha_respondem_identico(self):
+        self.db.criar_cupom(descricao="cortesia", uso_unico=False, dias_acesso=7,
+                            codigo="CORTESIAX")
+        self.db.criar_cupom(descricao="inativo", desconto_valor=100, codigo="INATIVOX")
+        self.db.toggle_cupom("INATIVOX", False)
+        self.db.criar_afiliado("Parceiro", "p@e.com", "AFOFFX", pct_desconto=10)
+        afs = [a for a in self.db.listar_afiliados() if a["codigo"] == "AFOFFX"]
+        self.db.toggle_afiliado(afs[0]["id"], False)
+
+        classes = {
+            "inexistente": self._resp_com_status("NAOEXISTEZZZ"),
+            "inativo": self._resp_com_status("INATIVOX"),
+            "cortesia": self._resp_com_status("CORTESIAX"),
+            "outro_plano": self._resp_com_status("LANCAMENTO", plano="mensal"),
+            "afiliado_inativo": self._resp_com_status("AFOFFX"),
+        }
+        esperado = (200, {"ok": False, "msg": "Cupom inválido."})
+        for nome, r in classes.items():
+            self.assertEqual(r, esperado, f"classe '{nome}' se distingue das outras")
+
+    def test_as_duas_consultas_rodam_sempre_na_mesma_ordem(self):
+        """O que garante o TEMPO igual: nem "afiliado só se o promocional falhou" (que
+        separaria válido de inválido), nem uma consulta a menos em alguma classe."""
+        ordem = []
+        o_cup, o_af = self.db.cupom_desconto, self.db.afiliado_por_codigo
+        self.db.cupom_desconto = lambda c, p: ordem.append("cupom") or o_cup(c, p)
+        self.db.afiliado_por_codigo = lambda c: ordem.append("afiliado") or o_af(c)
+        try:
+            for cupom in ("NAOEXISTEZZZ", "LANCAMENTO"):     # inválido e VÁLIDO
+                del ordem[:]
+                self._resp_com_status(cupom)
+                self.assertEqual(ordem, ["cupom", "afiliado"],
+                                 f"'{cupom}' não fez as duas consultas na mesma ordem")
+        finally:
+            self.db.cupom_desconto, self.db.afiliado_por_codigo = o_cup, o_af
+
+
+class TestPreviaMesmaOrigem(_BasePrevia):
+    """Amplificador apontado na revisão: o endpoint aceita urlencoded (sem preflight)
+    e não checava origem, então qualquer página de terceiro queimava, do navegador do
+    visitante, a cota de cupom DELE. `Origin` é escrito pelo navegador e não é
+    forjável por script."""
+
+    SITE = {"Host": "curso.example", "Origin": "https://curso.example"}
+
+    def test_pagina_de_terceiro_nao_queima_a_cota_do_visitante(self):
+        ip = "203.0.113.60"
+        alheio = {"Host": "curso.example", "Origin": "https://evil.example"}
+        for _ in range(20):
+            r = self._resp(cupom="CHUTE", ip=ip, extra=alheio)
+            self.assertFalse(r["ok"])
+        # a cota do visitante tem que estar intacta: 5 chutes DELE ainda passam
+        for i in range(5):
+            r = self._resp(cupom=f"CHUTE-{i}", ip=ip, extra=self.SITE)
+            self.assertFalse(r.get("bloqueado"),
+                             f"tentativa própria {i+1} barrada — a cota foi queimada "
+                             f"por uma página de terceiro")
+
+    def test_referer_de_terceiro_tambem_e_recusado(self):
+        r = self._resp(cupom="LANCAMENTO", ip="203.0.113.61",
+                       extra={"Host": "curso.example", "Referer": "https://evil.example/x"})
+        self.assertFalse(r["ok"])
+
+    def test_origem_do_proprio_site_funciona_normalmente(self):
+        r = self._resp(cupom="LANCAMENTO", ip="203.0.113.62", extra=self.SITE)
+        self.assertTrue(r["ok"], f"requisição legítima do próprio /assinar: {r}")
+
+    def test_sem_origin_nem_referer_libera(self):
+        """Fail-open deliberado: se um proxy remover os dois cabeçalhos, a prévia não
+        pode desligar pra todo mundo."""
+        r = self._resp(cupom="LANCAMENTO", ip="203.0.113.63",
+                       extra={"Host": "curso.example"})
+        self.assertTrue(r["ok"], r)
 
 
 class TestCotaCompartilhadaEntrePreviaEcheckout(unittest.TestCase):

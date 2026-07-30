@@ -114,6 +114,88 @@ class TestRegistrarTentativa(unittest.TestCase):
                          "chave diferente nao pode ser afetada")
 
 
+class TestPerdoarTentativa(unittest.TestCase):
+    """`perdoar_tentativa` é a metade "perdoa" do CONTAR-E-PERDOA que substituiu o
+    peek-then-count (CRITICAL da revisão final): quem chama conta a tentativa
+    atomicamente com `limitado`, avalia, e devolve a cota se a tentativa era legítima
+    (cupom válido). Sem esta primitiva, "cupom válido não gasta cota" só era possível
+    separando checar de contar — que é a corrida."""
+
+    def setUp(self):
+        rate_limit.resetar()
+
+    def test_devolve_exatamente_uma_tentativa(self):
+        t = 1000.0
+        for i in range(3):
+            rate_limit.limitado("k", 3, 60, agora=t + i)
+        self.assertTrue(rate_limit.limitado("k", 3, 60, agora=t + 3, registrar=False),
+                        "3 de 3 registradas -> estourou")
+        rate_limit.perdoar_tentativa("k")
+        self.assertFalse(rate_limit.limitado("k", 3, 60, agora=t + 3, registrar=False),
+                         "perdoada 1 -> voltou a caber uma")
+        rate_limit.limitado("k", 3, 60, agora=t + 4)
+        self.assertTrue(rate_limit.limitado("k", 3, 60, agora=t + 5, registrar=False))
+
+    def test_contar_e_perdoar_em_sequencia_nao_consome_nada(self):
+        """O padrão exato das rotas de cupom: contar, descobrir que era válido,
+        perdoar — repetido muito além do teto."""
+        t = 1000.0
+        for i in range(50):
+            self.assertFalse(rate_limit.limitado("k", 5, 600, agora=t + i),
+                             f"iteração {i+1}: contar-e-perdoar não pode acumular")
+            rate_limit.perdoar_tentativa("k")
+        self.assertFalse(rate_limit.limitado("k", 5, 600, agora=t + 99, registrar=False))
+
+    def test_chave_inexistente_ou_vazia_e_noop(self):
+        rate_limit.perdoar_tentativa("nunca-vista")       # não pode levantar
+        rate_limit.limitado("k", 3, 60, agora=1000.0)
+        rate_limit.perdoar_tentativa("k")
+        rate_limit.perdoar_tentativa("k")                 # já vazia
+        self.assertFalse(rate_limit.limitado("k", 1, 60, agora=1000.0, registrar=False))
+
+    def test_nao_mexe_em_outra_chave(self):
+        t = 1000.0
+        rate_limit.limitado("a", 1, 60, agora=t)
+        rate_limit.limitado("b", 1, 60, agora=t)
+        rate_limit.perdoar_tentativa("a")
+        self.assertTrue(rate_limit.limitado("b", 1, 60, agora=t, registrar=False),
+                        "perdoar em 'a' não pode devolver cota de 'b'")
+
+
+class TestPodaUsaAJanelaDaPropriaChave(unittest.TestCase):
+    """Minor da revisão final: `_podar_vencidas` podava TODAS as chaves com a janela
+    de quem disparou a poda. Como as janelas convivem (`login:` 300 s,
+    `otp:`/`recover:`/`cupom:` 600 s), uma chamada de login evictava chaves `cupom:`
+    ainda vigentes — reset de cota silencioso justamente na chave que protege o
+    oráculo de cortesia."""
+
+    def setUp(self):
+        rate_limit.resetar()
+
+    def test_chamada_de_login_nao_zera_a_cota_de_cupom(self):
+        t = 1000.0
+        for _ in range(5):                                  # cota de cupom ESGOTADA
+            rate_limit.limitado("cupom:1.2.3.4", 5, 600, agora=t)
+        self.assertTrue(rate_limit.limitado("cupom:1.2.3.4", 5, 600, agora=t,
+                                            registrar=False))
+        # 400 s depois: já venceu pra uma janela de 300 s (login), NÃO pra 600 s (cupom).
+        # Enche o dicionário além do teto com chaves de login pra disparar a poda.
+        for i in range(rate_limit._MAX_CHAVES + 100):
+            rate_limit.limitado(f"login:10.0.{i // 256}.{i % 256}", 15, 300, agora=t + 400)
+        self.assertTrue(
+            rate_limit.limitado("cupom:1.2.3.4", 5, 600, agora=t + 400, registrar=False),
+            "a chave de cupom (janela 600 s) tem que continuar bloqueada: podá-la com "
+            "a janela de 300 s do login devolve cota que ainda não venceu")
+
+    def test_a_propria_janela_ainda_expira_normalmente(self):
+        t = 1000.0
+        for _ in range(5):
+            rate_limit.limitado("cupom:1.2.3.4", 5, 600, agora=t)
+        self.assertFalse(
+            rate_limit.limitado("cupom:1.2.3.4", 5, 600, agora=t + 601, registrar=False),
+            "passados os 600 s da PRÓPRIA janela, a cota volta")
+
+
 class TestLimitadoComportamentoExistenteInalterado(unittest.TestCase):
     """Regressão: `registrar=True` (o default — o único modo que login/OTP/
     recuperação usam) tem que se comportar EXATAMENTE como antes da extensão do
