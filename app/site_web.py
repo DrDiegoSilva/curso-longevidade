@@ -2053,16 +2053,25 @@ def pagina_assinar(plano_slug=None, erro=""):
                        meta_extra='<meta name="robots" content="noindex">')
     base = float(plano["base"])
     erro_html = f'<div class="erro" style="margin-bottom:16px">{_esc(erro)}</div>' if erro else ""
-    pix_desc = f"{pricing.fmt_brl(pricing.base_cobrada(plano, 'PIX', base))} à vista"
+    # UMA fonte pra todas as figuras de dinheiro desta tela — a MESMA que a prévia do
+    # cupom usa em `POST /assinar/cupom` (ver pricing.figuras_assinar). Antes cada figura
+    # tinha a sua própria conta aqui, e a prévia atualizava só o resumo: o tile do Pix e
+    # o dropdown de parcelas ficavam mostrando valores sem o cupom (bug ao vivo,
+    # 2026-07-29). `figs["preco"]` NÃO é usado aqui de propósito: o resumo abre com o
+    # preço de tabela (`plano["preco"]`, sem centavos), como sempre — é a prévia que
+    # passa a mostrar o valor com desconto.
+    figs = pricing.figuras_assinar(plano, "CARTAO", base)
+    pix_desc = figs["pix_desc"]
+    cartao_desc = figs["cartao_desc"]
     if plano.get("recorrente_pix"):   # mensal (sem parcelamento)
-        cartao_desc = f"{pricing.fmt_brl(pricing.valor_cartao(base,1))}/mês · renova"
         parcelas_html = '<input type="hidden" name="parcelas" value="1">'
     else:
-        cartao_desc = "parcelável · renova no fim"
-        opts = "".join(
-            f'<option value="{o["parcelas"]}">{o["parcelas"]}x de {pricing.fmt_brl(o["por_parcela"])} '
-            f'— total {pricing.fmt_brl(o["total"])}</option>' for o in pricing.opcoes_parcelas(base))
-        parcelas_html = (f'<div class="field"><label>Parcelas (só no cartão)</label>'
+        opts = "".join(f'<option value="{o["parcelas"]}">{o["parcelas"]}x de {o["por_parcela"]} '
+                       f'— total {o["total"]}</option>' for o in figs["parcelas"])
+        # id no CAMPO (não no <select>): o JS esconde o campo inteiro quando o método é
+        # Pix — à vista não tem parcela. Sem `disabled`, pro `POST /assinar` continuar
+        # lendo `parcelas` exatamente como hoje.
+        parcelas_html = (f'<div class="field" id="parcelas-field"><label>Parcelas (só no cartão)</label>'
                          f'<select name="parcelas">{opts}</select></div>')
     inclui = "".join(f'<li><b>✓</b><span>{v}</span></li>' for v in (
         "1 estudo por dia útil, no seu WhatsApp",
@@ -2072,10 +2081,15 @@ def pagina_assinar(plano_slug=None, erro=""):
     # mensal saiu do Pix (2026-07-26): sem o tile, o rádio do cartão precisa vir
     # `checked` — senão o formulário abriria sem forma de pagamento selecionada.
     sem_pix = plano.get("aceita_pix") is False
+    # `data-base`: o valor que o SERVIDOR renderizou. É a ele que o JS volta quando não
+    # há cupom aplicado (caixa vazia ou última tentativa recusada) — assim uma troca de
+    # método sem cupom não precisa falar com o servidor (não gasta cota de tentativas) e
+    # nenhuma conta de preço acontece no cliente.
     tile_pix = ("" if sem_pix else
                 f'<label class="paytile"><input type="radio" name="metodo" value="PIX" checked>'
                 f'<span class="pt-ico">⚡</span><span class="pt-nome">Pix</span>'
-                f'<span class="pt-desc">{_esc(pix_desc)}</span></label>')
+                f'<span class="pt-desc" id="pt-desc-pix" data-base="{_esc(pix_desc)}">'
+                f'{_esc(pix_desc)}</span></label>')
     cartao_checked = " checked" if sem_pix else ""
     # Prévia do cupom sem recarregar a página (Task 2, spec 2026-07-29-cupom-previa).
     # Degradação sem JS: o campo continua um <input name="cupom"> normal dentro do
@@ -2089,6 +2103,13 @@ def pagina_assinar(plano_slug=None, erro=""):
       var input = document.getElementById('cupom-input');
       var msg = document.getElementById('cupom-msg');
       var sumPrice = document.getElementById('sum-price');
+      // As OUTRAS DUAS figuras de dinheiro da tela. O bug ao vivo (2026-07-29): a
+      // prévia mexia só no resumo, então o tile do Pix ficava com o valor SEM o
+      // cupom e o dropdown chegou a oferecer o valor do Pix parcelado (que não
+      // existe). Toda figura que a tela mostra é repintada pela resposta do
+      // servidor — nenhuma conta de preço acontece aqui.
+      var pixDesc = document.getElementById('pt-desc-pix');
+      var cartaoDesc = document.getElementById('pt-desc-cartao');
       // guarda o <span> do período (ex.: "por ano") pra reencaixar depois — nunca
       // via innerHTML, só a mesma referência de nó (sem risco de injeção nenhuma).
       var periodoSpan = sumPrice ? sumPrice.querySelector('span') : null;
@@ -2096,13 +2117,56 @@ def pagina_assinar(plano_slug=None, erro=""):
       // da tag de parcelas sem atributo extra nenhum; seletor por atributo em
       // vez de id evita mexer nessa tag.
       var select = document.querySelector('select[name="parcelas"]');
+      var campoParcelas = document.getElementById('parcelas-field');
       var planoInput = document.querySelector('input[name="plano"]');
+      var radios = document.querySelectorAll('input[name="metodo"]');
+      // BASELINE das parcelas: as <option> que o SERVIDOR renderizou, guardadas como
+      // strings (nenhuma conta no cliente). É a elas que a tela volta quando não há
+      // cupom aplicado.
+      var parcelasBase = select ? Array.prototype.map.call(select.options, function(o){
+        return {valor: String(o.value), texto: o.textContent};
+      }) : null;
+      // Código que a última prévia APROVOU (em maiúsculas, como o servidor normaliza).
+      // Vazio = nenhum cupom aplicado -> trocar de método NÃO chama o servidor, só
+      // restaura o baseline. É o que impede um código inválido na caixa de queimar
+      // uma tentativa por clique no rádio: com 5 trocas de método o visitante se
+      // trancaria fora (a cota é compartilhada com o fechamento) e o cupom BOM dele
+      // seria recusado na compra.
+      var aplicado = '';
+      // Nº da conferência em voo. Trocar o método duas vezes rápido deixa DUAS
+      // requisições no ar, e elas podem voltar fora de ordem — a resposta do método
+      // ANTIGO chegando por último repintaria a tela com o valor do outro método (o
+      // mesmíssimo "a tela segura uma resposta velha" que este fix existe pra matar).
+      // Só a resposta da conferência mais recente pode pintar.
+      var vez = 0;
+      function digitado(){ return (input.value || '').trim(); }
+      function ehOaplicado(){ return !!aplicado && digitado().toUpperCase() === aplicado; }
       function aviso(texto, ok){
         msg.textContent = texto;
         msg.style.color = ok ? 'var(--gold2)' : '#e08a8a';
       }
+      function metodoAtual(){
+        var el = document.querySelector('input[name="metodo"]:checked');
+        return el ? el.value : '';
+      }
+      function pintar(el, valor){
+        // valor ausente é NO-OP: uma resposta incompleta não pode apagar dinheiro da
+        // tela nem escrever "undefined" onde havia um preço.
+        if (el && valor) el.textContent = valor;
+      }
+      function pintarPreco(valor){
+        if (!sumPrice || !valor) return;
+        sumPrice.textContent = valor;                          // some com o <span> junto
+        if (periodoSpan) sumPrice.appendChild(periodoSpan);    // reencaixa o mesmo nó
+      }
+      function daResposta(lista){
+        return (lista || []).map(function(o){
+          return {valor: String(o.parcelas),
+                  texto: o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total};
+        });
+      }
       function pintarParcelas(lista){
-        if (!select || !lista) return;
+        if (!select || !lista || !lista.length) return;
         // PRESERVA a escolha do visitante (Important da revisão): o rebuild antigo
         // limpava o <select> e reanexava opções sem nenhuma marcada, então o
         // navegador auto-selecionava a 1a (1x) — quem tinha escolhido 12x era movido
@@ -2112,8 +2176,8 @@ def pagina_assinar(plano_slug=None, erro=""):
         select.textContent = '';
         lista.forEach(function(o){
           var opt = document.createElement('option');
-          opt.value = o.parcelas;
-          opt.textContent = o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total;
+          opt.value = o.valor;
+          opt.textContent = o.texto;
           select.appendChild(opt);
         });
         select.value = anterior;      // opção inexistente -> selectedIndex fica -1
@@ -2123,37 +2187,69 @@ def pagina_assinar(plano_slug=None, erro=""):
           msg.textContent = msg.textContent + ' · parcelas ajustadas para ' + select.value + 'x';
         }
       }
+      function mostrarParcelas(){
+        // Pix é À VISTA: parcelamento não existe nesse método (decisão do dono). Só
+        // ESCONDE o campo — sem `disabled` e sem mexer em name/value, pro POST
+        // /assinar continuar lendo `parcelas` como hoje (no Pix o servidor já ignora
+        // esse campo: ver asaas.montar_checkout).
+        if (campoParcelas)
+          campoParcelas.style.display = (metodoAtual() === 'PIX') ? 'none' : '';
+      }
+      function restaurar(){
+        // Só strings que o SERVIDOR renderizou (data-base + as <option> originais):
+        // volta a tela pro preço de tabela sem gastar requisição nem cota.
+        if (sumPrice) pintarPreco(sumPrice.getAttribute('data-base'));
+        pintar(pixDesc, pixDesc ? pixDesc.getAttribute('data-base') : '');
+        pintar(cartaoDesc, cartaoDesc ? cartaoDesc.getAttribute('data-base') : '');
+        pintarParcelas(parcelasBase);
+      }
       function aplicar(){
-        var codigo = (input.value || '').trim();
+        var codigo = digitado();
         if (!codigo) {
           // Campo em branco não vira requisição: no servidor ele nem conta tentativa,
           // e aqui evita gastar uma ida ao servidor pra dizer o óbvio.
           aviso('Digite um cupom.', false);
           return;
         }
-        var metodoEl = document.querySelector('input[name="metodo"]:checked');
         var body = new URLSearchParams({
           plano: planoInput ? planoInput.value : '',
           cupom: codigo,
-          metodo: metodoEl ? metodoEl.value : ''
+          metodo: metodoAtual()
         });
         btn.disabled = true;
         msg.textContent = '';
+        var minhaVez = ++vez;
         fetch('/assinar/cupom', {
           method: 'POST',
           headers: {'Content-Type': 'application/x-www-form-urlencoded'},
           body: body
         }).then(function(r){ return r.json(); }).then(function(d){
+          if (minhaVez !== vez) return;   // já existe conferência mais nova em voo
           btn.disabled = false;
-          aviso(d.msg || '', d.ok);
-          if (!d.ok) return;
-          if (sumPrice) {
-            sumPrice.textContent = d.preco;               // some com o <span> junto
-            if (periodoSpan) sumPrice.appendChild(periodoSpan);  // reencaixa o mesmo nó
+          if (!d.ok) {
+            // Recusado AGORA (ex.: o cupom foi desativado no admin entre dois
+            // cliques): a tela não pode ficar com o desconto de antes, senão promete
+            // menos do que o fechamento vai cobrar.
+            aplicado = '';
+            restaurar();
+            aviso(d.msg || '', false);
+            return;
           }
-          pintarParcelas(d.parcelas);
+          aplicado = codigo.toUpperCase();
+          aviso(d.msg || '', true);
+          pintarPreco(d.preco);
+          pintar(pixDesc, d.pix_desc);
+          pintar(cartaoDesc, d.cartao_desc);
+          pintarParcelas(daResposta(d.parcelas));
         }).catch(function(){
+          if (minhaVez !== vez) return;
           btn.disabled = false;
+          // Falhou a conferência (rede/resposta ilegível) — a tela volta pro preço de
+          // tabela em vez de manter o valor de antes. Numa TROCA DE MÉTODO, manter
+          // seria mostrar o valor do método anterior: com Pix aplicado e cartão
+          // marcado, R$ 947,15 na tela e R$ 997,00 na cobrança.
+          aplicado = '';
+          restaurar();
           aviso('Não foi possível conferir o cupom agora. Tente de novo.', false);
         });
       }
@@ -2166,6 +2262,29 @@ def pagina_assinar(plano_slug=None, erro=""):
           aplicar();
         }
       });
+      // Mexer na caixa depois de aplicar volta a tela pro preço de tabela: sem isto,
+      // quem aplicava o cupom e depois APAGAVA o código fechava a compra olhando um
+      // valor MENOR do que o cobrado.
+      input.addEventListener('input', function(){
+        if (aplicado && !ehOaplicado()) {
+          aplicado = '';
+          msg.textContent = '';
+          restaurar();
+        }
+      });
+      // Trocar a forma de pagamento reprecifica TUDO — nenhuma figura pode sobrar do
+      // método anterior (era o bug ao vivo: Pix marcado, tela com o preço do cartão e
+      // vice-versa). Com um cupom já aplicado refaz a prévia no servidor (código
+      // válido não gasta cota: a rota devolve a tentativa); sem cupom aplicado só
+      // restaura o baseline, sem requisição nenhuma.
+      Array.prototype.forEach.call(radios, function(r){
+        r.addEventListener('change', function(){
+          mostrarParcelas();
+          if (ehOaplicado()) aplicar();
+          else restaurar();
+        });
+      });
+      mostrarParcelas();     // estado inicial (no anual o Pix já vem marcado)
     })();
     </script>"""
     corpo = f"""
@@ -2176,7 +2295,7 @@ def pagina_assinar(plano_slug=None, erro=""):
         <aside class="summary">
           <div class="sum-eyebrow">{_esc(PRODUTO)}</div>
           <div class="sum-plan">Plano {_esc(plano["nome"])}</div>
-          <div class="sum-price" id="sum-price">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
+          <div class="sum-price" id="sum-price" data-base="{_esc(plano["preco"])}">{_esc(plano["preco"])}<span>{_esc(plano["periodo"])}</span></div>
           <ul class="sum-list">{inclui}</ul>
           <div class="sum-trust">🔒 Pagamento 100% seguro · seus dados protegidos.<br>7 dias de garantia com reembolso integral.</div>
         </aside>
@@ -2194,7 +2313,7 @@ def pagina_assinar(plano_slug=None, erro=""):
             <div class="paytiles">
               {tile_pix}
               <label class="paytile"><input type="radio" name="metodo" value="CARTAO"{cartao_checked}>
-                <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc">{_esc(cartao_desc)}</span></label>
+                <span class="pt-ico">💳</span><span class="pt-nome">Cartão</span><span class="pt-desc" id="pt-desc-cartao" data-base="{_esc(cartao_desc)}">{_esc(cartao_desc)}</span></label>
             </div>
             {parcelas_html}
             <div class="field">
