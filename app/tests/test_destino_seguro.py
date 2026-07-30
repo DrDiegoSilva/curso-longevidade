@@ -79,6 +79,14 @@ class _AceitarTermosStub:
         self.redirects.append(location)
         return f"<redirect {location}>"
 
+    def _ip_cliente(self):
+        # `_aceitar_termos` agora resolve o IP via `Handler._ip_cliente` (fix
+        # pós-revisão do Task 1 de cupom-previa: X-Forwarded-For lido do lado
+        # errado) — este stub não herda de `Handler`, então só encaminha pra
+        # implementação real em vez de duplicá-la.
+        import serve
+        return serve.Handler._ip_cliente(self)
+
 
 class TestAceitarTermosSanitizaDestinoDeVerdade(unittest.TestCase):
     """Garante que o gate real (`_aceitar_termos`, não só a função pura) sanitiza o

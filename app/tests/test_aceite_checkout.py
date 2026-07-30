@@ -59,6 +59,13 @@ class _AssinarStub:
     def _redirect(self, location, token=None, clear=False):
         return f"<redirect {location}>"
 
+    def _ip_cliente(self):
+        # `_post_assinar` agora resolve o IP via `Handler._ip_cliente` (fix pós-revisão
+        # do Task 1: X-Forwarded-For lido do lado errado) — este stub não herda de
+        # `Handler`, então só encaminha pra implementação real em vez de duplicá-la.
+        import serve
+        return serve.Handler._ip_cliente(self)
+
 
 class TestGateDeAceiteNoPostAssinar(unittest.TestCase):
     """ACHADO (revisão da Task 7): os testes acima chamam `pagina_assinar`,

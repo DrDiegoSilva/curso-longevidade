@@ -136,6 +136,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_header("Set-Cookie", "sid=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure")
         self.end_headers()
 
+    def _ip_cliente(self):
+        """IP real do cliente, mesmo atrás do proxy reverso (Traefik, neste deploy).
+        O proxy ANEXA o IP real ao fim do X-Forwarded-For que o cliente mandar: um
+        cliente que envia 'X-Forwarded-For: 1.2.3.4' chega aqui como
+        '1.2.3.4, <ip-real>'. Pegar o PRIMEIRO elemento (bug corrigido aqui) devolve
+        um valor que o próprio cliente escolhe — forjável à vontade, request a
+        request. Só o ÚLTIMO elemento não-vazio é o hop que o cliente não controla;
+        correto tanto com proxy que ANEXA quanto com proxy que SUBSTITUI (cabeçalho
+        de 1 elemento só) e cai no `client_address` se o cabeçalho vier ausente,
+        vazio, só espaço, ou com um elemento final vazio (vírgula sobrando).
+        Único ponto de verdade: usado tanto pelo limite de tentativas de cupom
+        (`_post_assinar`) quanto pelo registro de aceite dos Termos
+        (`_aceitar_termos`, onde o IP é evidência legal do aceite)."""
+        partes = [p.strip() for p in self.headers.get("X-Forwarded-For", "").split(",")]
+        validas = [p for p in partes if p]
+        return validas[-1] if validas else self.client_address[0]
+
     def do_GET(self):
         import urllib.parse as up
         path = up.urlparse(self.path).path
@@ -1152,8 +1169,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect("/entrar")
         if g("aceito") != "1":
             return self._html(site_legal.pagina_aceite_termos(_destino_seguro(g("destino"))))
-        ip = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-              or self.client_address[0])
+        ip = self._ip_cliente()
         subscribers.registrar_aceite(sub["id"], legal.VERSAO, ip)
         return self._redirect(_destino_seguro(g("destino")))
 
@@ -1333,8 +1349,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_assinar(
                 plano["slug"], "É preciso aceitar os Termos e a Política de Privacidade."))
         # Mesmo padrão de _aceitar_termos: atrás de proxy, o IP real vem no cabeçalho.
-        ip_cliente = (self.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-                      or self.client_address[0])
+        ip_cliente = self._ip_cliente()
         dados["cpf"] = cpfval.so_digitos(dados["cpf"])          # guarda só os dígitos
         ja = subscribers.por_cpf(dados["cpf"]) or subscribers.por_whatsapp(dados["whatsapp"])
         if ja and subscribers.tem_acesso(ja):                   # já tem assinatura ativa -> não duplica
