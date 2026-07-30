@@ -1407,21 +1407,40 @@ def agenda_fixar(data, on=True):
         c.execute("UPDATE agenda SET fixado=? WHERE data=?", (1 if on else 0, data))
 
 
+def _devolver_ao_estoque(slot):
+    """Devolve ao estoque o item apontado por um slot de agenda (dict de uma linha da
+    tabela `agenda`, ou None): reserva volta 'pronto', candidato volta 'novo', fila
+    devolve à queue_store. Clássico e vazio/pulado não têm dono no estoque — no-op.
+
+    Único lugar que sabe converter cada tipo de slot em devolução ao estoque. Ponto de
+    extração (revisão final do Cancelar série): `agenda_devolver` e `series._liberar_dia`
+    eram cópias verbatim desta lógica, e a divergência entre as duas cópias FOI o bug que
+    o Task 1 consertou (`agenda_devolver` não tratava 'candidato', `_liberar_dia` tratava
+    — o candidato vazava). As duas agora chamam esta função; um tipo de slot novo só
+    precisa ser ensinado aqui uma vez. Não mexe no slot em si (não upserta, não limpa) —
+    quem chama decide o que fazer com o slot depois."""
+    if not slot:
+        return
+    tipo = slot.get("tipo")
+    if tipo == "reserva" and slot.get("ref_id"):
+        marcar_reserva_pronto(slot["ref_id"])
+    elif tipo == "candidato" and slot.get("ref_id"):
+        marcar_candidato_pronto(slot["ref_id"])
+    elif tipo == "fila" and slot.get("payload"):
+        import json
+        import queue_store
+        queue_store.devolver(json.loads(slot["payload"]))
+
+
 def agenda_devolver(data):
     """Tira o item do slot e devolve ao estoque; slot vira 'vazio'. Preserva 'fixado'.
-    Trata reserva/candidato/fila. Se a devolução à fila falhar, a exceção propaga
-    ANTES de limpar o slot — o item não é perdido (o slot continua apontando pra ele)."""
+    Trata reserva/candidato/fila (via `_devolver_ao_estoque`). Se a devolução à fila
+    falhar, a exceção propaga ANTES de limpar o slot — o item não é perdido (o slot
+    continua apontando pra ele)."""
     s = agenda_slot(data)
     if not s:
         return
-    if s.get("tipo") == "reserva" and s.get("ref_id"):
-        marcar_reserva_pronto(s["ref_id"])
-    elif s.get("tipo") == "candidato" and s.get("ref_id"):
-        marcar_candidato_pronto(s["ref_id"])
-    elif s.get("tipo") == "fila" and s.get("payload"):
-        import json
-        import queue_store
-        queue_store.devolver(json.loads(s["payload"]))
+    _devolver_ao_estoque(s)
     agenda_upsert(data, tipo="vazio", fixado=s.get("fixado", 0))
 
 
