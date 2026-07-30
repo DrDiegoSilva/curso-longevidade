@@ -51,6 +51,18 @@ class TestPayload(unittest.TestCase):
         self.assertEqual(p["items"][0]["value"], self._plano("anual")["base"])   # 1497 (PIX = base)
         self.assertNotIn("subscription", p)
 
+    def test_pix_ignora_as_parcelas_que_chegarem(self):
+        """Prova de que a tela pode ESCONDER o campo de parcelas no Pix sem desabilitar
+        (2026-07-30): escondido-mas-habilitado, o campo continua submetendo `parcelas`
+        junto de um pedido Pix. O payload do Pix tem que ser o MESMO com 1 ou 12 —
+        nenhum installmentCount, valor à vista. Se algum dia o Pix passar a parcelar,
+        este teste cai e a tela precisa voltar a mostrar o campo."""
+        for slug in ("anual", "mensal"):
+            um = self.a.montar_checkout(self._plano(slug), "PIX", 1, self.dados, "t", "https://x")
+            doze = self.a.montar_checkout(self._plano(slug), "PIX", 12, self.dados, "t", "https://x")
+            self.assertEqual(um, doze, slug)
+            self.assertNotIn("installmentCount", doze)
+
     def test_item_nome_curto(self):
         for slug in ("mensal", "trimestral", "semestral", "anual"):
             p = self.a.montar_checkout(self._plano(slug), "PIX", 1, self.dados, "t", "https://x")

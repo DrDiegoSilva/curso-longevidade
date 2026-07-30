@@ -84,5 +84,94 @@ class TestPricing(unittest.TestCase):
         self.assertEqual(self.p.comissao(1000.0, 0), 0.0)
 
 
+class TestFigurasAssinar(unittest.TestCase):
+    """`figuras_assinar` = TODAS as figuras de dinheiro que a tela /assinar mostra,
+    calculadas num único lugar (o mesmo que o fechamento usa, via `base_cobrada`).
+
+    Existe por causa de um bug ao vivo (2026-07-29): a prévia do cupom só atualizava o
+    resumo, então o tile do Pix e o dropdown de parcelas continuavam mostrando valores
+    SEM o cupom — e o dropdown chegou a mostrar o valor do PIX parcelado, que não
+    existe (Pix é à vista). Uma função só, usada pela página E pela prévia, é o que
+    impede as três figuras de divergirem."""
+
+    def setUp(self):
+        import pricing, config
+        self.p, self.cfg = pricing, config
+        self.anual = config.plano_por_slug("anual")     # 1497, pix -5%
+        self.mensal = config.plano_por_slug("mensal")   # 147, recorrente, sem Pix
+
+    # ── as duas âncoras de dinheiro do plano anual com LANCAMENTO (−R$ 500) ──
+    def test_cartao_anual_com_lancamento_e_997(self):
+        f = self.p.figuras_assinar(self.anual, "CARTAO", 1497.0, cupom_valor=500.0)
+        self.assertEqual(f["preco"], "R$ 997,00")
+
+    def test_pix_anual_com_lancamento_e_947_15(self):
+        f = self.p.figuras_assinar(self.anual, "PIX", 1497.0, cupom_valor=500.0)
+        self.assertEqual(f["preco"], "R$ 947,15")
+
+    def test_pix_desc_nao_depende_do_metodo_escolhido(self):
+        """O tile do Pix mostra SEMPRE o à-vista do Pix — inclusive quando o visitante
+        está com o Cartão selecionado. Era aqui que a tela mentia: o tile ficava com
+        1.422,15 (1497 − 5%, sem o cupom)."""
+        for metodo in ("CARTAO", "PIX"):
+            f = self.p.figuras_assinar(self.anual, metodo, 1497.0, cupom_valor=500.0)
+            self.assertEqual(f["pix_desc"], "R$ 947,15 à vista", metodo)
+
+    def test_parcelas_saem_da_base_do_CARTAO_mesmo_no_pix(self):
+        """Parcelamento só existe no cartão: a lista nunca pode empilhar o desconto do
+        Pix (era o "12x de R$ 78,93 — total R$ 947,15" visto ao vivo)."""
+        for metodo in ("CARTAO", "PIX"):
+            f = self.p.figuras_assinar(self.anual, metodo, 1497.0, cupom_valor=500.0)
+            self.assertEqual({o["total"] for o in f["parcelas"]}, {"R$ 997,00"}, metodo)
+            doze = [o for o in f["parcelas"] if o["parcelas"] == 12][0]
+            self.assertEqual(doze["por_parcela"], "R$ 83,08", metodo)
+
+    def test_parcelas_tem_as_tres_chaves_que_o_js_le_ja_formatadas(self):
+        f = self.p.figuras_assinar(self.anual, "CARTAO", 1497.0)
+        self.assertEqual(len(f["parcelas"]), 12)
+        for o in f["parcelas"]:
+            self.assertEqual(sorted(o), ["parcelas", "por_parcela", "total"])
+            self.assertIsInstance(o["parcelas"], int)
+            self.assertTrue(o["por_parcela"].startswith("R$ "), o)
+            self.assertTrue(o["total"].startswith("R$ "), o)
+
+    def test_cartao_desc_do_plano_recorrente_traz_o_valor_com_desconto(self):
+        """Mensal mostra dinheiro no tile do Cartão ("R$ X/mês · renova") — com um
+        código de afiliado (10%) o tile tem que acompanhar, senão promete 147 e cobra
+        132,30."""
+        f = self.p.figuras_assinar(self.mensal, "CARTAO", 147.0, cupom_pct=10.0)
+        self.assertEqual(f["cartao_desc"], "R$ 132,30/mês · renova")
+        self.assertEqual(f["preco"], "R$ 132,30")
+
+    def test_cartao_desc_do_anual_nao_tem_dinheiro(self):
+        f = self.p.figuras_assinar(self.anual, "CARTAO", 1497.0, cupom_valor=500.0)
+        self.assertEqual(f["cartao_desc"], "parcelável · renova no fim")
+
+    def test_sem_cupom_reproduz_o_preco_de_tabela(self):
+        f = self.p.figuras_assinar(self.anual, "CARTAO", 1497.0)
+        self.assertEqual(f["preco"], "R$ 1.497,00")
+        self.assertEqual(f["pix_desc"], "R$ 1.422,15 à vista")
+        self.assertEqual({o["total"] for o in f["parcelas"]}, {"R$ 1.497,00"})
+
+    def test_tudo_vem_de_base_cobrada_e_opcoes_parcelas(self):
+        """Sem aritmética duplicada: cada figura tem que casar com as funções que o
+        fechamento usa (é a propriedade que a tela existe pra garantir)."""
+        f = self.p.figuras_assinar(self.anual, "PIX", 1497.0, 10.0, 500.0)
+        pix = self.p.base_cobrada(self.anual, "PIX", 1497.0, 10.0, 500.0)
+        cartao = self.p.base_cobrada(self.anual, "CARTAO", 1497.0, 10.0, 500.0)
+        self.assertEqual(f["preco"], self.p.fmt_brl(pix))
+        self.assertEqual(f["pix_desc"], f"{self.p.fmt_brl(pix)} à vista")
+        self.assertEqual(
+            f["parcelas"],
+            [{"parcelas": o["parcelas"], "por_parcela": self.p.fmt_brl(o["por_parcela"]),
+              "total": self.p.fmt_brl(o["total"])} for o in self.p.opcoes_parcelas(cartao)])
+
+    def test_base_vigente_manda_no_lugar_de_plano_base(self):
+        # pós-founder: quem chama passa a base VIGENTE, e é ela que aparece em tudo.
+        f = self.p.figuras_assinar(self.anual, "CARTAO", 1997.0, cupom_valor=500.0)
+        self.assertEqual(f["preco"], "R$ 1.497,00")
+        self.assertEqual({o["total"] for o in f["parcelas"]}, {"R$ 1.497,00"})
+
+
 if __name__ == "__main__":
     unittest.main()

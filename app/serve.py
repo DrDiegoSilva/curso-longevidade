@@ -1048,19 +1048,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # prévia consultava só os promocionais, então respondia "Cupom inválido"
             # (e queimava cota) pra um código de afiliado válido. Mesma `base_cobrada`
             # do checkout, com o argumento certo: `cupom_pct` pro %, `cupom_valor` pro R$.
-            base = pricing.base_cobrada(plano, metodo, base_vig,
-                                        af["pct_desconto"] if af else 0.0, desconto)
+            # TODAS as figuras que a tela mostra, não só o resumo (fix do bug ao vivo de
+            # 2026-07-29): a página exibe dinheiro em três lugares — resumo, tile do Pix
+            # e dropdown de parcelas. A prévia atualizava um só, então o tile do Pix
+            # ficava com o valor SEM o cupom e o dropdown chegou a oferecer o valor do
+            # PIX parcelado (que não existe: Pix é à vista). `figuras_assinar` calcula as
+            # três pela MESMA `base_cobrada` do fechamento, e as parcelas sempre sobre a
+            # base do CARTÃO — é a única forma de as três nunca discordarem entre si.
+            figs = pricing.figuras_assinar(plano, metodo, base_vig,
+                                           af["pct_desconto"] if af else 0.0, desconto)
             partes = ([pricing.fmt_brl(desconto)] if desconto > 0 else []) + \
                      ([_pct_str(af["pct_desconto"])] if af else [])
-            return self._json({
-                "ok": True,
-                "preco": pricing.fmt_brl(base),
-                "msg": "−" + " −".join(partes) + " aplicado",
-                "parcelas": [{"parcelas": o["parcelas"],
-                              "por_parcela": pricing.fmt_brl(o["por_parcela"]),
-                              "total": pricing.fmt_brl(o["total"])}
-                             for o in pricing.opcoes_parcelas(base)],
-            })
+            return self._json({"ok": True,
+                               "msg": "−" + " −".join(partes) + " aplicado", **figs})
         if path == "/assinar":
             return self._post_assinar(g)
         if path == "/cancelar":

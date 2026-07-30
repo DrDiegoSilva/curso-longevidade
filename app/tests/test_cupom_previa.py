@@ -699,6 +699,130 @@ class TestPreviaBaseVigente(_BasePrevia):
         self.assertEqual(len(r["parcelas"]), len(pricing.opcoes_parcelas(1497.0)))
 
 
+class TestPreviaTodasAsFiguras(_BasePrevia):
+    """BUG AO VIVO (2026-07-29, achado dirigindo a página deployada): a tela mostra
+    dinheiro em TRÊS lugares e a prévia atualizava um. Com LANCAMENTO no anual e Pix
+    selecionado (o default), a página ficava assim:
+
+        #sum-price          R$ 947,15                      (certo pro Pix)
+        tile Pix .pt-desc   R$ 1.422,15 à vista            ERRADO (1497 − 5%, sem cupom)
+        <select> parcelas   12x de R$ 78,93 → R$ 947,15    ERRADO (Pix parcelado não existe)
+
+    A resposta da prévia passa a trazer TODAS as figuras que a página exibe, cada uma
+    calculada por `pricing.figuras_assinar` (que por baixo é `base_cobrada`, a mesma do
+    fechamento) — nenhuma conta no JS."""
+
+    CHAVES = {"ok", "msg", "preco", "pix_desc", "cartao_desc", "parcelas"}
+
+    def test_resposta_traz_todas_as_figuras_da_tela(self):
+        r = self._resp(cupom="LANCAMENTO", ip="203.0.113.70")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(self.CHAVES - set(r), set(),
+                         f"a prévia tem que devolver toda figura que a tela mostra: {r}")
+
+    def test_ancoras_do_anual_com_lancamento(self):
+        """Os dois números que não podem mudar sem decisão do dono: cartão 997 (sem
+        desconto de Pix) e Pix 947,15 (997 − 5%)."""
+        self.assertEqual(self._resp(cupom="LANCAMENTO", metodo="CARTAO",
+                                    ip="203.0.113.71")["preco"], "R$ 997,00")
+        self.assertEqual(self._resp(cupom="LANCAMENTO", metodo="PIX",
+                                    ip="203.0.113.72")["preco"], "R$ 947,15")
+
+    def test_tile_do_pix_leva_o_cupom_mesmo_com_cartao_selecionado(self):
+        """O tile do Pix é o à-vista do Pix SEMPRE — o bug era ele ignorar o cupom."""
+        for metodo, ip in (("CARTAO", "203.0.113.73"), ("PIX", "203.0.113.74")):
+            r = self._resp(cupom="LANCAMENTO", metodo=metodo, ip=ip)
+            self.assertEqual(r["pix_desc"], "R$ 947,15 à vista",
+                             f"com {metodo} selecionado o tile do Pix mentiu: {r}")
+            self.assertNotIn("1.422,15", r["pix_desc"])
+
+    def test_parcelas_nunca_saem_do_preco_do_pix(self):
+        """Parcelamento existe só no cartão: a lista tem que vir da base do CARTÃO nos
+        dois métodos (era "12x de R$ 78,93 — total R$ 947,15" ao vivo)."""
+        for metodo, ip in (("CARTAO", "203.0.113.75"), ("PIX", "203.0.113.76")):
+            r = self._resp(cupom="LANCAMENTO", metodo=metodo, ip=ip)
+            self.assertEqual({o["total"] for o in r["parcelas"]}, {"R$ 997,00"}, metodo)
+            doze = [o for o in r["parcelas"] if o["parcelas"] == 12][0]
+            self.assertEqual(doze["por_parcela"], "R$ 83,08", metodo)
+
+    def test_figuras_da_previa_sao_exatamente_as_do_pricing(self):
+        """Contra aritmética duplicada: a rota só formata o que `figuras_assinar`
+        devolve (que por baixo é `base_cobrada`, a do fechamento)."""
+        import config, pricing, subscribers
+        plano = config.plano_por_slug("anual")
+        base_vig = pricing.preco_vigente(plano, len(subscribers.ativos()))
+        esperado = pricing.figuras_assinar(
+            plano, "PIX", base_vig, 0.0, self.db.cupom_desconto("LANCAMENTO", "anual"))
+        r = self._resp(cupom="LANCAMENTO", metodo="PIX", ip="203.0.113.77")
+        for chave in ("preco", "pix_desc", "cartao_desc", "parcelas"):
+            self.assertEqual(r[chave], esperado[chave], chave)
+
+    def test_tile_do_cartao_do_mensal_acompanha_o_desconto(self):
+        """No mensal o tile do Cartão mostra dinheiro ("R$ X/mês · renova"); com um
+        código de afiliado (10%) ele tem que acompanhar — senão promete 147 e cobra
+        132,30."""
+        self.db.criar_afiliado("Parceiro", "p@example.com", "AFIMENSAL",
+                               pct_desconto=10, pct_comissao=3)
+        r = self._resp(plano="mensal", cupom="AFIMENSAL", metodo="CARTAO",
+                       ip="203.0.113.78")
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["cartao_desc"], "R$ 132,30/mês · renova")
+        self.assertEqual(r["preco"], "R$ 132,30")
+
+    def test_pedido_pix_com_parcelas_no_form_cobra_a_vista(self):
+        """A tela ESCONDE o campo de parcelas quando o método é Pix (Pix é à vista), mas
+        deixa o campo habilitado pro `POST /assinar` continuar lendo `parcelas` como
+        sempre — então um pedido Pix pode chegar com `parcelas=12`. Aqui está a prova de
+        que o servidor ignora isso ponta a ponta: o payload que iria pro Asaas cobra o
+        valor à vista, sem installmentCount."""
+        import asaas, serve
+        capt = []
+        orig_criar = asaas.criar_checkout
+        asaas.criar_checkout = lambda payload: capt.append(payload) or {
+            "url": "https://checkout.asaas.example/x", "id": "chk"}
+        g = {"plano": "anual", "nome": "Cliente Teste", "email": "c@example.com",
+             "cpf": "11144477735", "whatsapp": "43999990000", "metodo": "PIX",
+             "parcelas": "12", "cupom": "LANCAMENTO", "aceito": "1"}
+        try:
+            serve.Handler._post_assinar(_AssinarStub(ip="203.0.113.80"),
+                                        lambda k: g.get(k, ""))
+        finally:
+            asaas.criar_checkout = orig_criar
+        self.assertEqual(len(capt), 1, "o checkout não chegou a ser criado")
+        self.assertEqual(capt[0]["billingTypes"], ["PIX"])
+        self.assertNotIn("installmentCount", capt[0])
+        self.assertEqual(capt[0]["items"][0]["value"], 947.15,
+                         "Pix cobra o à-vista com desconto, não uma parcela")
+
+    def test_parcelas_mostradas_no_pix_sao_o_que_o_cartao_cobraria(self):
+        """A propriedade que a feature existe pra garantir, agora na figura que estava
+        errada: o dropdown que o visitante lê (mesmo com Pix marcado, antes de trocar
+        pro cartão) tem que casar com o valor que o checkout manda pro Asaas num cartão
+        em 12x."""
+        import asaas, pricing, serve
+        previa = self._resp(cupom="LANCAMENTO", metodo="PIX", ip="203.0.113.79")
+        self.assertTrue(previa["ok"], previa)
+        doze = [o for o in previa["parcelas"] if o["parcelas"] == 12][0]
+
+        capt = {}
+        orig_montar, orig_criar = asaas.montar_checkout, asaas.criar_checkout
+        asaas.montar_checkout = (lambda plano, metodo, parcelas, dados, token, base_url,
+                                 base=None: capt.update(base=base, parcelas=parcelas) or {"p": 1})
+        asaas.criar_checkout = lambda payload: {"url": "https://checkout.asaas.example/x"}
+        g = {"plano": "anual", "nome": "Cliente Teste", "email": "c@example.com",
+             "cpf": "11144477735", "whatsapp": "43999990000", "metodo": "CARTAO",
+             "parcelas": "12", "cupom": "LANCAMENTO", "aceito": "1"}
+        try:
+            serve.Handler._post_assinar(_AssinarStub(ip="203.0.113.79"),
+                                        lambda k: g.get(k, ""))
+        finally:
+            asaas.montar_checkout, asaas.criar_checkout = orig_montar, orig_criar
+        self.assertIn("base", capt, "o checkout não chegou a montar o payload")
+        self.assertEqual(capt["parcelas"], 12)
+        self.assertEqual(doze["total"], pricing.fmt_brl(capt["base"]),
+                         "o dropdown mostrou um total e o cartão cobraria outro")
+
+
 class TestClassesDeFalhaIndistinguiveis(_BasePrevia):
     """A prévia não pode virar detector de cupom: um cupom de CORTESIA acertado dá
     acesso GRÁTIS no fechamento, então "existe mas não serve" tem que ser

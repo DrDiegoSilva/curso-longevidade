@@ -77,3 +77,39 @@ def base_cobrada(plano, metodo, base_vig, cupom_pct=0.0, cupom_valor=0.0):
 def comissao(valor_venda, pct):
     """pct% de comissão sobre o valor pago. comissao(897.30, 3) -> 26.92"""
     return round(float(valor_venda) * float(pct) / 100.0, 2)
+
+
+def figuras_assinar(plano, metodo, base_vig, cupom_pct=0.0, cupom_valor=0.0):
+    """TODAS as figuras de dinheiro da tela /assinar, num só lugar. Puro/testável.
+
+    Existe por causa de um bug ao vivo (2026-07-29): a tela mostra dinheiro em TRÊS
+    lugares (resumo, tile do Pix, dropdown de parcelas) e a prévia do cupom atualizava
+    só o resumo — o tile do Pix ficava com o valor SEM o cupom e o dropdown chegou a
+    oferecer o valor do PIX parcelado, que não existe. Uma função só, chamada pela
+    página (`site_web.pagina_assinar`) E pela prévia (`POST /assinar/cupom`), é o que
+    impede as três de divergirem.
+
+      preco       -> resumo, no MÉTODO escolhido (é o que será cobrado nesse método)
+      pix_desc    -> tile do Pix: à-vista do Pix, SEMPRE (independe do método escolhido)
+      cartao_desc -> tile do Cartão (dinheiro só no plano recorrente; anual é texto fixo)
+      parcelas    -> dropdown, SEMPRE sobre a base do CARTÃO: parcelamento não existe no
+                     Pix (à vista), então empilhar o desconto do Pix aqui ofereceria uma
+                     parcela que ninguém pode pagar.
+
+    `base_vig` é a base VIGENTE (a mesma que o fechamento usa — ver
+    `pricing.preco_vigente`/`renovacao.preco_renovacao`), nunca `plano["base"]` cru.
+    """
+    base_pix = base_cobrada(plano, "PIX", base_vig, cupom_pct, cupom_valor)
+    base_cartao = base_cobrada(plano, "CARTAO", base_vig, cupom_pct, cupom_valor)
+    escolhida = base_pix if (metodo or "").upper() == "PIX" else base_cartao
+    return {
+        "preco": fmt_brl(escolhida),
+        "pix_desc": f"{fmt_brl(base_pix)} à vista",
+        # mensal (recorrente_pix): o tile diz o valor do ciclo; anual: texto sem dinheiro
+        "cartao_desc": (f"{fmt_brl(valor_cartao(base_cartao, 1))}/mês · renova"
+                        if plano.get("recorrente_pix") else "parcelável · renova no fim"),
+        "parcelas": [{"parcelas": o["parcelas"],
+                      "por_parcela": fmt_brl(o["por_parcela"]),
+                      "total": fmt_brl(o["total"])}
+                     for o in opcoes_parcelas(base_cartao)],
+    }
