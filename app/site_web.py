@@ -2097,11 +2097,44 @@ def pagina_assinar(plano_slug=None, erro=""):
       // vez de id evita mexer nessa tag.
       var select = document.querySelector('select[name="parcelas"]');
       var planoInput = document.querySelector('input[name="plano"]');
-      btn.addEventListener('click', function(){
+      function aviso(texto, ok){
+        msg.textContent = texto;
+        msg.style.color = ok ? 'var(--gold2)' : '#e08a8a';
+      }
+      function pintarParcelas(lista){
+        if (!select || !lista) return;
+        // PRESERVA a escolha do visitante (Important da revisão): o rebuild antigo
+        // limpava o <select> e reanexava opções sem nenhuma marcada, então o
+        // navegador auto-selecionava a 1a (1x) — quem tinha escolhido 12x era movido
+        // pra 1x EM SILENCIO e podia fechar o pedido sem perceber (uma cobrança de
+        // R$ 997 em vez de 12x de R$ 83).
+        var anterior = select.value;
+        select.textContent = '';
+        lista.forEach(function(o){
+          var opt = document.createElement('option');
+          opt.value = o.parcelas;
+          opt.textContent = o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total;
+          select.appendChild(opt);
+        });
+        select.value = anterior;      // opção inexistente -> selectedIndex fica -1
+        if (select.selectedIndex < 0) {
+          select.selectedIndex = 0;   // fallback: 1a opção...
+          // ...mas NUNCA em silêncio: a troca aparece junto da mensagem do cupom.
+          msg.textContent = msg.textContent + ' · parcelas ajustadas para ' + select.value + 'x';
+        }
+      }
+      function aplicar(){
+        var codigo = (input.value || '').trim();
+        if (!codigo) {
+          // Campo em branco não vira requisição: no servidor ele nem conta tentativa,
+          // e aqui evita gastar uma ida ao servidor pra dizer o óbvio.
+          aviso('Digite um cupom.', false);
+          return;
+        }
         var metodoEl = document.querySelector('input[name="metodo"]:checked');
         var body = new URLSearchParams({
           plano: planoInput ? planoInput.value : '',
-          cupom: input.value,
+          cupom: codigo,
           metodo: metodoEl ? metodoEl.value : ''
         });
         btn.disabled = true;
@@ -2112,27 +2145,26 @@ def pagina_assinar(plano_slug=None, erro=""):
           body: body
         }).then(function(r){ return r.json(); }).then(function(d){
           btn.disabled = false;
-          msg.textContent = d.msg || '';
-          msg.style.color = d.ok ? 'var(--gold2)' : '#e08a8a';
+          aviso(d.msg || '', d.ok);
           if (!d.ok) return;
           if (sumPrice) {
             sumPrice.textContent = d.preco;               // some com o <span> junto
             if (periodoSpan) sumPrice.appendChild(periodoSpan);  // reencaixa o mesmo nó
           }
-          if (select && d.parcelas) {
-            select.textContent = '';
-            d.parcelas.forEach(function(o){
-              var opt = document.createElement('option');
-              opt.value = o.parcelas;
-              opt.textContent = o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total;
-              select.appendChild(opt);
-            });
-          }
+          pintarParcelas(d.parcelas);
         }).catch(function(){
           btn.disabled = false;
-          msg.textContent = 'Não foi possível conferir o cupom agora. Tente de novo.';
-          msg.style.color = '#e08a8a';
+          aviso('Não foi possível conferir o cupom agora. Tente de novo.', false);
         });
+      }
+      btn.addEventListener('click', aplicar);
+      // Enter no campo do cupom = clicar em Aplicar (Minor da revisão): sem isto o
+      // Enter submetia o PEDIDO INTEIRO em vez de conferir o cupom.
+      input.addEventListener('keydown', function(e){
+        if (e.key === 'Enter' || e.keyCode === 13) {
+          e.preventDefault();
+          aplicar();
+        }
       });
     })();
     </script>"""
