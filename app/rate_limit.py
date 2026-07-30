@@ -64,3 +64,10 @@ def resetar():
     """Zera o estado (usado em testes)."""
     with _lock:
         _hits.clear()
+
+
+def tamanho():
+    """Nº de chaves rastreadas — só pra teste de evicção (migrado de
+    ratelimit.py::tamanho() na consolidação dos dois módulos)."""
+    with _lock:
+        return len(_hits)

@@ -204,5 +204,54 @@ class TestRateOkChavePorClienteReal(unittest.TestCase):
                          "sem XFF, cai no client_address, que ainda tem que ser limitado")
 
 
+class TestRateLimitEviccaoEConcorrencia(unittest.TestCase):
+    """Migrado de test_cupom_previa.py::TestRateLimit — testava `ratelimit.py`
+    (deletado nesta consolidação) diretamente. As asserções de limite/janela/chaves
+    independentes daquela classe já estavam duplicadas em
+    TestLimitadoComportamentoExistenteInalterado (mesmo comportamento, `rate_limit.py`
+    já era testado assim) e foram descartadas como cobertura repetida da FORMA do
+    módulo apagado. Estas duas são comportamento genuíno que `rate_limit.py` nunca
+    tinha testado (evicção por teto de memória, thread-safety do `_lock`) — migradas
+    de verdade, preferindo `agora=` injetado a `time.sleep` onde dava (a evicção usa
+    relógio injetado; a concorrência precisa de threads reais, que não dá pra
+    mockar, então usa o relógio de verdade só ali)."""
+
+    def setUp(self):
+        rate_limit.resetar()
+
+    def test_eviccao_nao_deixa_o_dict_crescer_sem_limite(self):
+        # rate_limit.py só poda quando o dicionário passa de _MAX_CHAVES (5000) —
+        # mais preguiçoso que o ratelimit.py original (que podava a CADA chamada de
+        # `permitir`), então precisa passar do teto de verdade pra provar a evicção.
+        t = 1000.0
+        for i in range(5100):
+            rate_limit.registrar_tentativa(f"ip-{i}", 1, agora=t)
+        # janela de 1s já vencida em t+2; uma escrita nova dispara a poda preguiçosa
+        rate_limit.registrar_tentativa("gatilho", 1, agora=t + 2)
+        self.assertLess(rate_limit.tamanho(), 5100,
+                        "entradas vencidas tem que ser removidas quando o teto estoura, "
+                        "senao vaza memoria")
+
+    def test_concorrencia_nao_corrompe_a_contagem(self):
+        # Usa `limitado(..., registrar=True)` (não `registrar_tentativa`) de propósito:
+        # o caminho de escrita dele é ler-copiar-regravar a lista inteira
+        # (`xs = [...]` novo objeto, depois `_hits[chave] = xs`) — um read-modify-write
+        # de verdade, que perde incrementos sem lock. `registrar_tentativa` só faz
+        # `.append()` na MESMA lista compartilhada, que o GIL do CPython já serializa
+        # sozinho — não provaria que o lock importa.
+        import threading
+        def bate():
+            for _ in range(20):
+                rate_limit.limitado("ip-x", 1000, 600)   # alto o bastante p/ nunca barrar
+        ts = [threading.Thread(target=bate) for _ in range(10)]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join()
+        # 10 threads x 20 = 200 tentativas; sem lock a contagem se perde
+        self.assertTrue(rate_limit.limitado("ip-x", 199, 600, registrar=False),
+                        "200 tentativas registradas -> limite 199 tem que barrar")
+
+
 if __name__ == "__main__":
     unittest.main()

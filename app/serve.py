@@ -938,12 +938,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # cria assinante) — só devolve o que o fechamento cobraria. Reusa
             # `pricing.base_cobrada` (o mesmo cálculo do checkout) de propósito: uma
             # cópia divergente prometeria um preço na tela e cobraria outro no Asaas.
-            import config, db, pricing, ratelimit
+            import config, db, pricing, rate_limit
             ip = self._ip_cliente()
             plano = config.plano_por_slug(g("plano"))
             if not plano:
                 return self._json({"ok": False, "msg": "Plano inválido."}, 400)
-            if not ratelimit.permitir(ip):
+            # PEEK (registrar=False) + mesma chave ("cupom:<ip>") do checkout
+            # (`_post_assinar`) DE PROPÓSITO: as duas rotas compartilham UM balde de
+            # cota — senão um atacante ganharia 5 tentativas grátis aqui (a prévia,
+            # mais barata/rápida) e mais 5 no checkout, dobrando o orçamento de chute.
+            if rate_limit.limitado(f"cupom:{ip}", 5, 600, registrar=False):
                 return self._json({"ok": False, "bloqueado": True,
                                    "msg": "Muitas tentativas. Tente de novo em alguns minutos."})
             db.init()
@@ -953,7 +957,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # indistinguível (senão a prévia vira detector de cupom-cortesia).
             desconto = db.cupom_desconto(g("cupom").strip().upper(), plano["slug"])
             if desconto <= 0:
-                ratelimit.registrar_falha(ip)
+                rate_limit.registrar_tentativa(f"cupom:{ip}", 600)
                 return self._json({"ok": False, "msg": "Cupom inválido."})
             base = pricing.base_cobrada(plano, metodo, float(plano["base"]),
                                         cupom_valor=desconto)
@@ -1380,7 +1384,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
-        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone, ratelimit
+        import site_web, config, db, subscribers, pricing, asaas, legal, renovacao, cpf as cpfval, phone, rate_limit
         plano = config.plano_por_slug(g("plano"))
         if not plano:
             return self._html(site_web.pagina_assinar(None, "Plano inválido — escolha de novo."), 400)
@@ -1414,7 +1418,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Fecha o oráculo de força-bruta: um cupom não-vazio só é avaliado se o IP
         # ainda tem cota. Cupom vazio (a maioria das compras) nunca passa por aqui —
         # não é tentativa, não pode ser barrado.
-        if cupom and not ratelimit.permitir(ip_cliente):
+        # PEEK (registrar=False): só checa, não conta a checagem em si — quem chega
+        # aqui pode ter cupom BOM, e um cupom bom não pode gastar cota (só se conta
+        # tentativa mais abaixo, quando o cupom já foi avaliado e falhou). Mesma
+        # chave ("cupom:<ip>") da prévia em /assinar/cupom (do_POST) DE PROPÓSITO:
+        # as duas rotas compartilham UM balde — senão um atacante ganharia 5
+        # tentativas na prévia (mais barata) e mais 5 aqui, dobrando de graça o
+        # orçamento de chute.
+        if cupom and rate_limit.limitado(f"cupom:{ip_cliente}", 5, 600, registrar=False):
             return self._html(site_web.pagina_assinar(
                 plano["slug"], "Muitas tentativas com código de cupom. Aguarde alguns "
                                 "minutos e tente novamente."))
@@ -1462,7 +1473,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # Chegou até aqui e não é cortesia (já teria retornado acima) nem desconto
             # promocional/afiliado válido -> cupom não serve pra nada. Só AQUI conta
             # como tentativa falha; um código bom nunca gasta cota de quem o digitou.
-            ratelimit.registrar_falha(ip_cliente)
+            rate_limit.registrar_tentativa(f"cupom:{ip_cliente}", 600)
         base_final = pricing.base_cobrada(plano, metodo, base_vig,
                                           af["pct_desconto"] if af else 0.0, promo_valor)
         valor = pricing.valor_cartao(base_final, parcelas) if metodo == "CARTAO" else base_final

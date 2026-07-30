@@ -7,62 +7,20 @@ import io
 import os
 import sys
 import tempfile
-import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-class TestRateLimit(unittest.TestCase):
-    def setUp(self):
-        import ratelimit
-        ratelimit.zerar()          # estado limpo entre testes
-        self.rl = ratelimit
-
-    def test_permite_ate_o_limite_e_barra_depois(self):
-        for i in range(5):
-            self.assertTrue(self.rl.permitir("ip-1", limite=5, janela_s=600),
-                            f"tentativa {i+1} devia passar")
-            self.rl.registrar_falha("ip-1", janela_s=600)
-        self.assertFalse(self.rl.permitir("ip-1", limite=5, janela_s=600),
-                         "a 6a tentativa depois de 5 falhas tem que barrar")
-
-    def test_chaves_independentes(self):
-        for _ in range(5):
-            self.rl.registrar_falha("ip-1", janela_s=600)
-        self.assertFalse(self.rl.permitir("ip-1", limite=5, janela_s=600))
-        self.assertTrue(self.rl.permitir("ip-2", limite=5, janela_s=600),
-                        "um IP nao pode bloquear outro")
-
-    def test_janela_expira(self):
-        for _ in range(5):
-            self.rl.registrar_falha("ip-1", janela_s=1)
-        self.assertFalse(self.rl.permitir("ip-1", limite=5, janela_s=1))
-        time.sleep(1.1)
-        self.assertTrue(self.rl.permitir("ip-1", limite=5, janela_s=1),
-                        "passada a janela, libera")
-
-    def test_eviccao_nao_deixa_o_dict_crescer_sem_limite(self):
-        for i in range(500):
-            self.rl.registrar_falha(f"ip-{i}", janela_s=1)
-        time.sleep(1.1)
-        self.rl.permitir("gatilho", limite=5, janela_s=1)   # a chamada faz a limpeza
-        self.assertLess(self.rl.tamanho(), 500,
-                        "entradas vencidas tem que ser removidas, senao vaza memoria")
-
-    def test_concorrencia_nao_corrompe_a_contagem(self):
-        import threading
-        def bate():
-            for _ in range(20):
-                self.rl.registrar_falha("ip-x", janela_s=600)
-        ts = [threading.Thread(target=bate) for _ in range(10)]
-        for t in ts:
-            t.start()
-        for t in ts:
-            t.join()
-        # 10 threads x 20 = 200 falhas; sem lock a contagem se perde
-        self.assertFalse(self.rl.permitir("ip-x", limite=199, janela_s=600),
-                         "200 falhas registradas -> limite 199 tem que barrar")
+# `TestRateLimit` (testava `ratelimit.py` isolado: limite/janela/chaves
+# independentes/evicção/concorrência) foi removida na consolidação dos dois módulos
+# de rate-limit (2026-07-29): `ratelimit.py` foi apagado, e as asserções de
+# limite/janela/chaves independentes já estavam duplicadas em
+# tests/test_rate_limit_peek.py::TestLimitadoComportamentoExistenteInalterado (o
+# mesmo comportamento, testado contra `rate_limit.py`, que virou o módulo único). A
+# evicção e a concorrência — cobertura genuína que `rate_limit.py` nunca tinha —
+# migraram pra tests/test_rate_limit_peek.py::TestRateLimitEviccaoEConcorrencia,
+# com relógio injetado no lugar de `time.sleep` onde dava. Ver
+# .superpowers/sdd/2026-07-29-cupom-previa/consolidacao-report.md.
 
 
 class _AssinarStub:
@@ -90,7 +48,7 @@ class _AssinarStub:
 
 
 class TestLimiteCupomNaRotaAssinar(unittest.TestCase):
-    """Exercita `serve.Handler._post_assinar` de verdade (não só `ratelimit.py`
+    """Exercita `serve.Handler._post_assinar` de verdade (não só `rate_limit.py`
     isolado) — mesmo harness de test_precos_lancamento.py::TestCupomLancamentoNaRotaAssinar
     e test_aceite_checkout.py::TestGateDeAceiteNoPostAssinar (`_AssinarStub` + `g` como
     o `form.get(k, [""])[0]` do POST real)."""
@@ -100,19 +58,19 @@ class TestLimiteCupomNaRotaAssinar(unittest.TestCase):
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         os.environ.pop("DATABASE_URL", None)
         for m in ("config", "db", "subscribers", "serve", "site_legal", "site_web",
-                  "legal", "asaas", "pricing", "ratelimit"):
+                  "legal", "asaas", "pricing", "rate_limit"):
             sys.modules.pop(m, None)
-        import db, subscribers, legal, serve, ratelimit
+        import db, subscribers, legal, serve, rate_limit
         db._INITED = False
         db.init()
-        ratelimit.zerar()
+        rate_limit.resetar()
         self.db, self.subscribers, self.legal = db, subscribers, legal
-        self.serve, self.ratelimit = serve, ratelimit
+        self.serve, self.rate_limit = serve, rate_limit
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
-        self.ratelimit.zerar()
+        self.rate_limit.resetar()
 
     def _g(self, **over):
         base = {"plano": "mensal", "nome": "Cliente Teste", "email": "cliente@example.com",
@@ -385,18 +343,18 @@ class TestPreviaCupom(unittest.TestCase):
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
         os.environ.pop("DATABASE_URL", None)
         for m in ("config", "db", "subscribers", "serve", "site_web", "legal",
-                  "asaas", "pricing", "ratelimit"):
+                  "asaas", "pricing", "rate_limit"):
             sys.modules.pop(m, None)
-        import db, ratelimit
+        import db, rate_limit
         db._INITED = False
         db.init()
-        ratelimit.zerar()
-        self.ratelimit = ratelimit
+        rate_limit.resetar()
+        self.rate_limit = rate_limit
 
     def tearDown(self):
         import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
-        self.ratelimit.zerar()
+        self.rate_limit.resetar()
 
     def _resp(self, plano="anual", cupom="LANCAMENTO", metodo="CARTAO", ip="ip-teste"):
         """POSTa em /assinar/cupom (via `do_POST` real, socket stubado) e devolve o
@@ -478,12 +436,103 @@ class TestPreviaCupom(unittest.TestCase):
         r = self._resp(cupom="NAOEXISTEZZZ", ip="ip-bloq")
         self.assertTrue(r.get("bloqueado"), f"6a tentativa devia bloquear: {r}")
 
-        import ratelimit
-        ratelimit.zerar()
+        import rate_limit
+        rate_limit.resetar()
         for _ in range(5):
             self.assertTrue(self._resp(cupom="LANCAMENTO", ip="ip-ok")["ok"])
         self.assertTrue(self._resp(cupom="LANCAMENTO", ip="ip-ok")["ok"],
                         "cupom valido nao gasta cota")
+
+
+class TestCotaCompartilhadaEntrePreviaEcheckout(unittest.TestCase):
+    """Decisão do dono na consolidação rate_limit.py/ratelimit.py (2026-07-29): as
+    duas rotas de cupom — `/assinar` (checkout, `_post_assinar`) e `/assinar/cupom`
+    (prévia, leitura-only) — têm que COMPARTILHAR um único balde de cota. Sharing é
+    o comportamento correto de segurança: senão um atacante ganha 5 chutes na
+    prévia (mais barata/rápida — é o oráculo mais barato dos dois) e mais 5 no
+    checkout, dobrando de graça o orçamento de força-bruta. O repoint das duas rotas
+    pro `rate_limit.py` usa a MESMA chave (`f"cupom:{ip}"`) nos dois pontos de
+    chamada de propósito — é isso que este teste prova; sem ele, um repoint que
+    desse chaves diferentes pra cada rota passaria despercebido (a suíte ficaria
+    verde do mesmo jeito, só que com metade da proteção)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "artigos.db")
+        os.environ.pop("DATABASE_URL", None)
+        for m in ("config", "db", "subscribers", "serve", "site_web", "legal",
+                  "asaas", "pricing", "rate_limit"):
+            sys.modules.pop(m, None)
+        import db, subscribers, legal, serve, rate_limit
+        db._INITED = False
+        db.init()
+        rate_limit.resetar()
+        self.db, self.subscribers, self.legal, self.serve = db, subscribers, legal, serve
+        self.rate_limit = rate_limit
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        self.rate_limit.resetar()
+
+    def _g(self, **over):
+        base = {"plano": "mensal", "nome": "Cliente Teste", "email": "cliente@example.com",
+                "cpf": "11144477735", "whatsapp": "43999990000", "metodo": "PIX",
+                "parcelas": "1", "cupom": "", "aceito": "1"}
+        base.update(over)
+        return lambda k: base.get(k, "")
+
+    def _mock_asaas(self):
+        import asaas
+        checkouts = []
+        orig_criar = asaas.criar_checkout
+        asaas.criar_checkout = lambda payload: checkouts.append(payload) or {
+            "url": "https://checkout.asaas.example/x", "id": "chk_x"}
+        return asaas, checkouts, orig_criar
+
+    def _previa(self, ip, cupom="CHUTE"):
+        import urllib.parse as up
+        Stub = _make_cupom_previa_stub_cls()
+        body = up.urlencode({"plano": "anual", "cupom": cupom, "metodo": "CARTAO"}).encode("utf-8")
+        stub = Stub("/assinar/cupom", body=body, ip=ip)
+        return stub.do_POST()
+
+    def test_5_tentativas_na_previa_esgotam_a_cota_do_checkout(self):
+        ip = "203.0.113.201"
+        for i in range(5):
+            r = self._previa(ip, cupom=f"CHUTE-{i}")
+            self.assertFalse(r["ok"])
+        # cota já gasta na prévia -> o checkout, MESMO ip, chega bloqueado
+        asaas, checkouts, orig_criar = self._mock_asaas()
+        stub = _AssinarStub(ip=ip)
+        try:
+            bloqueado = self.serve.Handler._post_assinar(stub, self._g(cupom="CHUTE-6"))
+        finally:
+            asaas.criar_checkout = orig_criar
+        self.assertIn("Muitas tentativas", bloqueado,
+                      "as duas rotas tem que compartilhar cota -- 5 chutes na "
+                      "previa tem que esgotar tambem o checkout")
+        self.assertEqual(len(checkouts), 0, "nao pode ter chegado no Asaas")
+
+    def test_5_tentativas_no_checkout_esgotam_a_cota_da_previa(self):
+        ip = "203.0.113.202"
+        asaas, checkouts, orig_criar = self._mock_asaas()
+        stub = _AssinarStub(ip=ip)
+        try:
+            for i in range(5):
+                self.serve.Handler._post_assinar(stub, self._g(cupom=f"CHUTE-{i}"))
+        finally:
+            asaas.criar_checkout = orig_criar
+        r = self._previa(ip, cupom="CHUTE-6")
+        self.assertTrue(r.get("bloqueado"),
+                        f"5 chutes no checkout tem que esgotar tambem a previa: {r}")
+
+    def test_ips_diferentes_nao_compartilham_nada(self):
+        # controle: a cota é POR IP -- não é um balde global disfarçado de
+        # "compartilhado"
+        self._previa("203.0.113.211", cupom="X")
+        r = self._previa("203.0.113.212", cupom="Y")
+        self.assertFalse(r.get("bloqueado"), "IP diferente nao pode herdar bloqueio nenhum")
 
 
 if __name__ == "__main__":
