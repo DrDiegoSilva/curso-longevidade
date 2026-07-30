@@ -2066,13 +2066,26 @@ def pagina_assinar(plano_slug=None, erro=""):
     if plano.get("recorrente_pix"):   # mensal (sem parcelamento)
         parcelas_html = '<input type="hidden" name="parcelas" value="1">'
     else:
-        opts = "".join(f'<option value="{o["parcelas"]}">{o["parcelas"]}x de {o["por_parcela"]} '
-                       f'— total {o["total"]}</option>' for o in figs["parcelas"])
-        # id no CAMPO (não no <select>): o JS esconde o campo inteiro quando o método é
+        # DUAS ofertas de contrato, não 12 (2026-07-30). O que vai pro Asaas é
+        # `installment.maxInstallmentCount`, um TETO: quem escolhe o número final de
+        # parcelas é o cliente, na tela de pagamento. Um dropdown de 1 a 12 aqui seria
+        # escolher duas vezes, valendo só a segunda — e o rótulo daqui viraria promessa
+        # vazia. O que ESTA tela decide de verdade é o TIPO de contrato: à vista recorre
+        # (RECURRENT), parcelado não (INSTALLMENT) — ver `asaas.montar_checkout`.
+        # id no CAMPO (não nos rádios): o JS esconde o campo inteiro quando o método é
         # Pix — à vista não tem parcela. Sem `disabled`, pro `POST /assinar` continuar
-        # lendo `parcelas` exatamente como hoje.
-        parcelas_html = (f'<div class="field" id="parcelas-field"><label>Parcelas (só no cartão)</label>'
-                         f'<select name="parcelas">{opts}</select></div>')
+        # lendo `parcelas` exatamente como hoje (1 ou 12).
+        parc_desc = figs["parcelado_desc"]
+        parcelas_html = (
+            f'<label class="section-label">No cartão</label>'
+            f'<div class="paytiles" id="parcelas-field">'
+            f'<label class="paytile"><input type="radio" name="parcelas" value="1" checked>'
+            f'<span class="pt-ico">1️⃣</span><span class="pt-nome">À vista</span>'
+            f'<span class="pt-desc">renova todo ano</span></label>'
+            f'<label class="paytile"><input type="radio" name="parcelas" value="12">'
+            f'<span class="pt-ico">🗓️</span><span class="pt-nome">Parcelado</span>'
+            f'<span class="pt-desc" id="pt-desc-parcelado" data-base="{_esc(parc_desc)}">'
+            f'{_esc(parc_desc)}</span></label></div>')
     inclui = "".join(f'<li><b>✓</b><span>{v}</span></li>' for v in (
         "1 estudo por dia útil, no seu WhatsApp",
         "Curadoria criteriosa + revisão médica",
@@ -2110,22 +2123,17 @@ def pagina_assinar(plano_slug=None, erro=""):
       // servidor — nenhuma conta de preço acontece aqui.
       var pixDesc = document.getElementById('pt-desc-pix');
       var cartaoDesc = document.getElementById('pt-desc-cartao');
+      // QUARTA figura de dinheiro: a oferta "parcelado" mostra "até 12x de R$ X". Sem
+      // repintar aqui, ela fica com o valor SEM o cupom — a mesma mentira que o tile do
+      // Pix contava em 2026-07-29. Vem PRONTA do servidor (`parcelado_desc`), então é
+      // só pintar: nenhum rótulo é montado e nenhuma divisão acontece no navegador.
+      var parceladoDesc = document.getElementById('pt-desc-parcelado');
       // guarda o <span> do período (ex.: "por ano") pra reencaixar depois — nunca
       // via innerHTML, só a mesma referência de nó (sem risco de injeção nenhuma).
       var periodoSpan = sumPrice ? sumPrice.querySelector('span') : null;
-      // sem id proprio de propósito: um teste de regressão trava o markup exato
-      // da tag de parcelas sem atributo extra nenhum; seletor por atributo em
-      // vez de id evita mexer nessa tag.
-      var select = document.querySelector('select[name="parcelas"]');
       var campoParcelas = document.getElementById('parcelas-field');
       var planoInput = document.querySelector('input[name="plano"]');
       var radios = document.querySelectorAll('input[name="metodo"]');
-      // BASELINE das parcelas: as <option> que o SERVIDOR renderizou, guardadas como
-      // strings (nenhuma conta no cliente). É a elas que a tela volta quando não há
-      // cupom aplicado.
-      var parcelasBase = select ? Array.prototype.map.call(select.options, function(o){
-        return {valor: String(o.value), texto: o.textContent};
-      }) : null;
       // Código que a última prévia APROVOU (em maiúsculas, como o servidor normaliza).
       // Vazio = nenhum cupom aplicado -> trocar de método NÃO chama o servidor, só
       // restaura o baseline. É o que impede um código inválido na caixa de queimar
@@ -2159,34 +2167,6 @@ def pagina_assinar(plano_slug=None, erro=""):
         sumPrice.textContent = valor;                          // some com o <span> junto
         if (periodoSpan) sumPrice.appendChild(periodoSpan);    // reencaixa o mesmo nó
       }
-      function daResposta(lista){
-        return (lista || []).map(function(o){
-          return {valor: String(o.parcelas),
-                  texto: o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total};
-        });
-      }
-      function pintarParcelas(lista){
-        if (!select || !lista || !lista.length) return;
-        // PRESERVA a escolha do visitante (Important da revisão): o rebuild antigo
-        // limpava o <select> e reanexava opções sem nenhuma marcada, então o
-        // navegador auto-selecionava a 1a (1x) — quem tinha escolhido 12x era movido
-        // pra 1x EM SILENCIO e podia fechar o pedido sem perceber (uma cobrança de
-        // R$ 997 em vez de 12x de R$ 83).
-        var anterior = select.value;
-        select.textContent = '';
-        lista.forEach(function(o){
-          var opt = document.createElement('option');
-          opt.value = o.valor;
-          opt.textContent = o.texto;
-          select.appendChild(opt);
-        });
-        select.value = anterior;      // opção inexistente -> selectedIndex fica -1
-        if (select.selectedIndex < 0) {
-          select.selectedIndex = 0;   // fallback: 1a opção...
-          // ...mas NUNCA em silêncio: a troca aparece junto da mensagem do cupom.
-          msg.textContent = msg.textContent + ' · parcelas ajustadas para ' + select.value + 'x';
-        }
-      }
       function mostrarParcelas(){
         // Pix é À VISTA: parcelamento não existe nesse método (decisão do dono). Só
         // ESCONDE o campo — sem `disabled` e sem mexer em name/value, pro POST
@@ -2201,7 +2181,7 @@ def pagina_assinar(plano_slug=None, erro=""):
         if (sumPrice) pintarPreco(sumPrice.getAttribute('data-base'));
         pintar(pixDesc, pixDesc ? pixDesc.getAttribute('data-base') : '');
         pintar(cartaoDesc, cartaoDesc ? cartaoDesc.getAttribute('data-base') : '');
-        pintarParcelas(parcelasBase);
+        pintar(parceladoDesc, parceladoDesc ? parceladoDesc.getAttribute('data-base') : '');
       }
       function aplicar(){
         var codigo = digitado();
@@ -2240,7 +2220,7 @@ def pagina_assinar(plano_slug=None, erro=""):
           pintarPreco(d.preco);
           pintar(pixDesc, d.pix_desc);
           pintar(cartaoDesc, d.cartao_desc);
-          pintarParcelas(daResposta(d.parcelas));
+          pintar(parceladoDesc, d.parcelado_desc);
         }).catch(function(){
           if (minhaVez !== vez) return;
           btn.disabled = false;
