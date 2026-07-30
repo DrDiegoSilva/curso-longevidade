@@ -378,9 +378,24 @@ def varrer_presos(db_mod=None):
     if db_mod is None:
         import db as db_mod
     db_mod.init()
+    # ORDEM IMPORTA — não inverter. `db._conn()` abre uma conexão nova por chamada (sem
+    # transação/lock compartilhado entre as duas leituras abaixo), então há uma janela
+    # TOCTOU entre elas. O invariante que sustenta esta varredura é "o slot é sempre
+    # escrito ANTES do marcar_candidato_agendado" (vale nos 3 call-sites de produção:
+    # series.ativar_serie, daily.materializar_agenda, daily.trocar_estudo_amanha — todos
+    # gravam o slot e só então marcam 'agendado', dentro do mesmo try). Isso só garante
+    # segurança se lermos NESTA ordem: status primeiro, ref_ids depois. Assim, qualquer
+    # candidato que apareça na lista de 'agendado' já tinha o slot escrito ANTES desse
+    # read — logo o read de ref_ids (que roda depois) só pode enxergar mais slots do
+    # tempo, nunca menos, pra quem já estava na lista. Invertendo (ref_ids primeiro,
+    # status depois) abre a janela: um candidato pode ganhar slot+mark inteiramente
+    # entre as duas leituras, sumir do snapshot de ref_ids mas aparecer como 'agendado'
+    # -> falso órfão -> um estudo agendado de verdade seria liberado por baixo do dia
+    # que ia sair. Mesmo espírito do comentário de ordem em `db.agenda_devolver`.
+    agendados = db_mod.listar_candidatos(status="agendado")
     presos_na_agenda = db_mod.agenda_ref_ids("candidato")
     liberados = 0
-    for c in db_mod.listar_candidatos(status="agendado"):
+    for c in agendados:
         if c["id"] in presos_na_agenda:
             continue
         try:

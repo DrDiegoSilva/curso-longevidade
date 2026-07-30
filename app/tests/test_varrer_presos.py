@@ -113,6 +113,43 @@ class TestVarrerPresos(unittest.TestCase):
         self.assertEqual(self.db.obter_candidato(cid1)["status"], "agendado")   # falhou, segue preso
         self.assertEqual(self.db.obter_candidato(cid2)["status"], "novo")
 
+    def test_le_status_antes_de_ref_ids_fecha_a_janela_toctou(self):
+        """Pin determinístico da ORDEM das duas leituras (sem thread real): um fake
+        db_mod cujo `agenda_ref_ids` só "enxerga" o slot da corrida depois que
+        `listar_candidatos` já rodou — modela um candidato que ganha slot+mark
+        inteiramente na janela entre as duas leituras. Com a ordem certa (status
+        primeiro), o candidato da corrida nem aparece na 1ª leitura -> nunca é tocado.
+        Com a ordem invertida (ref_ids primeiro — o bug que a revisão achou), o
+        candidato aparenta órfão (ref_ids ainda vazio) e seria liberado por engano.
+        Este teste falha sob a ordem antiga e passa sob a corrigida — não é uma
+        asserção que passa de qualquer jeito."""
+
+        class FakeDbOrdemCritica:
+            def __init__(self):
+                self.listar_ja_rodou = False
+                self.liberados = []
+
+            def init(self):
+                pass
+
+            def listar_candidatos(self, status=None):
+                self.listar_ja_rodou = True
+                return [{"id": "race-1", "titulo": "Corrida"}]
+
+            def agenda_ref_ids(self, tipo):
+                # a corrida "termina" (slot escrito) exatamente quando listar_candidatos
+                # já rodou; antes disso, o slot ainda não existe pro leitor.
+                return {"race-1"} if self.listar_ja_rodou else set()
+
+            def marcar_candidato_pronto(self, cid):
+                self.liberados.append(cid)
+
+        import curadoria
+        fake_db = FakeDbOrdemCritica()
+        n = curadoria.varrer_presos(db_mod=fake_db)
+        self.assertEqual(n, 0)                       # protegido: não liberou o "agendado" de verdade
+        self.assertEqual(fake_db.liberados, [])
+
 
 class _RouteStub:
     """Stub mínimo pro `self` de do_POST: mesmo padrão de test_admin_precos.py
