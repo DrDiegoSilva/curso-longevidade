@@ -168,9 +168,12 @@ class TestPreservacaoDoQueJaFunciona(unittest.TestCase):
         conteudo = {"titulo_pt": "Título", "resumo": "💡 *Em resumo*\ntexto", "gancho": "poste isso",
                     "grafico": {"titulo": "G", "unidade": "%", "barras": [{"rotulo": "A", "valor": 1}]}}
         h = pdfmod.montar_html(ART, conteudo, TEMA)
+        # `@page` deixou de ser `margin: 0`: o Diego pediu respiro nas quebras (2026-07-30).
+        # O texto que virava pra pagina 2 nascia colado no corte do papel. A capa segue
+        # sangrando de borda a borda via `@page :first {{ margin-top: 0 }}`.
         for pedaco in ("height:185px", "Atualiza&ccedil;&atilde;o cient&iacute;fica", "Dr. Diego Silva",
                        "CRM-PR 54310", 'class="tag"', "🍎", "Obesidade", "📣 Para suas redes",
-                       "Refer&ecirc;ncia: https://ex.com/a", "@page", "size: A4; margin: 0",
+                       "Refer&ecirc;ncia: https://ex.com/a", "@page", "size: A4; margin: 15mm 0 13mm",
                        "font-size:20px", "Georgia", "NEJM", "DOI 10.x",
                        "border-bottom:2px solid #c9a227", "<svg viewBox"):
             self.assertIn(pedaco, h, pedaco)

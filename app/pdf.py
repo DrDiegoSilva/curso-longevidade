@@ -247,7 +247,10 @@ def montar_html(artigo, conteudo, tema_meta):
     gancho_html = _gancho_html(conteudo.get("gancho", ""))
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <style>
-  @page {{ size: A4; margin: 0; }}
+  @page {{ size: A4; margin: 15mm 0 13mm; }}
+  /* A capa sangra de borda a borda: só a 1a página abre mão da margem de topo.
+     Sem isto, o texto que vira para a página 2 nasce colado no corte do papel. */
+  @page :first {{ margin-top: 0; }}
   *{{box-sizing:border-box}}
   body {{ font-family: Georgia, "Times New Roman", serif; color:#20302b; margin:0; font-size:20px; line-height:1.7; }}
   h1, h2 {{ break-after:avoid; }}
@@ -259,24 +262,24 @@ def montar_html(artigo, conteudo, tema_meta):
   .brand .crm {{ font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.1em; color:#cbd8cf; margin-top:3px; }}
   .tag {{ position:absolute; right:34px; top:28px; z-index:2; background:#c9a227; color:#1a1300; font-family:system-ui,sans-serif;
           font-size:12px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; padding:7px 15px; border-radius:100px; }}
-  .body {{ padding:34px 48px 40px; }}
-  .title {{ font-size:34px; line-height:1.22; color:{cor}; margin:0 0 14px; }}
+  .body {{ padding:34px 48px 26px; }}
+  .title {{ font-size:28px; line-height:1.22; color:{cor}; margin:0 0 14px; }}
   .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:15px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
-  .corpo p {{ margin:.75em 0; font-size:20px; color:#2b3a35; orphans:3; widows:3; }}
+  .corpo p {{ margin:.7em 0; font-size:16.5px; color:#2b3a35; orphans:3; widows:3; }}
   /* Invólucro do par título+1º parágrafo: o par não pode ser partido, então o
      título nunca fica sozinho no pé da página. É deliberadamente PEQUENO — grupo
      maior que a página faria o Chromium empurrar tudo e abrir página em branco. */
   .corpo .keep {{ break-inside:avoid; }}
   .corpo strong {{ color:{cor}; }}
-  .corpo .h {{ font-size:21px; font-weight:700; color:{cor}; margin:22px 0 4px; line-height:1.3; break-after:avoid; break-inside:avoid; }}
+  .corpo .h {{ font-size:17.5px; font-weight:700; color:{cor}; margin:22px 0 4px; line-height:1.3; break-after:avoid; break-inside:avoid; }}
   .corpo hr.rule {{ border:none; border-top:1px solid #e2ddcb; margin:16px 0 14px; break-after:avoid; }}
   .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; break-inside:avoid; }}
   .chart .ct {{ font-family:system-ui,sans-serif; font-size:14px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
   .bar-row {{ display:flex; align-items:center; gap:14px; margin:12px 0; }}
-  .bar-lab {{ width:140px; font-family:system-ui,sans-serif; font-size:17px; color:#2b3a35; flex:none; }}
+  .bar-lab {{ width:132px; font-family:system-ui,sans-serif; font-size:14.5px; color:#2b3a35; flex:none; }}
   .bar-track {{ flex:1; background:#e7e2d3; border-radius:100px; height:26px; overflow:hidden; }}
   .bar-fill {{ height:100%; border-radius:100px; }}
-  .bar-val {{ font-family:ui-monospace,monospace; font-size:17px; font-weight:700; width:78px; text-align:right; flex:none; }}
+  .bar-val {{ font-family:ui-monospace,monospace; font-size:14.5px; font-weight:700; width:78px; text-align:right; flex:none; }}
   .bar-lab i {{ display:block; font-style:normal; font-size:13px; color:#8a948e; }}
   .chart .chamada {{ margin-top:15px; padding-top:13px; border-top:1px solid #e7e2d6;
            font-family:system-ui,sans-serif; font-size:16px; line-height:1.5; color:#3a2f10; }}
@@ -289,7 +292,7 @@ def montar_html(artigo, conteudo, tema_meta):
   .braco {{ border:1px solid #e7e2d6; border-radius:10px; background:#f4f1e7; overflow:hidden; break-inside:avoid; }}
   .braco .top {{ height:6px; }}
   .braco .in {{ padding:12px 14px 14px; font-family:system-ui,sans-serif; }}
-  .braco .nome {{ font-size:16px; font-weight:700; color:{cor}; line-height:1.3; }}
+  .braco .nome {{ font-size:14px; font-weight:700; color:{cor}; line-height:1.3; }}
   .braco .dose {{ font-size:14px; color:#6f7d78; margin-top:4px; line-height:1.4; }}
   .braco .n {{ font-size:14px; color:#20543f; margin-top:8px; font-variant-numeric:tabular-nums; }}
   /* Vieses e limitações em bloco próprio (sem break-inside:avoid de propósito:
@@ -298,11 +301,11 @@ def montar_html(artigo, conteudo, tema_meta):
            border-radius:10px; background:#fdfaf0; padding:18px 20px; }}
   .corpo .limites .lab {{ font-family:system-ui,sans-serif; font-size:14.5px; letter-spacing:.08em; text-transform:uppercase;
            color:#8a6a06; font-weight:700; margin-bottom:9px; }}
-  .corpo .limites p {{ margin:.4em 0; font-size:18px; line-height:1.6; color:#4a4634; orphans:3; widows:3; }}
+  .corpo .limites p {{ margin:.4em 0; font-size:15.5px; line-height:1.6; color:#4a4634; orphans:3; widows:3; }}
   .social {{ margin:28px 0 8px; border:2px solid #c9a227; border-radius:12px; padding:20px 22px; background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
   .social .lab {{ font-family:system-ui,sans-serif; font-size:14.5px; letter-spacing:.08em; text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
-  .social .post {{ font-size:20px; color:#3a2f10; font-style:italic; line-height:1.6; }}
-  .foot {{ margin-top:30px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  .social .post {{ font-size:16.5px; color:#3a2f10; font-style:italic; line-height:1.6; }}
+  .foot {{ margin-top:22px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
            break-inside:avoid; font-family:system-ui,sans-serif; font-size:13px; color:#6f7d78; }}
   .foot .wm {{ font-style:italic; color:#9aa8a0; }}
 </style></head><body>
