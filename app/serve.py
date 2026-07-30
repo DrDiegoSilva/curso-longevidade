@@ -112,9 +112,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _rate_ok(self, nome, maximo, janela_seg):
         """Rate-limit por IP nos endpoints sensíveis (login/OTP/recuperação). Se estourar,
-        já responde 429 e retorna False -> o handler deve dar `return`."""
+        já responde 429 e retorna False -> o handler deve dar `return`.
+        Chaveia por `_ip_cliente()` (não por `client_address`): atrás do proxy
+        reverso deste deploy, `client_address` é o IP do PRÓPRIO PROXY, idêntico pra
+        todo visitante — chavear por ele juntava todo mundo num balde só (os 5
+        códigos de OTP por 10 min viravam 5 códigos pro site inteiro, e uma pessoa
+        exaurindo a cota trancava o login de todo mundo). `_ip_cliente()` lê o
+        último elemento do X-Forwarded-For (escrito pelo proxy, não forjável pelo
+        cliente), com fallback pro `client_address` se o cabeçalho vier ausente."""
         import rate_limit
-        ip = self.client_address[0] if self.client_address else "?"
+        ip = self._ip_cliente()
         if rate_limit.limitado(f"{nome}:{ip}", maximo, janela_seg):
             self._html("<h3>Muitas tentativas. Aguarde alguns minutos e tente de novo.</h3>", 429)
             return False

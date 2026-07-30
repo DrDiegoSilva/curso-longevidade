@@ -8,6 +8,18 @@ pelo Asaas (serve.py) — acesso de graça, não desconto.
 (deploy.replicas=1), então isso basta. Com duas instâncias o limite passa a ser POR
 instância e afrouxa proporcionalmente — resolver exigiria store compartilhado
 (Redis), que o projeto não tem. Registrado no backlog.
+
+⚠️ DUPLICAÇÃO PENDENTE (2026-07-29): este módulo faz exatamente o que `rate_limit.py`
+faz (mesma janela deslizante, mesmo `threading.Lock`, mesma evicção preguiçosa,
+mesmo `_MAX_CHAVES`) — deveria ter sido UM módulo só desde o início. A consolidação
+não aconteceu ainda porque, no momento em que foi tentada, uma rota em progresso
+(`/assinar/cupom`, prévia de preço) dependia deste módulo com um branch de trabalho
+ainda não commitado, e há uma dúvida em aberto sobre se essa rota deve compartilhar
+o balde de cota com `_post_assinar` (que também usa este módulo) ou não — decisão do
+dono, não um refactor pra empurrar sozinho. Ver
+`.superpowers/sdd/2026-07-29-cupom-previa/consolidacao-report.md`. `rate_limit.py`
+já tem a API (`limitado(..., registrar=False)` + `registrar_tentativa`) pronta pra
+receber os dois chamadores deste módulo assim que a decisão de namespace for tomada.
 """
 import threading
 import time
