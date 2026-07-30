@@ -152,14 +152,14 @@ class TestFigurasAssinar(unittest.TestCase):
         `pix_desc` e `cartao_desc`. Serve pra prévia do cupom repintar essa opção com
         `pintar()`, sem montar rótulo nem dividir nada no navegador (2026-07-30)."""
         f = self.p.figuras_assinar(self.anual, "CARTAO", 1497.0, cupom_valor=500.0)
-        self.assertEqual(f["parcelado_desc"], "até 12x de R$ 83,08 · não renova")
+        self.assertEqual(f["parcelado_desc"], "em até 12x de R$ 83,08")
 
     def test_parcelado_desc_sai_da_base_do_cartao_mesmo_no_pix(self):
         """Mesma armadilha de `parcelas`: parcelamento não existe no Pix, então esta
         cifra nunca pode empilhar os 5% do Pix."""
         for metodo in ("CARTAO", "PIX"):
             f = self.p.figuras_assinar(self.anual, metodo, 1497.0, cupom_valor=500.0)
-            self.assertEqual(f["parcelado_desc"], "até 12x de R$ 83,08 · não renova", metodo)
+            self.assertEqual(f["parcelado_desc"], "em até 12x de R$ 83,08", metodo)
 
     def test_sem_cupom_reproduz_o_preco_de_tabela(self):
         f = self.p.figuras_assinar(self.anual, "CARTAO", 1497.0)

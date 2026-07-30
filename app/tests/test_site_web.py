@@ -120,9 +120,19 @@ class TestRender(unittest.TestCase):
         self.assertIn('name="parcelas" value="12"', h)
         # a cifra exata (com e sem cupom) é travada em test_pricing.figuras_assinar;
         # aqui o que importa é que a página REALMENTE emite o rótulo do teto.
-        self.assertIn("até 12x de R$", h)
-        self.assertIn("· não renova", h)
-        self.assertIn("renova todo ano", h)
+        self.assertIn("em até 12x de R$", h)
+        self.assertIn("cobrança única", h)
+
+    def test_assinar_nao_fala_de_renovacao_na_escolha_do_cartao(self):
+        """Decisão do Diego (2026-07-30): a escolha à vista/parcelado é uma NECESSIDADE
+        técnica (é ela que permite o à vista recorrer, coisa que o Asaas não faz no
+        parcelado), mas a tela de venda não explica renovação — quem cobre isso são os
+        Termos. Sem esta trava o texto volta por 'clareza' e polui o checkout."""
+        h = self.s.pagina_assinar("anual")
+        bloco = h[h.index('id="parcelas-field"'):]
+        bloco = bloco[:bloco.index("</div>")]
+        for proibido in ("renova", "Renova", "renovação"):
+            self.assertNotIn(proibido, bloco)
 
     def test_assinar_anual_oferece_exatamente_a_vista_e_o_teto(self):
         """Trava do teto: 2x…11x saíram da tela de propósito. Se voltarem, o cliente

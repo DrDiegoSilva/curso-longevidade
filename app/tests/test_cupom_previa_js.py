@@ -241,7 +241,7 @@ def _parcelas_payload(ns, por_parcela="R$ 83,08", total="R$ 997,00"):
 _RESP_CARTAO = {"ok": True, "preco": "R$ 997,00", "msg": "−R$ 500,00 aplicado",
                 "pix_desc": "R$ 947,15 à vista",
                 "cartao_desc": "à vista ou parcelado",
-                "parcelado_desc": "até 12x de R$ 83,08 · não renova",
+                "parcelado_desc": "em até 12x de R$ 83,08",
                 "parcelas": _parcelas_payload(range(1, 13))}
 _RESP_PIX = dict(_RESP_CARTAO, preco="R$ 947,15")
 
@@ -263,7 +263,7 @@ class _HarnessJs:
     def _rodar(self, script=None, **cfg):
         base = {"valor_input": "LANCAMENTO", "preco_inicial": "R$ 1.497",
                 "preco_base": "R$ 1.497", "periodo": "por ano",
-                "parcelado_base": "até 12x de R$ 124,75 · não renova",
+                "parcelado_base": "em até 12x de R$ 124,75",
                 "pix_base": "R$ 1.422,15 à vista",
                 "cartao_base": "à vista ou parcelado",
                 "metodos": ["PIX", "CARTAO"], "metodo_inicial": "CARTAO",
@@ -303,7 +303,7 @@ class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
         QUARTA figura da tela. Se a prévia não repintar, ela fica com o valor SEM o
         cupom — a mesma mentira que o tile do Pix contava em 2026-07-29."""
         r = self._rodar(parcelas_escolhida="12")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 83,08 · não renova")
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 83,08")
 
     def test_sem_campo_de_parcelas_no_plano_mensal_nao_explode(self):
         r = self._rodar(parcelas_escolhida="1", sem_campo_parcelas=True)
@@ -348,7 +348,7 @@ class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["filhos_preco"], ["span"])
         self.assertEqual(r["preco"], "R$ 997,00por ano")
         self.assertEqual(r["parcelas_marcada"], "12")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 83,08 · não renova",
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 83,08",
                          "a cifra do parcelado não pode concatenar a cada clique")
         self.assertEqual(len(r["fetches"]), 5)
         self.assertEqual(r["msg"], "−R$ 500,00 aplicado", "a mensagem não pode concatenar")
@@ -368,7 +368,7 @@ class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["msg"], "Cupom inválido.")
         self.assertEqual(r["preco"], "R$ 1.497por ano")
         self.assertEqual(r["parcelas_marcada"], "12")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova",
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 124,75",
                          "cupom recusado tem que deixar a cifra do parcelado no baseline")
         self.assertFalse(r["btn_disabled"], "o botão tem que voltar a funcionar")
 
@@ -400,7 +400,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["preco"], "R$ 947,15por ano", "o resumo tem que seguir o método")
         self.assertEqual(r["pix_desc"], "R$ 947,15 à vista",
                          "o tile do Pix tem que levar o cupom (mostrava 1.422,15 ao vivo)")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 83,08 · não renova",
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 83,08",
                          "parcelas são do CARTÃO: 78,93/947,15 (Pix parcelado) não existe")
 
     def test_trocar_para_cartao_com_cupom_aplicado_tambem_reprecifica(self):
@@ -438,7 +438,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
                          "(nem cota de tentativas) nenhuma")
         self.assertEqual(r["preco"], "R$ 1.497por ano")
         self.assertEqual(r["pix_desc"], "R$ 1.422,15 à vista")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova")
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 124,75")
 
     def test_apagar_o_cupom_e_trocar_de_metodo_volta_o_baseline(self):
         """Sem isto a tela ficaria com o desconto de um cupom que não está mais na
@@ -450,7 +450,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["preco"], "R$ 1.497por ano")
         self.assertEqual(r["pix_desc"], "R$ 1.422,15 à vista")
         self.assertEqual(r["cartao_desc"], "à vista ou parcelado")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova",
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 124,75",
                          "a cifra do parcelado tem que voltar à que o servidor renderizou")
 
     def test_editar_o_codigo_depois_de_aplicar_volta_o_baseline_na_hora(self):
@@ -583,7 +583,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["preco"], "R$ 997,00por ano")
         self.assertEqual(r["pix_desc"], "R$ 1.422,15 à vista")
         self.assertEqual(r["cartao_desc"], "à vista ou parcelado")
-        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova")
+        self.assertEqual(r["parcelado_desc"], "em até 12x de R$ 124,75")
 
 
 class TestContratoMarkupJs(unittest.TestCase):
