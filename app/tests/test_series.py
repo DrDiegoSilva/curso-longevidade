@@ -414,6 +414,45 @@ class TestPaginaSeries(unittest.TestCase):
         self.assertNotIn('value="ativar"', html)
         self.assertIn("ativa", html.lower())
 
+    def test_pagina_mostra_botao_cancelar_na_serie_ativa(self):
+        import site_web
+        ctx = {"series": [{"id": "s1", "nome": "S", "status": "ativa"}],
+               "aberta": {"serie": {"id": "s1", "nome": "S", "status": "ativa"},
+                          "itens": [{"id": "i1", "ref_tipo": "reserva", "ref_id": "r1",
+                                     "titulo": "R1", "data": "2026-08-10"}]},
+               "resultados": []}
+        html = site_web.pagina_series(ctx, "TK")
+        self.assertIn("cancelar", html)
+        self.assertIn("🚫", html)
+
+    def test_pagina_nao_mostra_cancelar_em_rascunho(self):
+        import site_web
+        ctx = {"series": [{"id": "s1", "nome": "S", "status": "rascunho"}],
+               "aberta": {"serie": {"id": "s1", "nome": "S", "status": "rascunho"},
+                          "itens": []},
+               "resultados": []}
+        html = site_web.pagina_series(ctx, "TK")
+        self.assertNotIn("🚫", html)
+
+    def test_pagina_confirmacao_pede_confirmar_e_diz_o_efeito(self):
+        import site_web
+        ctx = {"series": [{"id": "s1", "nome": "S", "status": "ativa"}],
+               "aberta": {"serie": {"id": "s1", "nome": "S", "status": "ativa"},
+                          "itens": [{"id": "i1", "ref_tipo": "reserva", "ref_id": "r1",
+                                     "titulo": "R1", "data": "2026-08-10"}]},
+               "resultados": []}
+        html = site_web.pagina_series(ctx, "TK", confirmar_cancelar="s1")
+        self.assertIn("cancelar_confirmar", html)
+        # nomeia o efeito (devolve ao estoque, volta pra rascunho) sem prender o teste
+        # à frase exata — evita quebrar em todo ajuste de copy.
+        self.assertIn("estoque", html)
+        self.assertIn("rascunho", html)
+        # MINOR 5 (revisão final): a caixa de confirmação nomeava só 2 das 3 exclusões
+        # (já enviados, rascunho pronto) e omitia o dia tomado por outro estudo — caso
+        # alcançável e coberto por teste em series.py (test_nao_mexe_em_dia_...). Checa
+        # a SUBSTÂNCIA (menção a 'outro estudo'), não a frase exata.
+        self.assertIn("outro estudo", html)
+
 
 class _SeriesRotaStub:
     """Stub mínimo pro `self` de `do_GET`/`do_POST` quando `path == '/series'`. Não
@@ -629,6 +668,54 @@ class TestRotaSeries(unittest.TestCase):
         import urllib.parse as _up
         self.assertIn("já está na série", _up.unquote(location).lower())
         self.assertEqual(len(self.db.obter_serie(sid)["itens"]), 1)
+
+    def test_post_cancelar_confirmar_sem_token_nem_sessao_403(self):
+        stub = self.Stub("/series", body=b"acao=cancelar_confirmar&serie=s1")
+        code, _ = stub.do_POST()
+        self.assertEqual(code, 403)
+
+    def test_post_cancelar_mostra_confirmacao_sem_cancelar_nada(self):
+        """`acao=cancelar` é só a etapa 1: redireciona pedindo confirmação e
+        NÃO pode mexer na série (senão a confirmação seria decorativa)."""
+        import series
+        sid = self._ativa_uma()
+        body = f"acao=cancelar&serie={sid}&token=segredo-teste".encode()
+        stub = self.Stub("/series", body=body)
+
+        tag, location = stub.do_POST()
+
+        self.assertEqual(tag, "REDIRECT")
+        self.assertIn("confirmar_cancelar=", location)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "ativa",
+                         "etapa 1 não cancela")
+
+    def test_post_cancelar_confirmar_devolve_serie_pra_rascunho(self):
+        sid = self._ativa_uma()
+        body = f"acao=cancelar_confirmar&serie={sid}&token=segredo-teste".encode()
+        stub = self.Stub("/series", body=body)
+
+        tag, location = stub.do_POST()
+
+        self.assertEqual(tag, "REDIRECT")
+        self.assertTrue(location.startswith("/series?"))
+        self.assertIn("msg=", location, "o resultado tem que chegar ao admin")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def _ativa_uma(self):
+        """Série ativa com 1 reserva, começando numa segunda futura."""
+        import series
+        from datetime import date, timedelta
+        base = date.today() + timedelta(days=14)
+        inicio = (base - timedelta(days=base.weekday())).isoformat()
+        sid = self.db.criar_serie("S")
+        rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "R0",
+                                      "resumo": "r", "tags": ["glp1"]})
+        self.db.adicionar_serie_item(sid, "reserva", rid, titulo="R0", tema="Obesidade")
+        ok, msg = series.ativar_serie(sid, inicio, db_mod=self.db,
+                                      dias_envio=["segunda", "terca", "quarta",
+                                                  "quinta", "sexta"])
+        self.assertTrue(ok, f"setup falhou: {msg}")
+        return sid
 
 
 class TestSeriesHardening(unittest.TestCase):
@@ -1028,3 +1115,414 @@ class TestSeriesHardening(unittest.TestCase):
 
         with mock.patch.object(self.db, "_conn", return_value=ConexaoQueSuprime()):
             self.db._demover_series_ativas_extras()          # não pode levantar
+
+
+class TestAgendaDevolverCandidato(unittest.TestCase):
+    """Task 1 (Cancelar série) — bug pré-existente: `agenda_devolver` trata
+    'reserva' e 'fila' mas ignorava 'candidato' — o slot virava 'vazio' e o
+    candidato nunca voltava pro estoque (fica preso em status 'agendado' pra
+    sempre). `series._liberar_dia` trata os três; a inconsistência era do
+    `db`. Efeito colateral ao vivo: o botão 'pular' (agenda_pular) num dia
+    de candidato vazava o candidato."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    def _novo_candidato(self, chave, titulo):
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": titulo, "chave": chave,
+                                    "score": 6, "tipo": "varredura"}])
+        return self.db.listar_candidatos(status="novo")[0]["id"]
+
+    def test_devolver_dia_de_candidato_volta_ao_estoque(self):
+        cid = self._novo_candidato("cser-cand-1", "C1")
+        self.db.marcar_candidato_agendado(cid)
+        self.db.agenda_upsert("2026-08-10", tipo="candidato", ref_id=cid, titulo="C1")
+
+        self.db.agenda_devolver("2026-08-10")
+
+        self.assertEqual(self.db.agenda_slot("2026-08-10")["tipo"], "vazio")
+        cand = self.db.obter_candidato(cid)
+        self.assertEqual(cand["status"], "novo",
+                         "candidato tem que voltar pro estoque, senão vaza")
+
+    def test_devolver_preserva_fixado(self):
+        cid = self._novo_candidato("cser-cand-2", "C2")
+        self.db.marcar_candidato_agendado(cid)
+        self.db.agenda_upsert("2026-08-11", tipo="candidato", ref_id=cid, titulo="C2", fixado=1)
+
+        self.db.agenda_devolver("2026-08-11")
+
+        self.assertEqual(self.db.agenda_slot("2026-08-11")["fixado"], 1)
+
+
+class TestDevolverAoEstoqueParidade(unittest.TestCase):
+    """IMPORTANT 1 (revisão final): `db.agenda_devolver` e `series._liberar_dia` eram
+    cópias verbatim da lógica de devolução ao estoque — a divergência entre as duas
+    cópias FOI o bug que `TestAgendaDevolverCandidato` documenta (Task 1: `agenda_devolver`
+    esqueceu o branch de 'candidato', `_liberar_dia` não). As duas agora delegam pra
+    `db._devolver_ao_estoque`. Este teste passa os TRÊS tipos de slot consumível pelos
+    DOIS pontos de entrada e prova que devolvem igual — se algum tipo novo for ensinado
+    só de um lado de novo, um destes casos cai."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    def _novo_candidato(self, chave, titulo):
+        self.db.salvar_candidatos([{"tema": "Obesidade", "titulo": titulo, "chave": chave,
+                                    "score": 6, "tipo": "varredura"}])
+        return self.db.listar_candidatos(status="novo")[0]["id"]
+
+    def test_reserva_pelos_dois_caminhos(self):
+        import series
+        rid1 = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "R1", "resumo": "r"})
+        rid2 = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "R2", "resumo": "r"})
+        self.db.marcar_reserva_agendado(rid1)
+        self.db.marcar_reserva_agendado(rid2)
+        self.db.agenda_upsert("2026-08-10", tipo="reserva", ref_id=rid1, titulo="R1")
+        self.db.agenda_upsert("2026-08-11", tipo="reserva", ref_id=rid2, titulo="R2")
+
+        self.db.agenda_devolver("2026-08-10")             # caminho 1
+        series._liberar_dia(self.db, "2026-08-11")         # caminho 2
+
+        self.assertEqual(self.db.obter_reserva(rid1)["status"], "pronto")
+        self.assertEqual(self.db.obter_reserva(rid2)["status"], "pronto")
+
+    def test_candidato_pelos_dois_caminhos(self):
+        import series
+        cid1 = self._novo_candidato("par-cand-1", "C1")
+        self.db.marcar_candidato_agendado(cid1)
+        cid2 = self._novo_candidato("par-cand-2", "C2")
+        self.db.marcar_candidato_agendado(cid2)
+        self.db.agenda_upsert("2026-08-10", tipo="candidato", ref_id=cid1, titulo="C1")
+        self.db.agenda_upsert("2026-08-11", tipo="candidato", ref_id=cid2, titulo="C2")
+
+        self.db.agenda_devolver("2026-08-10")              # caminho 1
+        series._liberar_dia(self.db, "2026-08-11")          # caminho 2
+
+        self.assertEqual(self.db.obter_candidato(cid1)["status"], "novo")
+        self.assertEqual(self.db.obter_candidato(cid2)["status"], "novo")
+
+    def test_fila_pelos_dois_caminhos(self):
+        import json
+        from unittest import mock
+        import series
+        payload1 = {"titulo": "F1", "tema": "Obesidade", "score": 5, "url": "https://x"}
+        payload2 = {"titulo": "F2", "tema": "Obesidade", "score": 5, "url": "https://y"}
+        self.db.agenda_upsert("2026-08-10", tipo="fila", payload=json.dumps(payload1))
+        self.db.agenda_upsert("2026-08-11", tipo="fila", payload=json.dumps(payload2))
+
+        with mock.patch("queue_store.devolver") as m_devolver:
+            self.db.agenda_devolver("2026-08-10")           # caminho 1
+            series._liberar_dia(self.db, "2026-08-11")       # caminho 2
+
+        m_devolver.assert_any_call(payload1)
+        m_devolver.assert_any_call(payload2)
+        self.assertEqual(m_devolver.call_count, 2)
+
+
+def _segunda_futura(dias=14):
+    """Uma segunda-feira a pelo menos ~`dias` dias de hoje. Data COMPUTADA, não
+    fixa: uma data cravada apodrece (o piso de `ativar_serie` recusa data
+    passada, então um '2026-08-10' fixo passa a falhar sozinho depois daquela
+    data)."""
+    base = date.today() + timedelta(days=dias)
+    return (base - timedelta(days=base.weekday())).isoformat()
+
+
+class TestCancelarSerie(unittest.TestCase):
+    """Task 2 (Cancelar série) — desfaz uma ativação: libera os dias futuros
+    ainda não preparados (estudo volta pro estoque, slot vira 'vazio') e volta
+    a série pra 'rascunho' com os itens intactos, pronta pra reativar com outra
+    data. Não mexe em dia já enviado/de hoje, em dia com rascunho das 18h
+    pronto, nem em dia que já é de outro estudo (evita duplicar no estoque)."""
+
+    DIAS_UTEIS = ["segunda", "terca", "quarta", "quinta", "sexta"]
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = _snapshot_env()
+        self.db = _reload_db(self.tmp)
+        self.hoje = date.today().isoformat()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        _restore_db(self.snap)
+
+    def _serie_ativa(self, n=3, inicio=None):
+        """Série ativa com n reservas em n dias úteis seguidos a partir de inicio."""
+        import series
+        inicio = inicio or _segunda_futura()
+        sid = self.db.criar_serie("S")
+        for i in range(n):
+            rid = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": f"R{i}",
+                                          "resumo": "r", "tags": ["glp1"]})
+            self.db.adicionar_serie_item(sid, "reserva", rid, titulo=f"R{i}", tema="Obesidade")
+        ok, msg = series.ativar_serie(sid, inicio, db_mod=self.db, dias_envio=self.DIAS_UTEIS)
+        self.assertTrue(ok, f"setup falhou: {msg}")
+        return sid
+
+    def test_libera_dias_futuros_e_devolve_estudos(self):
+        import series
+        sid = self._serie_ativa(n=3)
+        dias = [it["data"] for it in self.db.obter_serie(sid)["itens"]]
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        for d in dias:
+            self.assertEqual(self.db.agenda_slot(d)["tipo"], "vazio", f"{d} devia estar livre")
+        for it in self.db.obter_serie(sid)["itens"]:
+            self.assertEqual(it["data"], "", "item liberado perde a data")
+            self.assertEqual(self.db.obter_reserva(it["ref_id"])["status"], "pronto",
+                             "estudo tem que voltar pro estoque")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_mantem_dia_passado_e_de_hoje(self):
+        import series
+        sid = self._serie_ativa(n=3)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        # hoje = o 2º dia: o 1º é passado, o 2º é hoje, só o 3º é futuro
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=dias[1],
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertNotEqual(self.db.agenda_slot(dias[0])["tipo"], "vazio", "passado fica")
+        self.assertNotEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio", "hoje fica")
+        self.assertEqual(self.db.agenda_slot(dias[2])["tipo"], "vazio", "futuro sai")
+
+    def test_nao_libera_dia_com_rascunho_pronto_e_avisa(self):
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: d == dias[0])
+
+        self.assertTrue(ok, msg)
+        self.assertNotEqual(self.db.agenda_slot(dias[0])["tipo"], "vazio")
+        self.assertEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio")
+        self.assertIn("rascunho", msg.lower(), f"o admin tem que ser avisado: {msg}")
+
+    def test_avisa_follow_up_quando_algum_dia_fica_mantido(self):
+        """MINOR 4 (revisão final): a mensagem de sucesso não dizia que a série só fica
+        IMEDIATAMENTE pronta pra reativar quando NADA foi mantido — proven pelo review:
+        cancelar com 1 dia mantido dava 'Série cancelada... pronta' e a PRÓXIMA
+        ativar_serie era recusada ('já ocupa um dia da agenda'). Prova aqui: cancela
+        com um dia de rascunho pronto (mantido) e confirma (1) a mensagem nomeia o
+        follow-up (🗑️, mesmo emoji que _indisponiveis usa pra pedir a mesma ação) e
+        (2) a reativação É MESMO recusada — a mensagem tem que ter avisado disso, não
+        prometido um recomeço limpo."""
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: d == dias[0])
+
+        self.assertTrue(ok, msg)
+        self.assertIn("🗑️", msg, f"tem que nomear o follow-up (tirar da série): {msg}")
+
+        nova = _segunda_futura(dias=30)
+        ok2, msg2 = series.ativar_serie(sid, nova, db_mod=self.db, dias_envio=self.DIAS_UTEIS)
+        self.assertFalse(ok2, "o item mantido bloqueia a reativação — a msg tinha que ter avisado")
+
+    def test_sem_follow_up_quando_tudo_e_liberado(self):
+        """Contraste do MINOR 4: com TODO dia liberado não sobra follow-up pra nomear —
+        a mensagem não deve sugerir que falta tirar algo da série."""
+        import series
+        sid = self._serie_ativa(n=2)
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertNotIn("🗑️", msg)
+
+    def test_nao_mexe_em_dia_que_ja_e_de_outro_estudo(self):
+        import series
+        sid = self._serie_ativa(n=1)
+        it = self.db.obter_serie(sid)["itens"][0]
+        dia = it["data"]
+        # alguém trocou o dia (Item 23 / edição manual): o slot não é mais do item
+        outra = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "OUTRA", "resumo": "r"})
+        self.db.agenda_upsert(dia, tipo="reserva", ref_id=outra, titulo="OUTRA")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.agenda_slot(dia)["ref_id"], outra, "não mexe no dia alheio")
+        self.assertEqual(self.db.obter_reserva(it["ref_id"])["status"], "agendado",
+                         "não devolve às cegas — duplicaria o estudo no estoque")
+
+    def test_alheio_por_tipo_diferente_com_mesmo_ref_id_nao_e_confundido_com_proprio(self):
+        """MINOR 6 (revisão final): a comparação de dono era só por ref_id, mas ref_id
+        só é único DENTRO de um tipo (mesma premissa de db.agenda_ref_ids(tipo) e
+        _indisponiveis). Aqui forçamos a colisão: um slot de CANDIDATO com o mesmo id
+        textual do ref_id da reserva da série. Comparando só ref_id, o código tratava
+        esse slot alheio como 'o próprio item' e chamava agenda_devolver nele — que,
+        pro tipo 'candidato', chama marcar_candidato_pronto(rid); como rid é um id de
+        RESERVA (não existe em curadoria_candidatos), o UPDATE afeta 0 linhas e o dono
+        de verdade do slot (o candidato) nunca é solto — e o slot dele é apagado."""
+        import series
+        sid = self._serie_ativa(n=1)
+        it = self.db.obter_serie(sid)["itens"][0]
+        dia = it["data"]
+        rid = it["ref_id"]
+        # dia agora é de um CANDIDATO com o MESMO id textual do ref_id da reserva
+        self.db.agenda_upsert(dia, tipo="candidato", ref_id=rid, titulo="Outro tipo")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        slot = self.db.agenda_slot(dia)
+        self.assertEqual(slot["tipo"], "candidato", "não mexe no slot alheio (tipo diferente)")
+        self.assertEqual(slot["ref_id"], rid, "não apaga o slot alheio")
+        self.assertEqual(self.db.obter_reserva(rid)["status"], "agendado",
+                         "não devolve às cegas — o tipo do slot não bate com o do item")
+
+    def test_dia_pulado_por_fora_nao_e_relatado_como_outro_estudo(self):
+        """MINOR 3 (revisão final): dia vazio/pulado por fora da série (ex.: o admin
+        clicou 'Folga' via agenda_pular) caía no mesmo balde de 'já ocupado por outro
+        estudo' — mentira, ninguém ocupa um dia de folga. Provado SEM corrida nenhuma:
+        ativa, pula o 1º dia, cancela. O estado já está certo (agenda_pular chama
+        agenda_devolver por dentro e já devolveu o estudo ao estoque); só a mensagem
+        classificava errado."""
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+        self.db.agenda_pular(dias[0], True)
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertNotIn("outro estudo", msg, f"dia de folga não é 'outro estudo': {msg}")
+        self.assertIn("folga", msg.lower(), f"o admin tem que ver que é folga: {msg}")
+        self.assertEqual(self.db.agenda_slot(dias[0])["tipo"], "pulado", "não mexe no dia pulado")
+
+    def test_serie_presa_ativa_sem_datas_volta_a_rascunho(self):
+        """O caso grave: hoje esse estado só sai editando o banco."""
+        import series
+        sid = self.db.criar_serie("Presa")
+        self.db.atualizar_serie(sid, status="ativa")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_recusa_rascunho_e_concluida(self):
+        import series
+        sid = self.db.criar_serie("R")
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db)
+        self.assertFalse(ok)
+        self.assertIn("rascunho", msg.lower())
+
+        self.db.atualizar_serie(sid, status="concluida")
+        ok2, msg2 = series.cancelar_serie(sid, db_mod=self.db)
+        self.assertFalse(ok2)
+
+    def test_falha_por_dia_avisa_e_nao_fica_silenciosa(self):
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+        real = self.db.agenda_devolver
+
+        def devolver_quebrado(dia):
+            if dia == dias[0]:
+                raise RuntimeError("boom")
+            return real(dia)
+
+        self.db.agenda_devolver = devolver_quebrado
+        try:
+            ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                            preparado_fn=lambda d: False)
+        finally:
+            self.db.agenda_devolver = real
+
+        # IMPORTANT 2 (revisão final): falha parcial não é sucesso — espelha o
+        # contrato de ativar_serie (False quando `falhas` não é vazio), mesmo com
+        # o outro dia liberado com sucesso.
+        self.assertFalse(ok, msg)
+        self.assertIn(dias[0], msg, f"o dia que falhou tem que aparecer: {msg}")
+        self.assertEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio",
+                         "uma falha não impede os outros dias")
+
+    def test_cancelar_libera_a_proxima_ativacao(self):
+        """Fecha o ciclo: ativei na data errada -> cancelo -> ativo na certa."""
+        import series
+        sid = self._serie_ativa(n=2)
+        ok, _ = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                      preparado_fn=lambda d: False)
+        self.assertTrue(ok)
+
+        nova = _segunda_futura(dias=21)
+        ok2, msg2 = series.ativar_serie(sid, nova, db_mod=self.db, dias_envio=self.DIAS_UTEIS)
+
+        self.assertTrue(ok2, msg2)
+        datas = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+        self.assertEqual(datas[0], nova, "reativou na data nova")
+
+    def test_aceita_status_incompleta(self):
+        """'incompleta' é um status aceito na whitelist (série que 'reconciliar' fechou
+        com item órfão) — alcançável de verdade, não só uma sigla no docstring."""
+        import series
+        sid = self.db.criar_serie("Incompleta")
+        self.db.atualizar_serie(sid, status="incompleta")
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=lambda d: False)
+
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho")
+
+    def test_preparado_fn_que_falha_nao_trava_os_outros_dias(self):
+        """`preparado_fn` (por padrão, uma leitura no banco via draft_store.carregar) pode
+        levantar com o banco travado — mesma falha que já tratamos pra `agenda_slot`. Uma
+        falha nela não pode: (1) travar o loop e deixar os OUTROS dias presos; (2) pular o
+        `atualizar_serie` final, deixando a série 'ativa' pra sempre — exatamente o estado
+        preso que esta função existe pra consertar, agora alcançável a partir dela mesma."""
+        import series
+        sid = self._serie_ativa(n=2)
+        dias = sorted(it["data"] for it in self.db.obter_serie(sid)["itens"])
+
+        def preparado_quebrado(d):
+            if d == dias[0]:
+                raise RuntimeError("banco travado")
+            return False
+
+        ok, msg = series.cancelar_serie(sid, db_mod=self.db, hoje=self.hoje,
+                                        preparado_fn=preparado_quebrado)
+
+        # IMPORTANT 2 (revisão final): o contrato mudou — falha parcial (`falhas`
+        # não vazio) agora é (False, ...), mesmo com o outro dia liberado, pra
+        # espelhar ativar_serie. Antes esta linha era assertTrue: uma falha real
+        # (banco travado no meio do cancelamento) era relatada como sucesso total.
+        # O resto do comportamento (não trava os outros dias, série volta pra
+        # rascunho) continua garantido — só o booleano de sucesso mudou.
+        self.assertFalse(ok, msg)
+        self.assertIn(dias[0], msg, f"o dia que falhou tem que aparecer: {msg}")
+        self.assertEqual(self.db.agenda_slot(dias[1])["tipo"], "vazio",
+                         "uma falha no preparado_fn não pode travar os outros dias")
+        self.assertEqual(self.db.obter_serie(sid)["serie"]["status"], "rascunho",
+                         "a série tem que voltar pra rascunho mesmo com falha parcial")

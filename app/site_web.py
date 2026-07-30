@@ -1641,7 +1641,7 @@ def pagina_agenda(semanas, estoque, token, msg=""):
                    meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg=""):
+def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg="", confirmar_cancelar=""):
     """Montador de séries: lista + (rascunho aberto) busca por tag + itens ordenados
     + adicionar meu estudo + ativar com data de início."""
     tk = _esc(token)
@@ -1696,6 +1696,30 @@ def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg=""):
             its += "</li>"
         itens_html = f'<ul style="list-style:none;padding:0">{its or "<li class=hint>Vazia.</li>"}</ul>'
 
+        cancelar_html = ""
+        if st in ("ativa", "incompleta"):
+            if str(confirmar_cancelar) == str(aberta["serie"]["id"]):
+                n_dias = sum(1 for i in aberta.get("itens", []) if i.get("data"))
+                cancelar_html = (
+                    f'<div style="margin:12px 0;padding:10px;border:1px solid var(--ouro2)">'
+                    f'<p>Cancelar libera os dias <b>futuros</b> que ainda não foram preparados '
+                    f'e devolve esses estudos pro estoque. Esta série tem {n_dias} dia(s) '
+                    f'marcado(s) — os já enviados, com rascunho pronto ou já ocupados por '
+                    f'outro estudo ficam como estão. A série volta pra rascunho.</p>'
+                    f'<form method="post" action="/series" style="display:inline">'
+                    f'<input type="hidden" name="acao" value="cancelar_confirmar">'
+                    f'<input type="hidden" name="token" value="{tk}">'
+                    f'<input type="hidden" name="serie" value="{sid}">'
+                    f'<button type="submit">🚫 Confirmar cancelamento</button></form>'
+                    f'&nbsp;<a href="/series?serie={sid}&token={tk}">Voltar</a></div>')
+            else:
+                cancelar_html = (
+                    f'<form method="post" action="/series" style="display:inline">'
+                    f'<input type="hidden" name="acao" value="cancelar">'
+                    f'<input type="hidden" name="token" value="{tk}">'
+                    f'<input type="hidden" name="serie" value="{sid}">'
+                    f'<button type="submit">🚫 Cancelar série</button></form>')
+
         if st == "rascunho":
             # busca por tag
             busca = (f'<form method="post" action="/series" style="margin:10px 0">'
@@ -1748,7 +1772,8 @@ def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg=""):
         else:
             montador = (f'<h3>{_esc(aberta["serie"].get("nome"))} {_badge(st)}</h3>'
                         f'<p class=hint>Início: {_esc(aberta["serie"].get("data_inicio") or "—")}. '
-                        f'Série já ativada/concluída — edição de itens é fora do MVP.</p>{itens_html}')
+                        f'Série já ativada/concluída — edição de itens é fora do MVP.</p>'
+                        f'{itens_html}{cancelar_html}')
 
     corpo = (f'<div class="wrap">{_admin_nav(token, "series")}'
              f'<h2>🎬 Séries de estudos</h2>{aviso}{nova}{lista}{montador}</div>')

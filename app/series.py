@@ -74,20 +74,15 @@ def _dias_livres(db_mod, d, n, dias_envio):
 def _liberar_dia(db_mod, dia):
     """Se o dia já tem estudo consumível (reserva/candidato/fila), devolve ao
     estoque ANTES de a série sobrescrever o slot — evita órfão e descarte de
-    artigo já triado (mesmo cuidado do Item 23 + db.agenda_devolver).
-    Clássico não é consumido; vazio/pulado não têm dono no estoque de estudos."""
-    s = db_mod.agenda_slot(dia)
-    if not s:
-        return
-    tipo = s.get("tipo")
-    if tipo == "reserva" and s.get("ref_id"):
-        db_mod.marcar_reserva_pronto(s["ref_id"])
-    elif tipo == "candidato" and s.get("ref_id"):
-        db_mod.marcar_candidato_pronto(s["ref_id"])
-    elif tipo == "fila" and s.get("payload"):
-        import json
-        import queue_store
-        queue_store.devolver(json.loads(s["payload"]))
+    artigo já triado (mesmo cuidado do Item 23 + db.agenda_devolver). Clássico não
+    é consumido; vazio/pulado não têm dono no estoque de estudos.
+
+    Delega pra `db._devolver_ao_estoque` — mesma lógica que `db.agenda_devolver` usa,
+    só que sem limpar o slot (quem chama aqui sobrescreve o slot em seguida com
+    `agenda_upsert`). As duas rotas de devolução COMPARTILHAM essa lógica de propósito:
+    eram cópias verbatim até a revisão final, e a divergência entre elas foi o bug do
+    Task 1 (candidato vazando por `agenda_devolver` não tratar aquele tipo)."""
+    db_mod._devolver_ao_estoque(db_mod.agenda_slot(dia))
 
 
 def _indisponiveis(db_mod, itens):
@@ -311,3 +306,127 @@ def ativar_serie(serie_id, data_inicio, dia_min=None, db_mod=None, dias_envio=No
                        f"não faltar/repetir estudo. " + " | ".join(falhas))
     return (True, f"Série ativada: {len(dias)} estudos a partir de {inicio_iso}. "
                   f"Revise cada dia às 18h.")
+
+
+def cancelar_serie(serie_id, db_mod=None, hoje=None, preparado_fn=None):
+    """Desfaz a ativação: libera os dias FUTUROS ainda não preparados (o estudo volta
+    ao estoque e o slot vira 'vazio') e devolve a série pra 'rascunho'. Retorna (ok, msg).
+
+    Só fica pronta pra reativar DE IMEDIATO quando TODO dia foi liberado. Se algum item
+    ficou mantido — já enviado/de hoje, com rascunho das 18h pronto, ou o dia foi tomado
+    por outro estudo —, o estudo daquele item continua com status 'agendado' (nunca
+    devolvido) e a próxima `ativar_serie` recusa por ele via `_indisponiveis` ("já ocupa
+    um dia da agenda" ou "está 'agendado'"); o admin precisa tirar o item da série (🗑️)
+    antes de reativar. Já um dia que virou vazio/folga por FORA da série (ex.:
+    `agenda_pular`) não bloqueia — quem pulou o dia já devolveu o estudo ao estoque.
+
+    NÃO libera: dia de hoje ou passado (o envio das 08h já passou — não existe
+    des-enviar) nem dia cujo rascunho das 18h já foi montado (ele seria enviado de
+    qualquer forma, então limpar o slot daria impressão falsa — mesma limitação que
+    justifica `dia_minimo_inicio`). Nem dia cujo slot já é de OUTRO estudo (mesmo tipo
+    E ref_id — só ref_id é único DENTRO de um tipo, como o resto do módulo já assume):
+    devolver às cegas duplicaria o estudo no estoque, ou pior, devolveria o estudo ERRADO
+    se o tipo do slot não bater com o ref_id (marcar_candidato_pronto num id de reserva
+    é um no-op silencioso que limpa o slot alheio sem soltar o dono de verdade).
+
+    Não crasha: falha por dia é contada e avisada no msg, nunca engolida. Contrato
+    espelha `ativar_serie`: falha parcial (`falhas` não vazio) é (False, ...), mesmo
+    com algum dia liberado com sucesso — um `ok=True` ali maquiaria de sucesso um
+    cancelamento que não terminou limpo."""
+    if db_mod is None:
+        import db as db_mod
+    if preparado_fn is None:
+        import draft_store
+        preparado_fn = lambda d: draft_store.carregar(d) is not None
+    hoje = hoje or date.today().isoformat()
+
+    det = db_mod.obter_serie(serie_id)
+    if not det:
+        return (False, "Série não encontrada.")
+    st = (det["serie"].get("status") or "")
+    if st not in ("ativa", "incompleta"):
+        return (False, f"Só dá pra cancelar série ativa ou incompleta (esta está '{st}').")
+
+    liberados = passados = preparados = folgas = alheios = 0
+    falhas = []
+    for it in det["itens"]:
+        dia = it.get("data") or ""
+        if not dia:
+            continue
+        if dia <= hoje:
+            passados += 1
+            continue
+        try:
+            # preparado_fn ENTRA no try: o default é uma leitura no banco
+            # (draft_store.carregar -> db.obter_draft) e pode levantar com o
+            # banco travado — mesma falha que já tratamos em agenda_slot logo
+            # abaixo. Deixá-la fora do try derrubava a função inteira NO MEIO
+            # do loop, com os dias 0..k-1 já liberados (estudo devolvido, data
+            # limpa) e o `atualizar_serie` final nunca rodando — a própria
+            # série presa que esta função existe pra consertar, alcançável
+            # justamente por ESTE escape.
+            if preparado_fn(dia):
+                preparados += 1
+                continue
+            slot = db_mod.agenda_slot(dia)
+            if not slot or slot.get("tipo") in ("vazio", "pulado"):
+                # Sem dono no estoque: alguém liberou o dia por fora da série (ex.:
+                # 'pular', que já chama agenda_devolver por dentro). Contar isso junto
+                # de 'alheios' mentia pro admin ("já ocupado por outro estudo") sobre
+                # um dia que na verdade é folga — MINOR 3 da revisão final.
+                folgas += 1
+                continue
+            # Dono comparado por (tipo, ref_id): ref_id só é único DENTRO de um tipo
+            # (mesma premissa de db.agenda_ref_ids(tipo) e _indisponiveis) — MINOR 6.
+            dono = (slot.get("tipo"), slot.get("ref_id") or "")
+            proprio = (it.get("ref_tipo"), it.get("ref_id") or "")
+            if dono != proprio:
+                alheios += 1
+                continue
+            db_mod.agenda_devolver(dia)          # devolve ao estoque ANTES de limpar
+            db_mod.set_serie_item_data(it["id"], "")
+            liberados += 1
+        except Exception as e:
+            print(f"[series] cancelar: falhou liberar {dia}: {e}", flush=True)
+            falhas.append(dia)
+
+    try:
+        db_mod.atualizar_serie(serie_id, status="rascunho", data_inicio="", ativada_em="")
+    except Exception as e:
+        print(f"[series] cancelar: não devolvi a série {serie_id} pra rascunho: {e}", flush=True)
+        msg = (f"Os {liberados} dia(s) foram liberados, mas a série NÃO voltou pra "
+              f"rascunho ({e}) — ela vai continuar bloqueando a próxima ativação. "
+              f"Confira a /series.")
+        if falhas:
+            msg += (f" Também falhou liberar {', '.join(falhas)} — confira a /agenda "
+                    f"(detalhe nos logs).")
+        return (False, msg)
+
+    mantidos = []
+    if passados:
+        mantidos.append(f"{passados} já enviado(s) ou de hoje")
+    if preparados:
+        mantidos.append(f"{preparados} com rascunho das 18h pronto")
+    if folgas:
+        mantidos.append(f"{folgas} sem estudo no slot (vazio/folga)")
+    if alheios:
+        mantidos.append(f"{alheios} já ocupado(s) por outro estudo")
+    msg = f"Série cancelada: {liberados} dia(s) liberado(s)"
+    if mantidos:
+        msg += f", mantido(s) {' + '.join(mantidos)}"
+    msg += "."
+    if liberados:
+        msg += " Os estudos voltaram pro estoque."
+    if passados or preparados or alheios:
+        # Esses itens continuam 'agendado' (ninguém devolveu o estudo deles) — a
+        # próxima ativar_serie vai recusar por causa deles (_indisponiveis). 'folgas'
+        # fica de fora: o estudo já foi devolvido por quem liberou o dia por fora
+        # da série, então não bloqueia nada — MINOR 4 da revisão final.
+        msg += (" Pra reativar, tire da série (🗑️) os itens que ficaram mantidos "
+                "presos a um dia — a ativação vai recusar enquanto eles continuarem "
+                "'agendado'.")
+    if falhas:
+        msg += (f" ATENÇÃO: falhou liberar {', '.join(falhas)} — confira a /agenda "
+                f"(detalhe nos logs).")
+        return (False, msg)
+    return (True, msg)
