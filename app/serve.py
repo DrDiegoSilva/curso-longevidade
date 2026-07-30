@@ -764,6 +764,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"Varredura de clássicos: {curadoria.rodar_varredura_classicos()} novos candidatos."
                 except Exception as e:
                     print(f"[classicos] varredura erro: {e}", flush=True); msg = "Falha na varredura de clássicos (ver logs)."
+            elif acao == "varrer_presos":
+                try:
+                    msg = f"Candidatos presos: {curadoria.varrer_presos()} liberado(s) de volta ao pool."
+                except Exception as e:
+                    print(f"[presos] varredura erro: {e}", flush=True); msg = "Falha ao liberar candidatos presos (ver logs)."
             elif acao == "backfill_tags":
                 try:
                     import curadoria

@@ -1403,6 +1403,9 @@ def _curadoria_ferramentas(token):
                       "Buscar estudos-marco por citações? Pode levar 1–2 min.")}
           {_varredura("backfill_tags", "🏷️ Etiquetar estudos (tags)",
                       "Etiquetar estudos existentes sem tags? Pode levar alguns segundos.")}
+          {_varredura("varrer_presos", "🧹 Liberar candidatos presos",
+                      "Liberar candidatos travados em agendado sem slot na agenda de volta pro pool? "
+                      "Seguro rodar mais de uma vez.")}
         </div>
         <div class="panel" style="max-width:none;margin:0">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;

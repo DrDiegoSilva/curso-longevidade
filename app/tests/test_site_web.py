@@ -504,6 +504,7 @@ class TestPaginaCuradoria(unittest.TestCase):
         self.assertIn("Adicionar meu estudo", html)
         self.assertIn('value="varrer"', html)
         self.assertIn('value="varrer_classicos"', html)
+        self.assertIn('value="varrer_presos"', html)
 
     def test_faixa_e_amanha_aparecem(self):
         html = self._render(amanha={"titulo": "Amanhã X", "status": "DRAFT",

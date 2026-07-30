@@ -367,6 +367,46 @@ def backfill_tags(db_mod=None, taggear_fn=None, lote=20):
     return feitos
 
 
+def varrer_presos(db_mod=None):
+    """Recuperação one-off: candidato preso em status='agendado' sem slot correspondente
+    na agenda — órfão do bug histórico do `agenda_devolver`, que não tratava
+    tipo='candidato' (o slot sumia, mas o candidato ficava 'agendado' pra sempre e
+    sumia do pool, mesmo já pago via IA). Devolve cada um ao pool ('novo') via
+    marcar_candidato_pronto. Idempotente (2ª rodada não acha mais nada) e resiliente
+    (uma falha isolada não aborta o resto — contada, não engolida, igual ao
+    backfill_tags). db_mod injetável p/ teste. Retorna quantos liberou."""
+    if db_mod is None:
+        import db as db_mod
+    db_mod.init()
+    # ORDEM IMPORTA — não inverter. `db._conn()` abre uma conexão nova por chamada (sem
+    # transação/lock compartilhado entre as duas leituras abaixo), então há uma janela
+    # TOCTOU entre elas. O invariante que sustenta esta varredura é "o slot é sempre
+    # escrito ANTES do marcar_candidato_agendado" (vale nos 3 call-sites de produção:
+    # series.ativar_serie, daily.materializar_agenda, daily.trocar_estudo_amanha — todos
+    # gravam o slot e só então marcam 'agendado', dentro do mesmo try). Isso só garante
+    # segurança se lermos NESTA ordem: status primeiro, ref_ids depois. Assim, qualquer
+    # candidato que apareça na lista de 'agendado' já tinha o slot escrito ANTES desse
+    # read — logo o read de ref_ids (que roda depois) só pode enxergar mais slots do
+    # tempo, nunca menos, pra quem já estava na lista. Invertendo (ref_ids primeiro,
+    # status depois) abre a janela: um candidato pode ganhar slot+mark inteiramente
+    # entre as duas leituras, sumir do snapshot de ref_ids mas aparecer como 'agendado'
+    # -> falso órfão -> um estudo agendado de verdade seria liberado por baixo do dia
+    # que ia sair. Mesmo espírito do comentário de ordem em `db.agenda_devolver`.
+    agendados = db_mod.listar_candidatos(status="agendado")
+    presos_na_agenda = db_mod.agenda_ref_ids("candidato")
+    liberados = 0
+    for c in agendados:
+        if c["id"] in presos_na_agenda:
+            continue
+        try:
+            db_mod.marcar_candidato_pronto(c["id"])
+            liberados += 1
+        except Exception as e:
+            print(f"[presos] liberar '{c.get('titulo','')[:40]}' falhou: {e}", flush=True)
+    print(f"[presos] {liberados} candidato(s) liberado(s) de volta ao pool", flush=True)
+    return liberados
+
+
 if __name__ == "__main__":
     import sys
     cmd = sys.argv[1] if len(sys.argv) > 1 else "varrer"
