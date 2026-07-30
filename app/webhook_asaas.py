@@ -133,8 +133,37 @@ def _alertar_admin(pid, sid, motivo):
         print(f"[webhook] alerta admin falhou: {e}", flush=True)
 
 
+def _texto_venda(nome, plano, valor, contato, ativos, afiliado=None, comissao=None):
+    """Corpo do aviso de venda em TEXTO PURO (WhatsApp). Puro e testável — sem rede.
+    Espelha o e-mail em conteúdo, mas nunca em HTML: o WhatsApp mostraria as tags."""
+    linhas = ["🎉 *Nova venda*",
+              f"{nome or '—'}",
+              f"Plano: {plano or '—'} · Valor: R$ {valor}",
+              f"Contato: {contato or '—'}"]
+    if afiliado:
+        # Mesma regra do e-mail: sem comissão registrada, não inventa cifra nenhuma.
+        val_com = f" · comissão R$ {comissao}" if comissao is not None else ""
+        linhas.append(f"Afiliado: {afiliado}{val_com}")
+    linhas.append(f"Agora você tem {ativos} assinantes ativos.")
+    return "\n".join(linhas)
+
+
 def _avisar_venda(nome, plano, valor, contato, ativos, afiliado=None, comissao=None):
-    """E-mail instantâneo ao admin quando uma venda ativa. Nunca pode quebrar a ativação."""
+    """Aviso instantâneo ao admin quando uma venda ativa, por DOIS canais independentes.
+    Nunca pode quebrar a ativação.
+
+    Os dois `try` separados são o ponto da coisa, não zelo genérico: até 2026-07-30 o
+    aviso só existia por e-mail, e o canal de e-mail estava morto em produção desde
+    sempre (sem RESEND_API_KEY o `email_send.enviar` só loga e devolve `skipped`). Uma
+    venda real entrou e ninguém ficou sabendo. O WhatsApp é o canal que se prova todo
+    dia — é o mesmo que entrega as boas-vindas e o `_alertar_admin`. Um canal caído não
+    pode levar o outro junto.
+    """
+    try:
+        import deliver
+        deliver.enviar_admin(_texto_venda(nome, plano, valor, contato, ativos, afiliado, comissao))
+    except Exception as e:
+        print(f"[webhook] aviso de venda (WhatsApp) falhou: {e}", flush=True)
     try:
         import email_send
         esc = __import__("html").escape
@@ -156,7 +185,7 @@ def _avisar_venda(nome, plano, valor, contato, ativos, afiliado=None, comissao=N
             f'</div>')
         email_send.enviar(config.ADMIN_EMAIL, assunto, corpo)
     except Exception as e:
-        print(f"[webhook] aviso de venda falhou: {e}", flush=True)
+        print(f"[webhook] aviso de venda (e-mail) falhou: {e}", flush=True)
 
 
 def _executar(event, pay, pid, enviar_fn):

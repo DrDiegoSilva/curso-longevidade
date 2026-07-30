@@ -388,8 +388,12 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(atual["status"], "ATIVO")
         self.assertTrue(self.s.tem_acesso(atual, agora=__import__("datetime").datetime(2026, 8, 1)))
         self.assertEqual(len(self.enviados), 0)               # NÃO reenviou boas-vindas (link de criar senha)
-        self.assertEqual(len(wa), 1)                          # confirmação de renovação por WhatsApp
-        destino, texto = wa[0]
+        # O aviso de venda ao admin também sai por WhatsApp (passa pelo mesmo `enviar_texto`),
+        # então filtra pelo destinatário em vez de contar o total — recontratação é venda e
+        # avisa o admin, mas quem interessa aqui é a mensagem que foi pro ASSINANTE.
+        do_assinante = [x for x in wa if x[0] == "5543999998888"]
+        self.assertEqual(len(do_assinante), 1)                # confirmação de renovação por WhatsApp
+        destino, texto = do_assinante[0]
         self.assertEqual(destino, "5543999998888")
         self.assertIn("/minha", texto)
         # ACHADO 2 (revisão): `assertNotIn("<p>", texto)` passava mesmo com o HTML cru
@@ -1020,6 +1024,114 @@ class TestAvisarVenda(unittest.TestCase):
             webhook_asaas._avisar_venda("F", "Mensal", "99", "x", 1)  # não pode levantar
         finally:
             email_send.enviar = orig
+
+
+class TestAvisarVendaWhatsApp(unittest.TestCase):
+    """O aviso de venda também vai por WhatsApp pro admin.
+
+    Contexto (2026-07-30): o canal de e-mail estava morto em produção desde sempre
+    (sem RESEND_API_KEY o `email_send.enviar` só loga e devolve `skipped`), então uma
+    venda real entrou sem que ninguém ficasse sabendo. O WhatsApp é o canal que já se
+    prova funcionando todo dia — o mesmo que entrega as boas-vindas e os alertas de
+    falha de pagamento (`_alertar_admin`).
+    """
+
+    def _capturar(self, erro_email=None, erro_whatsapp=None):
+        """Troca os dois canais por espiões. Devolve (mails, zaps, restaurar)."""
+        import email_send, deliver
+        mails, zaps = [], []
+        orig_mail, orig_zap = email_send.enviar, deliver.enviar_admin
+
+        def _mail(to, assunto, html):
+            if erro_email:
+                raise erro_email
+            mails.append({"to": to, "assunto": assunto, "html": html})
+
+        def _zap(msg):
+            if erro_whatsapp:
+                raise erro_whatsapp
+            zaps.append(msg)
+
+        email_send.enviar, deliver.enviar_admin = _mail, _zap
+
+        def restaurar():
+            email_send.enviar, deliver.enviar_admin = orig_mail, orig_zap
+
+        return mails, zaps, restaurar
+
+    def test_manda_o_aviso_de_venda_no_whatsapp(self):
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar()
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "1497", "f@x.com", 37)
+        finally:
+            restaurar()
+        self.assertEqual(len(zaps), 1)
+        msg = zaps[0]
+        self.assertIn("Fulano", msg)
+        self.assertIn("Anual", msg)
+        self.assertIn("1497", msg)
+        self.assertIn("37", msg)          # total de assinantes ativos
+
+    def test_whatsapp_vai_em_texto_puro_sem_html(self):
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar()
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "1497", "f@x.com", 37)
+        finally:
+            restaurar()
+        self.assertNotIn("<", zaps[0])    # o corpo do e-mail é HTML; o do WhatsApp não pode ser
+
+    def test_whatsapp_mostra_afiliado_e_comissao(self):
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar()
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "1497", "f@x.com", 37,
+                                        afiliado="Dra. Maria", comissao=44.91)
+        finally:
+            restaurar()
+        self.assertIn("Dra. Maria", zaps[0])
+        self.assertIn("44.91", zaps[0])
+
+    def test_whatsapp_com_afiliado_sem_comissao_nao_inventa_valor(self):
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar()
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "1497", "x", 1,
+                                        afiliado="Dra. Maria", comissao=None)
+        finally:
+            restaurar()
+        self.assertIn("Dra. Maria", zaps[0])
+        self.assertNotIn("None", zaps[0])
+
+    def test_email_quebrado_nao_impede_o_whatsapp(self):
+        """A regressão do incidente: e-mail morto NÃO pode levar o aviso junto."""
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar(erro_email=RuntimeError("resend fora do ar"))
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "1497", "f@x.com", 37)
+        finally:
+            restaurar()
+        self.assertEqual(len(zaps), 1)
+
+    def test_whatsapp_quebrado_nao_impede_o_email(self):
+        """Simétrico: os dois canais são independentes de verdade."""
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar(erro_whatsapp=RuntimeError("evolution fora do ar"))
+        try:
+            webhook_asaas._avisar_venda("Fulano", "Anual", "1497", "f@x.com", 37)
+        finally:
+            restaurar()
+        self.assertEqual(len(mails), 1)
+
+    def test_nenhum_canal_derruba_a_ativacao(self):
+        import webhook_asaas
+        mails, zaps, restaurar = self._capturar(erro_email=RuntimeError("resend fora"),
+                                                erro_whatsapp=RuntimeError("evolution fora"))
+        try:
+            webhook_asaas._avisar_venda("F", "Mensal", "147", "x", 1)   # não pode levantar
+        finally:
+            restaurar()
 
 
 if __name__ == "__main__":
