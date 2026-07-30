@@ -32,8 +32,15 @@ def _pending_plausivel(pending, pay):
     """False só quando o `pending` CONTRADIZ este pagamento pelo valor.
 
     Usado apenas no casamento por CPF (o casamento por token é exato e não precisa disso).
-    No parcelado o Asaas cobra `valor / parcelas` por evento; a tolerância cobre o centavo
-    de arredondamento da divisão.
+    No parcelado o Asaas cobra `total / n` por evento; a tolerância cobre o centavo de
+    arredondamento da divisão.
+
+    `n` NÃO é necessariamente o que o pending guardou: o que mandamos pro Asaas é
+    `installment.maxInstallmentCount`, um TETO — quem escolhe o número final é o cliente,
+    na tela de pagamento. Quem contratou "até 12x" pode fechar em 6, e aí cada cobrança é
+    997/6, não 997/12. Por isso qualquer divisor de 1 até o teto serve. Em contrato à
+    vista (parcelas=1, que é Pix e cartão 1x) isso continua exigindo o valor cheio exato,
+    igual antes — o afrouxamento só alcança contrato parcelado.
 
     Quando não dá para comparar (pending ou pagamento sem valor utilizável) responde True,
     de propósito: descartar aí jogaria fora nome, e-mail, plano, aceite dos termos e código
@@ -51,7 +58,7 @@ def _pending_plausivel(pending, pay):
         return True
     if total <= 0 or valor <= 0:
         return True
-    return abs(round(total / parcelas, 2) - valor) <= 0.10
+    return any(abs(round(total / n, 2) - valor) <= 0.10 for n in range(1, parcelas + 1))
 
 
 def _proximo_venc(cycle, ref=None):

@@ -89,12 +89,18 @@ def figuras_assinar(plano, metodo, base_vig, cupom_pct=0.0, cupom_valor=0.0):
     página (`site_web.pagina_assinar`) E pela prévia (`POST /assinar/cupom`), é o que
     impede as três de divergirem.
 
-      preco       -> resumo, no MÉTODO escolhido (é o que será cobrado nesse método)
-      pix_desc    -> tile do Pix: à-vista do Pix, SEMPRE (independe do método escolhido)
-      cartao_desc -> tile do Cartão (dinheiro só no plano recorrente; anual é texto fixo)
-      parcelas    -> dropdown, SEMPRE sobre a base do CARTÃO: parcelamento não existe no
-                     Pix (à vista), então empilhar o desconto do Pix aqui ofereceria uma
-                     parcela que ninguém pode pagar.
+      preco          -> resumo, no MÉTODO escolhido (é o que será cobrado nesse método)
+      pix_desc       -> tile do Pix: à-vista do Pix, SEMPRE (independe do método escolhido)
+      cartao_desc    -> tile do Cartão (dinheiro só no plano recorrente; anual é texto fixo)
+      parcelado_desc -> a opção "parcelado" do cartão, já com o TETO e a cifra da parcela
+      parcelas       -> lista completa, SEMPRE sobre a base do CARTÃO: parcelamento não
+                     existe no Pix (à vista), então empilhar o desconto do Pix aqui
+                     ofereceria uma parcela que ninguém pode pagar.
+
+    `parcelado_desc` sai da MESMA base que `parcelas` e pelo mesmo motivo. A tela não
+    oferece mais 2x…11x (2026-07-30): o que vai pro Asaas é `maxInstallmentCount`, um
+    teto, e quem escolhe o número final é o cliente na tela de pagamento — oferecer o
+    número aqui seria escolher duas vezes, valendo só a segunda.
 
     `base_vig` é a base VIGENTE (a mesma que o fechamento usa — ver
     `pricing.preco_vigente`/`renovacao.preco_renovacao`), nunca `plano["base"]` cru.
@@ -102,12 +108,17 @@ def figuras_assinar(plano, metodo, base_vig, cupom_pct=0.0, cupom_valor=0.0):
     base_pix = base_cobrada(plano, "PIX", base_vig, cupom_pct, cupom_valor)
     base_cartao = base_cobrada(plano, "CARTAO", base_vig, cupom_pct, cupom_valor)
     escolhida = base_pix if (metodo or "").upper() == "PIX" else base_cartao
+    ops = opcoes_parcelas(base_cartao)
+    teto = ops[-1]
     return {
         "preco": fmt_brl(escolhida),
         "pix_desc": f"{fmt_brl(base_pix)} à vista",
-        # mensal (recorrente_pix): o tile diz o valor do ciclo; anual: texto sem dinheiro
+        # mensal (recorrente_pix): o tile diz o valor do ciclo; anual: texto sem dinheiro.
+        # O anual não diz mais "renova no fim" no tile: no cartão ele agora é DUAS ofertas
+        # (à vista renova, parcelado não), e a escolha aparece logo abaixo do tile.
         "cartao_desc": (f"{fmt_brl(valor_cartao(base_cartao, 1))}/mês · renova"
-                        if plano.get("recorrente_pix") else "parcelável · renova no fim"),
+                        if plano.get("recorrente_pix") else "à vista ou parcelado"),
+        "parcelado_desc": f"até {teto['parcelas']}x de {fmt_brl(teto['por_parcela'])} · não renova",
         "parcelas": [{"parcelas": o["parcelas"],
                       "por_parcela": fmt_brl(o["por_parcela"]),
                       "total": fmt_brl(o["total"])}

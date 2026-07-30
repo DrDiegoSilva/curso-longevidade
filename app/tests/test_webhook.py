@@ -22,6 +22,41 @@ class TestDecidir(unittest.TestCase):
         self.assertEqual(self.w.decidir("PAYMENT_CREATED", False), "IGNORAR")
 
 
+class TestPendingPlausivel(unittest.TestCase):
+    """Guarda de valor do casamento por CPF (`_pending_plausivel`)."""
+
+    def setUp(self):
+        import webhook_asaas
+        self.w = webhook_asaas
+
+    def _pending(self, valor, parcelas):
+        return {"valor": valor, "parcelas": parcelas}
+
+    def test_parcela_no_divisor_exato_e_plausivel(self):
+        # 997 em 12x -> 83,08 por cobrança (o centavo da divisão entra na tolerância).
+        self.assertTrue(self.w._pending_plausivel(self._pending(997.0, 12), {"value": 83.08}))
+
+    def test_parcela_de_outro_divisor_tambem_e_plausivel(self):
+        """Com `installment.maxInstallmentCount` o cliente escolhe o nº de parcelas NA
+        TELA DO ASAAS, até o teto que mandamos. O pending guarda o teto (12), mas ele
+        pode fechar em 6 — e aí cada cobrança é 997/6 = 166,17, não 997/12 = 83,08.
+        Exigir o divisor EXATO descartaria um pending legítimo e a venda não casaria
+        por CPF: sem nome, e-mail, plano, aceite dos termos nem código de afiliado."""
+        for n in (1, 2, 3, 6, 10, 12):
+            with self.subTest(parcelas_escolhidas=n):
+                self.assertTrue(self.w._pending_plausivel(
+                    self._pending(997.0, 12), {"value": round(997.0 / n, 2)}))
+
+    def test_valor_de_outro_checkout_continua_barrado(self):
+        # O que a guarda existe pra barrar: o checkout `teste` de R$ 5 abandonado
+        # sequestrando um pagamento do anual. 5 não é 997 dividido por nada de 1 a 12.
+        self.assertFalse(self.w._pending_plausivel(self._pending(997.0, 12), {"value": 5.0}))
+
+    def test_valor_acima_do_total_e_barrado(self):
+        # Nenhuma parcela pode ser MAIOR que o total contratado.
+        self.assertFalse(self.w._pending_plausivel(self._pending(997.0, 12), {"value": 1497.0}))
+
+
 class TestProcessar(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

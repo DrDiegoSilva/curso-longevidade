@@ -2,12 +2,27 @@
 `montar_checkout` é puro/testável; as funções de rede logam erro server-side e
 nunca vazam o corpo cru do Asaas pro cliente.
 
-CONFIRMADO (Diego, jul/2026, conta REAL — não é mais dúvida): quando vão RECURRENT e
-installmentCount juntos, o Asaas aplica só UM — o parcelamento. Cartão PARCELADO, portanto,
-NÃO renova sozinho e os pagamentos chegam sem `subscription`. Duas consequências de que o
-resto do sistema depende:
+No POST /checkouts do Asaas, um cartão é assinatura OU parcelamento — nunca os dois:
+  - `chargeTypes: ["RECURRENT"]` + objeto `subscription` -> renova sozinho, mas cobra o
+    item CHEIO a cada ciclo (não divide nada);
+  - `chargeTypes: ["INSTALLMENT"]` + objeto `installment` -> divide na fatura do cartão,
+    e acaba no fim: não recorre.
+
+CORRIGIDO EM 2026-07-30 (custou uma venda real): até aqui o payload mandava um
+`installmentCount` de PRIMEIRO NÍVEL junto de `chargeTypes: ["RECURRENT"]`. Esse campo
+NÃO EXISTE no POST /checkouts — parcelamento é o objeto `installment` e exige
+`INSTALLMENT` em `chargeTypes`. O Asaas descartava o campo desconhecido, honrava o
+RECURRENT e cobrava tudo de uma vez: um cliente que escolheu 12x levou R$ 997 numa
+tacada. Ninguém nunca parcelou desde o primeiro commit (8b92bb9, 2026-07-19), e a suíte
+ficava verde porque o teste afirmava a mesma crença errada.
+
+`maxInstallmentCount` é TETO, não escolha: o nº final de parcelas o cliente marca na
+tela do Asaas. Por isso `webhook_asaas._pending_plausivel` aceita qualquer divisor até
+o teto — exigir o número exato barraria a venda.
+
+Consequências de que o resto do sistema depende (agora de verdade, não por acidente):
   - a cláusula 2 dos termos está correta ao dizer que só o cartão à vista renova;
-  - o assinante de parcelado nunca fica com `asaas_subscription_id`, então o cancelamento
+  - o assinante de parcelado não fica com `asaas_subscription_id`, então o cancelamento
     não chama DELETE /subscriptions — as parcelas restantes seguem sendo cobradas, que é o
     que a cláusula 3 promete.
 """
@@ -46,11 +61,13 @@ def montar_checkout(plano, metodo, parcelas, dados, token, base_url, base=None):
     if metodo == "CARTAO":
         valor = pricing.valor_cartao(base, parcelas)
         p["billingTypes"] = ["CREDIT_CARD"]
-        p["chargeTypes"] = ["RECURRENT"]
         p["items"] = [{"name": item_nome, "description": _DESC_ITEM, "quantity": 1, "value": valor}]
-        p["subscription"] = {"cycle": plano["cycle"], "nextDueDate": _hoje()}
-        if parcelas > 1:
-            p["installmentCount"] = parcelas
+        if parcelas > 1:                                  # PARCELADO: divide e acaba
+            p["chargeTypes"] = ["INSTALLMENT"]
+            p["installment"] = {"maxInstallmentCount": parcelas}
+        else:                                             # À VISTA: recorre no ciclo
+            p["chargeTypes"] = ["RECURRENT"]
+            p["subscription"] = {"cycle": plano["cycle"], "nextDueDate": _hoje()}
     else:                                                 # PIX à vista (não renova)
         p["billingTypes"] = ["PIX"]
         p["chargeTypes"] = ["DETACHED"]

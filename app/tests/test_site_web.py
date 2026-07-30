@@ -106,12 +106,32 @@ class TestRender(unittest.TestCase):
         self.assertIn("/mês · renova", h)                 # cartão mensal recorre (texto encurtado no redesign)
         self.assertIn('name="metodo"', h)
         self.assertIn('name="cupom"', h)
-        self.assertNotIn('<select name="parcelas"', h)    # mensal não parcela
+        self.assertNotIn('name="parcelas" value="12"', h)  # mensal não parcela
+        self.assertIn('<input type="hidden" name="parcelas" value="1">', h)
 
     def test_assinar_form_anual_parcelas(self):
+        """No cartão o anual tem DUAS ofertas de contrato, não 12 (2026-07-30): à vista
+        recorre, parcelado não. O número exato de parcelas quem escolhe é o cliente na
+        tela do Asaas — `installment.maxInstallmentCount` é teto, então oferecer 2x/3x/…
+        aqui seria escolher duas vezes, e só a segunda valeria."""
         h = self.s.pagina_assinar("anual")
-        self.assertIn('<select name="parcelas">', h)
-        self.assertIn("12x de", h)
+        self.assertNotIn('<select name="parcelas">', h)
+        self.assertIn('name="parcelas" value="1" checked', h)   # à vista é o padrão
+        self.assertIn('name="parcelas" value="12"', h)
+        # a cifra exata (com e sem cupom) é travada em test_pricing.figuras_assinar;
+        # aqui o que importa é que a página REALMENTE emite o rótulo do teto.
+        self.assertIn("até 12x de R$", h)
+        self.assertIn("· não renova", h)
+        self.assertIn("renova todo ano", h)
+
+    def test_assinar_anual_oferece_exatamente_a_vista_e_o_teto(self):
+        """Trava do teto: 2x…11x saíram da tela de propósito. Se voltarem, o cliente
+        escolhe parcelas aqui E no Asaas, e só a segunda escolha vale — o rótulo daqui
+        vira promessa vazia."""
+        import re
+        h = self.s.pagina_assinar("anual")
+        valores = re.findall(r'name="parcelas" value="(\d+)"', h)
+        self.assertEqual(sorted(valores, key=int), ["1", "12"])
 
     def test_obrigado(self):
         self.assertIn("Quase lá", self.s.pagina_obrigado())

@@ -81,43 +81,6 @@ El.prototype.querySelector = function(sel){
   return null;
 };
 
-function Select(){
-  El.call(this, 'select', {name: 'parcelas'});
-  this.selectedIndex = -1;
-}
-Select.prototype = Object.create(El.prototype);
-Select.prototype.constructor = Select;
-Object.defineProperty(Select.prototype, 'options', {
-  get: function(){
-    return this.children.filter(function(c){ return c.tagName === 'option'; });
-  }
-});
-Object.defineProperty(Select.prototype, 'value', {
-  get: function(){
-    var o = this.options[this.selectedIndex];
-    return o === undefined ? '' : String(o.value);
-  },
-  set: function(v){
-    var opts = this.options;
-    for (var i = 0; i < opts.length; i++)
-      if (String(opts[i].value) === String(v)) { this.selectedIndex = i; return; }
-    this.selectedIndex = -1;      // valor inexistente: o browser deixa em -1/''
-  }
-});
-Object.defineProperty(Select.prototype, 'textContent', {
-  get: function(){
-    return this.children.map(function(c){ return c.textContent; }).join('');
-  },
-  set: function(v){ this._texto = String(v); this.children = []; this.selectedIndex = -1; }
-});
-Select.prototype.appendChild = function(no){
-  this.children.push(no);
-  // REGRA DO HTML que causa o bug: <select> sem nada selecionado seleciona a 1a
-  // option sozinho. É isto que fazia o rebuild "voltar pra 1x" sem ninguém pedir.
-  if (this.selectedIndex < 0 && no.tagName === 'option') this.selectedIndex = 0;
-  return no;
-};
-
 var CFG = JSON.parse(process.argv[2]);
 var registro = {};
 var btn = new El('button', {id: 'cupom-aplicar'});
@@ -135,15 +98,20 @@ var pixDesc = new El('span', {id: 'pt-desc-pix', 'data-base': CFG.pix_base});
 pixDesc.textContent = CFG.pix_base;
 var cartaoDesc = new El('span', {id: 'pt-desc-cartao', 'data-base': CFG.cartao_base});
 cartaoDesc.textContent = CFG.cartao_base;
+// Escolha de contrato no cartão: à vista (1) ou parcelado (12). São RÁDIOS, não um
+// <select> reconstruído — é o que torna "a escolha foi resetada em silêncio"
+// impossível por construção, e não por cuidado do JS.
 var campoParcelas = new El('div', {id: 'parcelas-field'});
-var select = new Select();
-CFG.parcelas_iniciais.forEach(function(n){
-  var o = new El('option', {}); o.value = n;
-  o.textContent = n + 'x de ' + CFG.rotulo_base;   // rótulo do SERVIDOR (baseline)
-  select.appendChild(o);
+var parceladoDesc = new El('span', {id: 'pt-desc-parcelado', 'data-base': CFG.parcelado_base});
+parceladoDesc.textContent = CFG.parcelado_base;
+var parcelasRadios = ['1', '12'].map(function(v){
+  var r = new El('input', {name: 'parcelas', value: v});
+  r.value = v;
+  r.checked = (v === String(CFG.parcelas_escolhida));
+  campoParcelas.appendChild(r);
+  return r;
 });
-select.value = CFG.parcelas_escolhida;
-campoParcelas.appendChild(select);
+campoParcelas.appendChild(parceladoDesc);
 var planoInput = new El('input', {id: '', value: 'anual'});
 planoInput.value = 'anual';
 // rádios de forma de pagamento (o `checked` é o que a página lê pra saber o método)
@@ -160,8 +128,8 @@ registro['#cupom-msg'] = msg;
 registro['#sum-price'] = sumPrice;
 registro['#pt-desc-pix'] = CFG.sem_tile_pix ? null : pixDesc;
 registro['#pt-desc-cartao'] = cartaoDesc;
-registro['#parcelas-field'] = CFG.sem_select ? null : campoParcelas;
-registro['select[name="parcelas"]'] = CFG.sem_select ? null : select;
+registro['#parcelas-field'] = CFG.sem_campo_parcelas ? null : campoParcelas;
+registro['#pt-desc-parcelado'] = CFG.sem_campo_parcelas ? null : parceladoDesc;
 registro['input[name="plano"]'] = planoInput;
 
 var document = {
@@ -174,7 +142,9 @@ var document = {
     return registro[sel] || null;
   },
   querySelectorAll: function(sel){
-    return sel === 'input[name="metodo"]' ? radios : [];
+    if (sel === 'input[name="metodo"]') return radios;
+    if (sel === 'input[name="parcelas"]') return parcelasRadios;
+    return [];
   },
   createElement: function(tag){ return new El(tag, {}); }
 };
@@ -221,7 +191,10 @@ function executar(p){
   if (p.tipo === 'click') { btn.disparar('click', evento()); return; }
   if (p.tipo === 'enter') { input.disparar('keydown', evento()); return; }
   if (p.tipo === 'digitar') { input.value = p.valor; input.disparar('input', {}); return; }
-  if (p.tipo === 'escolher_parcelas') { select.value = p.valor; return; }
+  if (p.tipo === 'escolher_parcelas') {   // como o navegador: marca um, desmarca o outro
+    parcelasRadios.forEach(function(r){ r.checked = (r.value === String(p.valor)); });
+    return;
+  }
   if (p.tipo === 'metodo') {          // como o navegador: marca um, desmarca os outros
     radios.forEach(function(r){ r.checked = (r.value === p.valor); });
     for (var i = 0; i < radios.length; i++)
@@ -232,10 +205,9 @@ function executar(p){
 }
 function coletar(){
   console.log(JSON.stringify({
-    select_value: select.value,
-    select_opcoes: select.options.map(function(o){ return String(o.value); }),
-    select_rotulos: select.options.map(function(o){ return o.textContent; }),
-    select_disabled: select.disabled,
+    parcelas_marcada: (parcelasRadios.filter(function(r){ return r.checked; })[0] || {value: ''}).value,
+    parcelas_disabled: parcelasRadios.map(function(r){ return r.disabled; }),
+    parcelado_desc: parceladoDesc.textContent,
     parcelas_display: campoParcelas.style.display === undefined
                         ? null : String(campoParcelas.style.display),
     msg: msg.textContent,
@@ -268,7 +240,8 @@ def _parcelas_payload(ns, por_parcela="R$ 83,08", total="R$ 997,00"):
 # do Pix (947,15) — Pix é à vista.
 _RESP_CARTAO = {"ok": True, "preco": "R$ 997,00", "msg": "−R$ 500,00 aplicado",
                 "pix_desc": "R$ 947,15 à vista",
-                "cartao_desc": "parcelável · renova no fim",
+                "cartao_desc": "à vista ou parcelado",
+                "parcelado_desc": "até 12x de R$ 83,08 · não renova",
                 "parcelas": _parcelas_payload(range(1, 13))}
 _RESP_PIX = dict(_RESP_CARTAO, preco="R$ 947,15")
 
@@ -290,12 +263,11 @@ class _HarnessJs:
     def _rodar(self, script=None, **cfg):
         base = {"valor_input": "LANCAMENTO", "preco_inicial": "R$ 1.497",
                 "preco_base": "R$ 1.497", "periodo": "por ano",
-                "parcelas_iniciais": list(range(1, 13)),
-                "rotulo_base": "R$ 124,75 — total R$ 1.497,00",
+                "parcelado_base": "até 12x de R$ 124,75 · não renova",
                 "pix_base": "R$ 1.422,15 à vista",
-                "cartao_base": "parcelável · renova no fim",
+                "cartao_base": "à vista ou parcelado",
                 "metodos": ["PIX", "CARTAO"], "metodo_inicial": "CARTAO",
-                "parcelas_escolhida": "1", "acao": "click", "sem_select": False,
+                "parcelas_escolhida": "1", "acao": "click", "sem_campo_parcelas": False,
                 "sem_tile_pix": False, "resposta": dict(_RESP_CARTAO)}
         base.update(cfg)
         caminho = os.path.join(self.tmp, "harness.js")
@@ -312,39 +284,29 @@ class _HarnessJs:
 class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
     """Roda o JS DA PÁGINA (extraído, não copiado) sobre o shim de DOM."""
 
-    # ── Important: a escolha de parcelas não pode ser resetada em silêncio ──
-    def test_doze_vezes_sobrevive_ao_cupom(self):
+    # ── A escolha de contrato no cartão não pode ser mexida pela prévia ──
+    def test_parcelado_sobrevive_ao_cupom(self):
+        """Origem: quem escolheu 12x e aplicava um cupom era movido pra 1x em silêncio
+        (R$ 997 numa cobrança em vez de 12x de R$ 83). Com rádios não há rebuild que
+        possa mover a escolha — este teste é a trava de que ninguém reintroduza um."""
         r = self._rodar(parcelas_escolhida="12")
-        self.assertEqual(r["select_value"], "12",
-                         "quem escolheu 12x e aplicou um cupom foi movido pra 1x — "
-                         "R$ 997 numa cobrança em vez de 12x de R$ 83")
-        self.assertEqual(r["select_opcoes"], [str(n) for n in range(1, 13)])
+        self.assertEqual(r["parcelas_marcada"], "12")
         self.assertEqual(r["msg"], "−R$ 500,00 aplicado",
-                         "sem opção sumindo, não pode haver aviso de ajuste")
+                         "nada de aviso de ajuste: a escolha não foi tocada")
 
-    def test_qualquer_escolha_intermediaria_sobrevive(self):
-        for escolha in ("2", "6", "10"):
-            r = self._rodar(parcelas_escolhida=escolha)
-            self.assertEqual(r["select_value"], escolha)
-
-    def test_uma_vez_continua_uma_vez(self):
+    def test_a_vista_continua_a_vista(self):
         r = self._rodar(parcelas_escolhida="1")
-        self.assertEqual(r["select_value"], "1")
+        self.assertEqual(r["parcelas_marcada"], "1")
 
-    def test_opcao_que_sumiu_cai_no_fallback_e_AVISA(self):
-        """Se a opção escolhida não existe mais na resposta, o fallback é permitido —
-        o que não é permitido é ser silencioso."""
-        r = self._rodar(parcelas_escolhida="12",
-                        resposta={"ok": True, "preco": "R$ 997,00", "msg": "−R$ 500,00 aplicado",
-                                  "parcelas": _parcelas_payload([1, 2, 3])})
-        self.assertEqual(r["select_opcoes"], ["1", "2", "3"])
-        self.assertEqual(r["select_value"], "1", "fallback tem que selecionar algo válido")
-        self.assertNotEqual(r["msg"], "−R$ 500,00 aplicado",
-                            "a mudança de parcelas tem que ficar VISÍVEL, não silenciosa")
-        self.assertIn("parcelas", r["msg"].lower())
+    def test_cupom_repinta_a_cifra_do_parcelado(self):
+        """A opção "parcelado" mostra dinheiro ("até 12x de R$ 124,75"), então é a
+        QUARTA figura da tela. Se a prévia não repintar, ela fica com o valor SEM o
+        cupom — a mesma mentira que o tile do Pix contava em 2026-07-29."""
+        r = self._rodar(parcelas_escolhida="12")
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 83,08 · não renova")
 
-    def test_sem_select_no_plano_mensal_nao_explode(self):
-        r = self._rodar(parcelas_escolhida="1", sem_select=True)
+    def test_sem_campo_de_parcelas_no_plano_mensal_nao_explode(self):
+        r = self._rodar(parcelas_escolhida="1", sem_campo_parcelas=True)
         self.assertEqual(r["msg"], "−R$ 500,00 aplicado")
         self.assertEqual(len(r["fetches"]), 1)
 
@@ -356,7 +318,7 @@ class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["prevenidos"], 1,
                          "sem preventDefault, o Enter submete o FORM inteiro (o pedido) "
                          "em vez de rodar a prévia")
-        self.assertEqual(r["select_value"], "1")
+        self.assertEqual(r["parcelas_marcada"], "1")
 
     def test_outra_tecla_nao_dispara_nada(self):
         r = self._rodar(acao="enter", tecla="a")
@@ -385,8 +347,9 @@ class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
         r = self._rodar(parcelas_escolhida="12", cliques=5)
         self.assertEqual(r["filhos_preco"], ["span"])
         self.assertEqual(r["preco"], "R$ 997,00por ano")
-        self.assertEqual(r["select_value"], "12")
-        self.assertEqual(len(r["select_opcoes"]), 12, "as opções não podem acumular")
+        self.assertEqual(r["parcelas_marcada"], "12")
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 83,08 · não renova",
+                         "a cifra do parcelado não pode concatenar a cada clique")
         self.assertEqual(len(r["fetches"]), 5)
         self.assertEqual(r["msg"], "−R$ 500,00 aplicado", "a mensagem não pode concatenar")
 
@@ -404,7 +367,9 @@ class TestJsDaPrevia(_HarnessJs, unittest.TestCase):
                         resposta={"ok": False, "msg": "Cupom inválido."})
         self.assertEqual(r["msg"], "Cupom inválido.")
         self.assertEqual(r["preco"], "R$ 1.497por ano")
-        self.assertEqual(r["select_value"], "12")
+        self.assertEqual(r["parcelas_marcada"], "12")
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova",
+                         "cupom recusado tem que deixar a cifra do parcelado no baseline")
         self.assertFalse(r["btn_disabled"], "o botão tem que voltar a funcionar")
 
 
@@ -435,7 +400,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
         self.assertEqual(r["preco"], "R$ 947,15por ano", "o resumo tem que seguir o método")
         self.assertEqual(r["pix_desc"], "R$ 947,15 à vista",
                          "o tile do Pix tem que levar o cupom (mostrava 1.422,15 ao vivo)")
-        self.assertEqual(r["select_rotulos"][11], "12x de R$ 83,08 — total R$ 997,00",
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 83,08 · não renova",
                          "parcelas são do CARTÃO: 78,93/947,15 (Pix parcelado) não existe")
 
     def test_trocar_para_cartao_com_cupom_aplicado_tambem_reprecifica(self):
@@ -460,7 +425,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
         r = self._rodar(por_metodo=self._POR_METODO, resposta=None,
                         parcelas_escolhida="12",
                         passos=[{"tipo": "click"}, self._metodo("PIX")])
-        self.assertEqual(r["select_value"], "12")
+        self.assertEqual(r["parcelas_marcada"], "12")
         self.assertEqual(r["msg"], "−R$ 500,00 aplicado", "sem aviso de ajuste à toa")
 
     # ── 2. sem cupom aplicado: volta pro baseline do SERVIDOR, sem requisição ──
@@ -473,7 +438,7 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
                          "(nem cota de tentativas) nenhuma")
         self.assertEqual(r["preco"], "R$ 1.497por ano")
         self.assertEqual(r["pix_desc"], "R$ 1.422,15 à vista")
-        self.assertEqual(r["select_rotulos"][0], "1x de R$ 124,75 — total R$ 1.497,00")
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova")
 
     def test_apagar_o_cupom_e_trocar_de_metodo_volta_o_baseline(self):
         """Sem isto a tela ficaria com o desconto de um cupom que não está mais na
@@ -484,9 +449,9 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
         self.assertEqual(len(r["fetches"]), 1, "sem cupom aplicado não há o que reconferir")
         self.assertEqual(r["preco"], "R$ 1.497por ano")
         self.assertEqual(r["pix_desc"], "R$ 1.422,15 à vista")
-        self.assertEqual(r["cartao_desc"], "parcelável · renova no fim")
-        self.assertEqual(r["select_rotulos"][11], "12x de R$ 124,75 — total R$ 1.497,00",
-                         "as opções têm que voltar às que o servidor renderizou")
+        self.assertEqual(r["cartao_desc"], "à vista ou parcelado")
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova",
+                         "a cifra do parcelado tem que voltar à que o servidor renderizou")
 
     def test_editar_o_codigo_depois_de_aplicar_volta_o_baseline_na_hora(self):
         r = self._rodar(por_metodo=self._POR_METODO, resposta=None,
@@ -590,18 +555,18 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
                             passos=[self._metodo("PIX"), self._metodo("CARTAO")])
         self.assertEqual(volta["parcelas_display"], "")
 
-    def test_o_select_continua_habilitado_e_com_valor(self):
+    def test_os_radios_continuam_habilitados_e_marcados(self):
         """Esconder, não desabilitar: o `POST /assinar` lê `parcelas` e o campo tem que
         continuar submetendo o mesmo name/value de sempre (no Pix o servidor já ignora
         esse campo — ver asaas.montar_checkout)."""
         r = self._rodar(metodo_inicial="PIX", parcelas_escolhida="12", valor_input="",
                         passos=[self._metodo("PIX")])
-        self.assertFalse(r["select_disabled"])
-        self.assertEqual(r["select_value"], "12")
+        self.assertEqual(r["parcelas_disabled"], [False, False])
+        self.assertEqual(r["parcelas_marcada"], "12")
 
-    # ── robustez: markup do mensal (sem tile de Pix, sem select) e resposta antiga ──
+    # ── robustez: markup do mensal (sem tile de Pix, sem parcelas) e resposta antiga ──
     def test_plano_sem_tile_de_pix_e_sem_parcelas_nao_explode(self):
-        r = self._rodar(sem_tile_pix=True, sem_select=True, metodos=["CARTAO"],
+        r = self._rodar(sem_tile_pix=True, sem_campo_parcelas=True, metodos=["CARTAO"],
                         passos=[{"tipo": "click"}])
         self.assertEqual(r["msg"], "−R$ 500,00 aplicado")
         self.assertEqual(len(r["fetches"]), 1)
@@ -609,15 +574,16 @@ class TestJsMetodoEFiguras(_HarnessJs, unittest.TestCase):
                           "sem campo de parcelas o script não mexe em estilo nenhum")
 
     def test_resposta_sem_as_figuras_novas_nao_apaga_dinheiro_da_tela(self):
-        """Defesa contra branco na tela: uma resposta sem `pix_desc`/`cartao_desc`
-        (formato antigo, cache de proxy) atualiza o que veio e deixa o resto como
-        está — em vez de escrever "undefined" onde havia um preço."""
+        """Defesa contra branco na tela: uma resposta sem `pix_desc`/`cartao_desc`/
+        `parcelado_desc` (formato antigo, cache de proxy) atualiza o que veio e deixa o
+        resto como está — em vez de escrever "undefined" onde havia um preço."""
         r = self._rodar(resposta={"ok": True, "preco": "R$ 997,00", "msg": "ok",
                                   "parcelas": _parcelas_payload(range(1, 13))},
                         passos=[{"tipo": "click"}])
         self.assertEqual(r["preco"], "R$ 997,00por ano")
         self.assertEqual(r["pix_desc"], "R$ 1.422,15 à vista")
-        self.assertEqual(r["cartao_desc"], "parcelável · renova no fim")
+        self.assertEqual(r["cartao_desc"], "à vista ou parcelado")
+        self.assertEqual(r["parcelado_desc"], "até 12x de R$ 124,75 · não renova")
 
 
 class TestContratoMarkupJs(unittest.TestCase):
@@ -634,8 +600,8 @@ class TestContratoMarkupJs(unittest.TestCase):
     def test_todo_getElementById_do_script_existe_no_markup(self):
         ids = sorted(set(re.findall(r"getElementById\('([^']+)'\)", self.script)))
         self.assertEqual(ids, ["cupom-aplicar", "cupom-input", "cupom-msg",
-                               "parcelas-field", "pt-desc-cartao", "pt-desc-pix",
-                               "sum-price"],
+                               "parcelas-field", "pt-desc-cartao", "pt-desc-parcelado",
+                               "pt-desc-pix", "sum-price"],
                          "hooks conhecidos mudaram — confira os dois lados de propósito")
         for hook in ids:
             self.assertIn(f'id="{hook}"', self.html,
@@ -663,7 +629,7 @@ class TestContratoMarkupJs(unittest.TestCase):
         IGUAL ao texto renderizado — senão a tela "volta" pra um valor que nunca
         esteve nela."""
         self.assertIn("getAttribute('data-base')", self.script)
-        for hook in ("sum-price", "pt-desc-pix", "pt-desc-cartao"):
+        for hook in ("sum-price", "pt-desc-pix", "pt-desc-cartao", "pt-desc-parcelado"):
             m = re.search(rf'id="{hook}"[^>]*data-base="([^"]*)"[^>]*>([^<]*)', self.html)
             self.assertIsNotNone(m, f'#{hook} tem que emitir data-base')
             self.assertEqual(m.group(1), m.group(2),
@@ -678,13 +644,13 @@ class TestContratoMarkupJs(unittest.TestCase):
         # 1497 − 5% = 1.422,15 (sem cupom): é o que a página abre mostrando
         self.assertIn('id="pt-desc-pix" data-base="R$ 1.422,15 à vista"', self.html)
 
-    def test_campo_de_parcelas_embrulha_o_select(self):
-        # o script esconde o CAMPO (label + select) no Pix; se o id ficar no <select>,
-        # o rótulo "Parcelas (só no cartão)" fica órfão na tela
+    def test_campo_de_parcelas_embrulha_as_duas_ofertas(self):
+        # o script esconde o CAMPO inteiro no Pix; se o id ficasse num dos rádios, o
+        # outro continuaria sozinho na tela num método que não parcela
         m = re.search(r'id="parcelas-field"(.*?)</div>', self.html, re.S)
         self.assertIsNotNone(m, "o campo de parcelas tem que ter id pro script achar")
-        self.assertIn('<select name="parcelas"', m.group(1))
-        self.assertIn("Parcelas", m.group(1))
+        self.assertIn('name="parcelas" value="1"', m.group(1))
+        self.assertIn('name="parcelas" value="12"', m.group(1))
 
     def test_mensal_nao_emite_tile_de_pix_nem_campo_de_parcelas(self):
         """O plano mensal não aceita Pix e é sempre 1x — o script é null-guarded pra
@@ -695,20 +661,22 @@ class TestContratoMarkupJs(unittest.TestCase):
         self.assertIn('name="parcelas" value="1"', html)   # hidden, como hoje
         self.assertIn('id="pt-desc-cartao"', html)
 
-    def test_rotulo_das_parcelas_e_o_mesmo_nos_dois_caminhos(self):
-        """O rótulo existe em DOIS lugares: o markup (baseline do servidor) e o rebuild
-        do JS a partir da resposta. Se os formatos divergirem, aplicar/restaurar um
-        cupom troca o texto do dropdown sem ninguém pedir."""
-        self.assertIn('<option value="12">12x de R$ 124,75 — total R$ 1.497,00</option>',
-                      self.html)
-        self.assertIn("o.parcelas + 'x de ' + o.por_parcela + ' — total ' + o.total",
-                      self.script)
+    def test_o_script_nao_monta_rotulo_de_parcela_no_cliente(self):
+        """O rótulo do parcelado passou a vir PRONTO do servidor (`parcelado_desc`),
+        igual a `pix_desc` e `cartao_desc`. Antes ele existia em dois lugares — o markup
+        e um rebuild em JS — e bastava os formatos divergirem pra aplicar um cupom
+        trocar o texto sozinho. Se o script voltar a montar rótulo (ou a dividir valor)
+        no navegador, os dois lados podem discordar de novo."""
+        self.assertNotIn("'x de '", self.script)
+        self.assertNotIn("' — total '", self.script)
+        self.assertIn("pt-desc-parcelado", self.script)
 
-    def test_select_de_parcelas_continua_sem_disabled_no_markup(self):
+    def test_radios_de_parcelas_continuam_sem_disabled_no_markup(self):
         # o campo é ESCONDIDO no Pix, nunca desabilitado: `POST /assinar` lê `parcelas`
-        m = re.search(r'<select name="parcelas"[^>]*>', self.html)
-        self.assertIsNotNone(m)
-        self.assertNotIn("disabled", m.group(0))
+        radios = re.findall(r'<input[^>]*name="parcelas"[^>]*>', self.html)
+        self.assertEqual(len(radios), 2)
+        for r in radios:
+            self.assertNotIn("disabled", r)
 
     def test_span_do_periodo_dentro_do_sum_price(self):
         # o JS guarda `sumPrice.querySelector('span')` pra reencaixar depois do
