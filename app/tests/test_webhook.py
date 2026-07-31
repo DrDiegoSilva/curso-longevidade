@@ -94,6 +94,72 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(len(self.s.ativos()), 1)
         self.assertEqual(len(self.enviados), 1)      # boas-vindas
 
+    def _cliente_asaas(self, **campos):
+        """Liga o modo PRODUÇÃO: com ASAAS_API_KEY o webhook consulta o cliente no Asaas e
+        pega o telefone de lá. Sem isso o teste passa longe do bug real — o `cust` fica
+        vazio, não há WhatsApp, e a guarda de "sem whatsapp" barra tudo antes da hora."""
+        import asaas
+        self.cfg.ASAAS_API_KEY = "k"
+        orig = asaas.obter_cliente
+        dados = {"name": "Cliente", "mobilePhone": "5543988887777",
+                 "email": "c@x.com", "cpfCnpj": "111.444.777-35", **campos}
+        asaas.obter_cliente = lambda cid: dados
+
+        def restaurar():
+            asaas.obter_cliente = orig
+            self.cfg.ASAAS_API_KEY = None
+
+        return restaurar
+
+    def test_pagamento_de_outro_produto_nao_cria_assinante(self):
+        """O webhook do Asaas é da CONTA inteira: consulta e os outros produtos do Diego
+        caem aqui também. Todo checkout do curso grava um `pending` antes de mandar pro
+        Asaas, então "sem pending e sem cadastro" é a assinatura de uma venda que não é
+        nossa. Antes desta guarda, quem comprava uma consulta virava assinante do curso,
+        recebia boas-vindas e passava a receber os PDFs diários sem nunca ter comprado."""
+        restaurar = self._cliente_asaas(name="Comprou uma consulta")
+        try:
+            st, msg = self.w.processar(self._body(ext="nao_e_nosso", pid="pay_consulta"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            restaurar()
+        self.assertEqual(len(self.s.listar()), 0)     # não criou cadastro nenhum
+        self.assertEqual(len(self.enviados), 0)       # nem mandou boas-vindas
+        self.assertEqual(st, 200)                     # 200 p/ o Asaas não ficar re-tentando
+
+    def test_venda_do_site_continua_ativando(self):
+        """A guarda não pode barrar venda legítima — o pending é o que prova a procedência."""
+        tok = self.db.criar_pending({"nome": "Dr. Legítimo", "whatsapp": "5543988887777",
+                                     "email": "c@x.com", "plano": "anual", "metodo": "CARTAO"})
+        restaurar = self._cliente_asaas()
+        try:
+            st, msg = self.w.processar(self._body(ext=tok, pid="pay_nosso"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            restaurar()
+        self.assertEqual((st, msg), (200, "ativado"))
+        self.assertEqual(len(self.s.ativos()), 1)
+        self.assertEqual(len(self.enviados), 1)       # boas-vindas saíram
+
+    def test_recompra_de_quem_ja_e_assinante_passa_sem_pending(self):
+        """Quem já está no cadastro tem procedência provada pelo próprio cadastro —
+        senão uma recompra/renovação sem pending casado seria barrada e o cliente
+        pagaria sem receber acesso."""
+        reg = self.s.criar_de_pagamento(
+            {"nome": "Dr. Antigo", "whatsapp": "5543988887777", "email": "c@x.com",
+             "cpf": "11144477735", "plano": "anual"},
+            {"customer": "cus_1", "payment": "pay_velho", "proximo_vencimento": "2025-01-01"})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2025-01-01T00:00:00")
+        restaurar = self._cliente_asaas()
+        try:
+            st, msg = self.w.processar(self._body(ext="sem_pending", pid="pay_recompra"),
+                                       "segredo", enviar_fn=self.envfn)
+        finally:
+            restaurar()
+        self.assertEqual(st, 200)
+        self.assertNotEqual(msg, "fora-do-curso")     # não pode cair na guarda
+        self.assertEqual(len(self.s.listar()), 1)     # reativou o mesmo, não duplicou
+
     def test_ativar_novo_assinante_grava_a_base_contratada(self):
         # ACHADO 1 (revisão): renovacao.preco_renovacao lê valor_contratado pra cobrar certo
         # na renovação seguinte. REVISÃO FINAL #2 (B1/B2): o campo guarda a BASE CONTRATADA
@@ -948,10 +1014,19 @@ class TestProcessar(unittest.TestCase):
         self.assertEqual(atual["proximo_vencimento"], esperado)
 
     def test_plano_irresolvivel_alerta_admin(self):
-        # CORREÇÃO 3: cliente novo, sem pending, valor que não bate com nenhum plano de
-        # tabela -> a cascata inteira falha de verdade. Antes, seguia calado com o
-        # default MONTHLY (30 dias pra quem pode ter pago outra coisa). Agora alerta o
-        # Diego — dinheiro entrou e o sistema não sabe o que foi vendido.
+        # CORREÇÃO 3: a cascata inteira do plano falha (plano do pending desconhecido e
+        # valor que não bate com nenhum preço de tabela). Antes seguia calado com o default
+        # MONTHLY; agora alerta o Diego — dinheiro entrou e o sistema não sabe o que foi
+        # vendido. O importante é que ele NÃO trava a ativação.
+        #
+        # ATUALIZADO em 2026-07-31 (guarda de procedência): antes este teste rodava SEM
+        # pending, e é justamente essa a assinatura de um pagamento de outro produto do
+        # Diego, que agora é ignorado. Pra continuar exercitando o que ele quer exercitar
+        # — venda NOSSA com plano indecifrável — ele passou a criar um pending, com um
+        # slug de plano que não existe.
+        tok_fantasma = self.db.criar_pending({"nome": "Dr. Misterioso", "email": "mist@x.com",
+                                              "whatsapp": "5543999990150",
+                                              "plano": "plano_que_nao_existe", "metodo": "PIX"})
         import asaas
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -963,7 +1038,7 @@ class TestProcessar(unittest.TestCase):
         try:
             st, msg = self.w.processar(
                 {"event": "PAYMENT_CONFIRMED", "payment": {
-                    "id": "pay_misterio", "externalReference": "tok_nao_existe", "value": 123.45,
+                    "id": "pay_misterio", "externalReference": tok_fantasma, "value": 123.45,
                     "customer": "cus_mist", "subscription": None, "dueDate": "2026-07-19"}},
                 "segredo", enviar_fn=self.envfn)
         finally:

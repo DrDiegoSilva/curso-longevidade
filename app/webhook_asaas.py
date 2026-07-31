@@ -243,6 +243,38 @@ def _executar(event, pay, pid, enviar_fn):
         whatsapp = phone.normalizar(cust.get("mobilePhone") or cust.get("phone")
                                     or (pending or {}).get("whatsapp")
                                     or (_existente_por_cpf or {}).get("whatsapp") or "")
+        # PROCEDÊNCIA (2026-07-31) — o webhook do Asaas é da CONTA INTEIRA: consulta e os
+        # outros produtos que o Diego vende chegam neste mesmo endpoint, e o Asaas não diz
+        # qual produto foi. Todo checkout do curso grava um `pending` antes de mandar pro
+        # Asaas (`serve.py:1587` /assinar e `serve.py:1288` /renovar) e TODA venda do curso
+        # passa pelo site — confirmado pelo Diego. Logo "sem pending casado e sem cadastro"
+        # é a assinatura de uma venda que não é nossa.
+        #
+        # Sem esta guarda o ATIVAR criava assinante pra qualquer pagamento confirmado da
+        # conta: a pessoa recebia o WhatsApp de boas-vindas com link de criar senha e
+        # passava a receber os PDFs diários sem nunca ter comprado o curso (aconteceu de
+        # verdade — o Diego teve que remover na mão). A cascata de plano até avisava que
+        # não sabia o que tinha sido vendido, mas ativava assim mesmo no default MONTHLY.
+        #
+        # Só loga, sem alertar: os outros produtos vendem todo dia e um aviso por venda
+        # viraria spam no WhatsApp do Diego — decisão dele. Responde 200 pro Asaas parar
+        # de re-tentar; do ponto de vista dele o evento foi processado.
+        #
+        # NÃO tem janela de validade de propósito. Amarrar a ativação a "pending dos
+        # últimos X" exigiria que a cobrança Pix expirasse junto, e ela não expira: o
+        # `minutesToExpire` do Asaas mata o LINK do checkout, mas o QR Code gerado vale
+        # 12 meses após o vencimento. Um cliente que pagasse o Pix no terceiro dia cairia
+        # aqui e seria ignorado em silêncio — exatamente a falha que este arquivo acabou
+        # de aprender a não repetir.
+        # O casamento por WHATSAPP entra junto com o de CPF, e não é zelo: no cartão
+        # PARCELADO o cliente do Asaas chega com `cpfCnpj` VAZIO, e é só pelo telefone que a
+        # parcela 2+ reencontra o assinante. Checar apenas o CPF barrava a parcela de um
+        # contrato legítimo — `test_ativar_parcela_do_anual_casa_por_whatsapp` pegou isso.
+        if (pending is None and _existente_por_cpf is None
+                and (subscribers.por_whatsapp(whatsapp) if whatsapp else None) is None):
+            print(f"[webhook] pagamento {pid} sem pending e sem cadastro — nao e venda do "
+                  f"curso, ignorado", flush=True)
+            return (200, "fora-do-curso")
         if not whatsapp:
             print("[webhook] ATIVAR sem whatsapp — pulei", flush=True)
             _alertar_admin(pid, sid, "pagamento confirmado mas SEM WhatsApp p/ ativar — ative manualmente")
