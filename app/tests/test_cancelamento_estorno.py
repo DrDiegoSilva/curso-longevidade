@@ -186,26 +186,25 @@ class TestExecutarCancelamento(unittest.TestCase):
     Chama o método com um `self` stub — ele só usa `self._html` internamente."""
 
     def setUp(self):
-        import serve, subscribers, asaas, email_send, site_web, db, webhook_asaas
+        import serve, subscribers, asaas, deliver, site_web, db, webhook_asaas
         self.serve, self.subscribers, self.asaas = serve, subscribers, asaas
-        self.email_send, self.site_web, self.db = email_send, site_web, db
+        self.deliver, self.site_web, self.db = deliver, site_web, db
         self.webhook_asaas = webhook_asaas
 
         self.claims = []          # chamadas a db.claim_cancelamento (id, motivo, acesso_ate)
         self.encerrados = []      # chamadas a db.encerrar_acesso
-        self.emails = []          # chamadas a email_send.enviar
+        self.avisos = []          # chamadas a deliver.enviar_texto (era e-mail até 2026-08-01)
         self.paginas = []         # chamadas a site_web.pagina_cancelado
         self.cancelados_asaas = []  # chamadas a asaas.cancelar_assinatura
         self.alertas = []         # chamadas a webhook_asaas._alertar_admin
 
-        self._orig = (subscribers.por_id, asaas.cancelar_assinatura, email_send.enviar,
+        self._orig = (subscribers.por_id, asaas.cancelar_assinatura, deliver.enviar_texto,
                       site_web.pagina_cancelado, db.claim_cancelamento, db.encerrar_acesso,
                       serve.estornar_arrependimento, webhook_asaas._alertar_admin)
 
         subscribers.por_id = lambda sid: None      # sobrescrito nos testes que precisam
         asaas.cancelar_assinatura = lambda sid: self.cancelados_asaas.append(sid)
-        email_send.enviar = lambda to, assunto, html: self.emails.append(
-            {"to": to, "assunto": assunto, "html": html})
+        deliver.enviar_texto = lambda w, texto: self.avisos.append({"to": w, "texto": texto})
         site_web.pagina_cancelado = lambda acesso_ate="": self.paginas.append(
             acesso_ate) or f"<pagina acesso_ate={acesso_ate!r}>"
         db.claim_cancelamento = lambda sid, motivo, acesso_ate: self.claims.append(
@@ -217,12 +216,13 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.stub = _HandlerStub()
 
     def tearDown(self):
-        (self.subscribers.por_id, self.asaas.cancelar_assinatura, self.email_send.enviar,
+        (self.subscribers.por_id, self.asaas.cancelar_assinatura, self.deliver.enviar_texto,
          self.site_web.pagina_cancelado, self.db.claim_cancelamento, self.db.encerrar_acesso,
          self.serve.estornar_arrependimento, self.webhook_asaas._alertar_admin) = self._orig
 
     def _sub(self, **over):
         base = {"id": "s1", "nome": "Teste", "email": "t@e.com",
+                "whatsapp": "5543999990000",   # canal da confirmação desde 2026-08-01
                 "asaas_subscription_id": "sub_1", "proximo_vencimento": "2026-12-31"}
         base.update(over)
         return base
@@ -255,9 +255,9 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.assertEqual(self.claims[0]["acesso_ate"], "2026-12-31")
         self.assertEqual(self.encerrados, ["s1"])
         self.assertEqual(self.paginas, [None])
-        self.assertEqual(len(self.emails), 1)
-        self.assertIn("reembolso", self.emails[0]["html"].lower())
-        self.assertIn("997,00", self.emails[0]["html"])   # ACHADO 1: valor certo, em pt-BR
+        self.assertEqual(len(self.avisos), 1)
+        self.assertIn("reembolso", self.avisos[0]["texto"].lower())
+        self.assertIn("997,00", self.avisos[0]["texto"])   # ACHADO 1: valor certo, em pt-BR
 
     def test_estorno_de_zero_ainda_conta_como_estorno(self):
         # `estornado is not None` importa: 0.0 é um estorno VÁLIDO (pagamento de valor
@@ -267,7 +267,7 @@ class TestExecutarCancelamento(unittest.TestCase):
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(self.encerrados, ["s1"])
         self.assertEqual(self.paginas, [None])
-        self.assertIn("reembolso", self.emails[0]["html"].lower())
+        self.assertIn("reembolso", self.avisos[0]["texto"].lower())
 
     def test_estorno_parcelado_nao_mostra_valor_da_parcela_no_email(self):
         # ACHADO 1 (bloqueante): no cartão parcelado o Asaas estorna o PARCELAMENTO
@@ -277,11 +277,11 @@ class TestExecutarCancelamento(unittest.TestCase):
         # errado), só confirmar que o reembolso integral foi pedido.
         self.serve.estornar_arrependimento = lambda sub: (83.08, "installment")
         self._chamar(self._sub(), "mudei de ideia")
-        self.assertEqual(len(self.emails), 1)
-        html = self.emails[0]["html"]
-        self.assertIn("reembolso integral", html.lower())
-        self.assertNotIn("83,08", html)
-        self.assertNotIn("83.08", html)
+        self.assertEqual(len(self.avisos), 1)
+        texto = self.avisos[0]["texto"]
+        self.assertIn("reembolso integral", texto.lower())
+        self.assertNotIn("83,08", texto)
+        self.assertNotIn("83.08", texto)
 
     def test_fora_dos_7_dias_mantem_proximo_vencimento_sem_reembolso_no_email(self):
         self.serve.estornar_arrependimento = lambda sub: None
@@ -289,8 +289,8 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.assertEqual(self.claims[0]["acesso_ate"], "2026-12-31")
         self.assertEqual(self.encerrados, [])         # nada a ajustar: o estado gravado já vale
         self.assertEqual(self.paginas, ["2026-12-31"])
-        self.assertEqual(len(self.emails), 1)
-        self.assertNotIn("reembolso", self.emails[0]["html"].lower())
+        self.assertEqual(len(self.avisos), 1)
+        self.assertNotIn("reembolso", self.avisos[0]["texto"].lower())
 
     def test_falha_ao_encerrar_acesso_apos_estorno_nao_derruba_e_alerta(self):
         # O dinheiro já saiu e o cancelamento já está gravado — só o ajuste do acesso
@@ -298,7 +298,7 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.serve.estornar_arrependimento = lambda sub: (997.0, "payment")
         self.db.encerrar_acesso = lambda sid: (_ for _ in ()).throw(RuntimeError("database is locked"))
         self._chamar(self._sub(), "mudei de ideia")
-        self.assertEqual(len(self.emails), 1)
+        self.assertEqual(len(self.avisos), 1)
         self.assertEqual(self.paginas, [None])
         self.assertEqual(len(self.alertas), 1)
         self.assertIn("acesso", self.alertas[0].lower())
@@ -313,7 +313,7 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.subscribers.por_id = lambda sid: self._sub(acesso_ate="2026-08-15")
         self.serve.estornar_arrependimento = lambda sub: self.fail("não podia estornar de novo")
         self._chamar(self._sub(), "mudei de ideia")
-        self.assertEqual(self.emails, [])
+        self.assertEqual(self.avisos, [])
         self.assertEqual(self.cancelados_asaas, [])
         self.assertEqual(self.paginas, ["2026-08-15"])
 
@@ -332,7 +332,7 @@ class TestExecutarCancelamento(unittest.TestCase):
                                                         acesso_ate=None)
         self.serve.estornar_arrependimento = lambda sub: self.fail("estado já cancelado: não estorna")
         self._chamar(self._sub(), "mudei de ideia")
-        self.assertEqual(self.emails, [])
+        self.assertEqual(self.avisos, [])
         self.assertEqual(self.paginas, [None])
         self.assertEqual(len(self.alertas), 1)
         self.assertIn("asaas", self.alertas[0].lower())
@@ -354,7 +354,7 @@ class TestExecutarCancelamento(unittest.TestCase):
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(tentativas, ["2026-12-31", "2026-12-31"])
         self.assertEqual(self.encerrados, ["s1"])         # estornou e encerrou o acesso
-        self.assertEqual(len(self.emails), 1)
+        self.assertEqual(len(self.avisos), 1)
 
     def test_claim_e_releitura_falhando_segue_o_cancelamento_mas_nao_move_dinheiro(self):
         # Estado desconhecido: nunca estornar (poderia devolver em dobro por cima de um
@@ -367,7 +367,7 @@ class TestExecutarCancelamento(unittest.TestCase):
         self.serve.estornar_arrependimento = lambda sub: self.fail("estado desconhecido: não estorna")
         self._chamar(self._sub(), "mudei de ideia")
         self.assertEqual(self.cancelados_asaas, ["sub_1"])   # assinatura cancelada mesmo assim
-        self.assertEqual(len(self.emails), 1)                  # cliente avisado
+        self.assertEqual(len(self.avisos), 1)                  # cliente avisado
         self.assertEqual(len(self.alertas), 1)                 # admin avisado
         self.assertIn("estorn", self.alertas[0].lower())
 
@@ -408,17 +408,18 @@ class TestExecutarCancelamento(unittest.TestCase):
         self._chamar(self._sub(), "não uso mais")
         self.assertEqual(len(self.alertas), 1)
         self.assertIn("asaas", self.alertas[0].lower())
-        self.assertEqual(len(self.emails), 1)          # e o cancelamento segue normal
+        self.assertEqual(len(self.avisos), 1)          # e o cancelamento segue normal
 
     def test_cortesia_sem_assinatura_no_asaas_nao_chama_nem_alerta(self):
         self._chamar(self._sub(asaas_subscription_id=None), "não uso mais")
         self.assertEqual(self.cancelados_asaas, [])
         self.assertEqual(self.alertas, [])
 
-    def test_falha_no_email_nao_derruba_a_pagina_de_cancelado(self):
-        # O cancelamento já está gravado; um problema no e-mail não pode virar erro 500
+    def test_falha_no_aviso_nao_derruba_a_pagina_de_cancelado(self):
+        # O cancelamento já está gravado; um problema no envio não pode virar erro 500
         # para quem está na tela.
-        self.email_send.enviar = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("smtp down"))
+        self.deliver.enviar_texto = lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("evolution fora do ar"))
         self._chamar(self._sub(), "não uso mais")
         self.assertEqual(self.paginas, ["2026-12-31"])
 

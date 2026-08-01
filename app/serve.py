@@ -1471,7 +1471,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 _alertar(sub, f"estorno de {sub.get('nome') or sub.get('id')} CONCLUÍDO, mas não "
                               f"consegui encerrar o acesso no cadastro ({e}) — zere o 'acesso até' "
                               f"manualmente")
-        _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate)
+        _avisar_cancelamento(sub, estornado, tipo_estorno, acesso_ate)
         return self._html(site_web.pagina_cancelado(acesso_ate))
 
     def _post_assinar(self, g):
@@ -1685,9 +1685,17 @@ def _acesso_ate_persistido(sub):
         return sub.get("acesso_ate")
 
 
-def _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate):
-    """Confirmação por e-mail: versão com reembolso ou versão comum. À prova de exceção
-    — o cancelamento já está gravado, um problema de e-mail não pode virar erro na tela.
+def _avisar_cancelamento(sub, estornado, tipo_estorno, acesso_ate):
+    """Confirmação do cancelamento por WHATSAPP: versão com reembolso ou versão comum.
+    À prova de exceção — o cancelamento já está gravado, um problema de envio não pode
+    virar erro na tela.
+
+    Era e-mail até 2026-08-01, e nunca chegou a ninguém: sem `RESEND_API_KEY` o
+    `email_send.enviar` só logava e devolvia `skipped`, e ninguém olhava o retorno. Este
+    era o ÚNICO aviso do sistema sem WhatsApp em paralelo, então quem cancelava (e às
+    vezes recebia estorno) não tinha confirmação nenhuma. O corpo continua sendo montado
+    em HTML porque o texto é revisado e jurídico; `site_web._sem_html` converte pra texto
+    na saída, igual faz a confirmação de renovação (`webhook_asaas._confirmar_renovacao`).
 
     `tipo_estorno` (o mesmo de `refunds.alvo_estorno`, vindo de `estornar_arrependimento`)
     decide se o valor entra no e-mail. No cartão parcelado o Asaas estorna o
@@ -1696,10 +1704,10 @@ def _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate):
     ele não representa o total reembolsado. Imprimir esse número como "reembolso
     integral" mentiria por um fator de N parcelas. Quando `tipo_estorno == "installment"`
     o e-mail não imprime NENHUM valor — só confirma que o reembolso integral foi pedido."""
-    if not sub.get("email"):
+    if not sub.get("whatsapp"):
         return
     try:
-        import site_web, email_send, pricing
+        import site_web, deliver, pricing
         if estornado is not None:            # 0.0 é estorno válido, não "sem estorno"
             if tipo_estorno == "installment":
                 linha_valor = "O reembolso integral do valor pago foi solicitado"
@@ -1717,9 +1725,9 @@ def _email_cancelamento(sub, estornado, tipo_estorno, acesso_ate):
         html = (f"<p>Olá {site_web._esc(sub.get('nome') or '')},</p>{corpo}"
                 f"<p>Se mudar de ideia, é só assinar de novo quando quiser.</p>"
                 f"<p>— Dr. Diego Silva · CRM-PR 54310</p>")
-        email_send.enviar(sub["email"], "Confirmação de cancelamento — Atualização Científica", html)
+        deliver.enviar_texto(sub["whatsapp"], site_web._sem_html(html))
     except Exception as e:
-        print(f"[cancelar] e-mail de confirmação falhou: {e}", flush=True)
+        print(f"[cancelar] confirmação de cancelamento falhou: {e}", flush=True)
 
 
 # Status do Asaas que significam "o estorno existe" numa re-consulta. PARTIALLY_REFUNDED
@@ -1764,7 +1772,7 @@ def estornar_arrependimento(sub):
     confirmada no Asaas), ou None quando não havia direito, não havia cobrança
     (cortesia por cupom) ou o estorno no Asaas falhou de verdade. `tipo` vem de
     `refunds.alvo_estorno`: "installment" quando o alvo foi o parcelamento inteiro, ou
-    "payment" quando foi um pagamento avulso — quem manda e-mail (`_email_cancelamento`)
+    "payment" quando foi um pagamento avulso — quem avisa o cliente (`_avisar_cancelamento`)
     usa isso pra saber se pode imprimir `valor` (no parcelado ele é só o de UMA
     parcela, não o total estornado). Falha aqui NUNCA bloqueia o cancelamento: o
     assinante não pode ficar preso por um problema nosso — vira alerta pro admin.
