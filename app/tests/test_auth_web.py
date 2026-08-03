@@ -160,6 +160,29 @@ class TestAuth(unittest.TestCase):
         self.assertFalse(self.auth.iniciar_definir_senha("5511000000000", "esqueci", enviar_fn=self.enviar_fn))
         self.assertEqual(len(self.enviados), 0)
 
+    # ── Texto do link de 1º acesso (/primeiro-acesso) ──
+    # Incidente 2026-08-03: um assinante que entrou no sábado pediu o link na terça e
+    # recebeu "✅ Assinatura confirmada — bem-vindo(a)...", texto praticamente IGUAL ao da
+    # boas-vindas (`mensagens.WA_DEFAULT`). Pro assinante parece que ele assinou de novo;
+    # pro Diego parecia bug de mensagem duplicada, e custou uma investigação inteira.
+    # Quem PEDE o link de novo não pode receber uma saudação de assinatura nova.
+
+    def test_link_de_primeiro_acesso_nao_se_passa_por_boas_vindas(self):
+        msg = self.auth.wa_msg_senha("https://x/senha/tok", primeiro=True)
+        self.assertNotIn("Assinatura confirmada", msg)
+        self.assertNotIn("bem-vindo", msg.lower())
+
+    def test_link_de_primeiro_acesso_traz_o_link_e_a_validade(self):
+        msg = self.auth.wa_msg_senha("https://x/senha/tok", primeiro=True)
+        self.assertIn("https://x/senha/tok", msg)
+        self.assertIn("7 dias", msg)          # FIRST_ACCESS_TTL_H = 24*7
+
+    def test_link_de_reset_continua_como_estava(self):
+        msg = self.auth.wa_msg_senha("https://x/senha/tok", primeiro=False)
+        self.assertIn("redefinir", msg.lower())
+        self.assertIn("1 hora", msg)
+        self.assertIn("https://x/senha/tok", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

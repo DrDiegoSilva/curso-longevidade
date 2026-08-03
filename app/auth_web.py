@@ -337,13 +337,21 @@ def _enviar_link_senha(a, link, primeiro, enviar_fn=None):
 
 
 def wa_msg_senha(link, primeiro):
+    """Texto do link de senha. `primeiro` = pedido em /primeiro-acesso; senão, /esqueci.
+
+    O ramo `primeiro` NÃO pode saudar como assinatura nova. Ele era uma cópia quase
+    literal da boas-vindas (`mensagens.WA_DEFAULT`) — mesma 1ª linha, mesmo "Salve este
+    contato", mesma chamada pra criar senha. Em 2026-08-03 um assinante que entrou no
+    sábado pediu o link na terça e recebeu "Assinatura confirmada — bem-vindo(a)": pra ele
+    parecia ter assinado duas vezes, e pro Diego parecia mensagem duplicada do sistema.
+    Quem PEDE o link de novo tem que receber o link, não as boas-vindas.
+    """
     if primeiro:
-        return (f"✅ Assinatura confirmada — bem-vindo(a) à *{config.PRODUTO}*!\n\n"
-                f"📲 *Salve este contato* (Dr. Diego Silva) na sua agenda — assim os estudos "
-                f"chegam certinho e os *links ficam clicáveis*.\n\n"
-                f"Para ler os resumos no site, crie sua senha de acesso:\n{link}\n\n"
-                f"Com seu WhatsApp + senha você entra em {config.ARTIGOS_URL} e tem acesso ao "
-                f"*arquivo com todos os estudos já enviados* — pra reler quando quiser.")
+        return (f"🔐 Aqui está seu link para criar a senha de acesso da *{config.PRODUTO}* "
+                f"(vale {FIRST_ACCESS_TTL_H // 24} dias):\n{link}\n\n"
+                f"Com seu WhatsApp + senha você entra em {config.ARTIGOS_URL} e lê o "
+                f"*arquivo com todos os estudos já enviados* — pra reler quando quiser.\n\n"
+                f"Se não foi você que pediu, é só ignorar.")
     return (f"🔐 Para redefinir sua senha da *{config.PRODUTO}*, use este link "
             f"(vale 1 hora):\n{link}\n\nSe não foi você, ignore.")
 
