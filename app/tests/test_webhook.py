@@ -74,6 +74,23 @@ class TestProcessar(unittest.TestCase):
         db.init()
         self.enviados = []
         self.envfn = lambda wpp, msg: self.enviados.append((wpp, msg))
+        self.futuro = self._dia(30)      # "acesso ainda vigente", sempre
+
+    def _dia(self, delta):
+        """Data relativa a HOJE, em ISO.
+
+        Cravar data aqui era bomba-relógio: os fixtures diziam
+        `acesso_ate="2026-08-01"  # ainda no futuro` e, em 2026-08-01, isso deixou de ser
+        verdade. O acesso parou de contar como vigente, a recompra de Pix deixou de
+        estender, e 5 testes quebraram sozinhos — sem uma linha de produção ter mudado.
+        Um vermelho que não vem de regressão treina todo mundo a ignorar vermelho.
+        """
+        from datetime import datetime, timedelta
+        return (datetime.now() + timedelta(days=delta)).date().isoformat()
+
+    def _mais_30(self, base):
+        from datetime import datetime, timedelta
+        return (datetime.fromisoformat(base) + timedelta(days=30)).date().isoformat()
 
     def _body(self, event="PAYMENT_CONFIRMED", ext="tok", pid="pay_1", sub=None, installment=None):
         pay = {"id": pid, "externalReference": ext, "customer": "cus_1",
@@ -575,8 +592,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. EmDia", "whatsapp": "5543999990032", "email": "emdia@x.com",
              "cpf": "11144477735", "plano": "mensal"},
-            {"customer": "cus_ed", "payment": "pay_ed_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+            {"customer": "cus_ed", "payment": "pay_ed_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)   # ainda no futuro
         import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -593,7 +610,7 @@ class TestProcessar(unittest.TestCase):
             deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
         atual = self.s.por_id(reg["id"])
-        self.assertEqual(atual["acesso_ate"], "2026-08-31")   # 01 ago + 30d, SEM o bônus de 999
+        self.assertEqual(atual["acesso_ate"], self._mais_30(self.futuro))   # +30d, SEM o bônus de 999
 
     def test_renovar_normal_envia_email_de_renovacao_em_pt_br(self):
         # TESTE 1 (spec renovação): cartão à vista renovando sozinho cobra o cliente
@@ -677,8 +694,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Pix5", "whatsapp": "5543999990006", "email": "pix5@x.com",
              "cpf": "11144477735", "plano": "mensal"},
-            {"customer": "cus_5", "payment": "pay_5_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+            {"customer": "cus_5", "payment": "pay_5_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)   # ainda no futuro
         import asaas, deliver
         self.cfg.ASAAS_API_KEY = "k"
         orig_cli = asaas.obter_cliente
@@ -696,8 +713,8 @@ class TestProcessar(unittest.TestCase):
             deliver.enviar_texto = orig_wa
         self.assertEqual((st, msg), (200, "pix-recomprado-estendido"))
         atual = self.s.por_id(reg["id"])
-        self.assertEqual(atual["acesso_ate"], "2026-08-31")          # 01 ago + 30d, a partir do FIM ATUAL
-        self.assertEqual(atual["proximo_vencimento"], "2026-08-31")
+        self.assertEqual(atual["acesso_ate"], self._mais_30(self.futuro))   # +30d do FIM ATUAL
+        self.assertEqual(atual["proximo_vencimento"], self._mais_30(self.futuro))
         self.assertEqual(atual["asaas_payment_id"], "pay_5_2")        # referência atualizada
         # Recompra é manual (o assinante voltou e pagou de novo) -> confirmação por
         # WhatsApp, não e-mail (decisão do Diego 2026-07-25).
@@ -713,8 +730,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. VC2", "whatsapp": "5543999990011", "email": "vc2@x.com",
              "cpf": "11144477735", "plano": "mensal", "valor_contratado": 97.00},
-            {"customer": "cus_vc2", "payment": "pay_vc2_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # ainda no futuro
+            {"customer": "cus_vc2", "payment": "pay_vc2_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)   # ainda no futuro
         tok_vc2 = self.db.criar_pending({"nome": "Dr. VC2", "whatsapp": "5543999990011",
                                          "email": "vc2@x.com", "cpf": "11144477735",
                                          "plano": "mensal", "metodo": "PIX",
@@ -768,8 +785,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Cartao", "whatsapp": "5543999990099", "email": "cartao@x.com",
              "cpf": "55566677711", "plano": "mensal"},
-            {"customer": "cus_cartao", "payment": "pay_cartao_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")   # acesso ainda vigente
+            {"customer": "cus_cartao", "payment": "pay_cartao_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)   # acesso ainda vigente
         st, msg = self.w.processar(
             self._body_cpf(pid="pay_cartao_2", sub="sub_cartao_novo", cpf_fmt="555.666.777-11"),
             "segredo", enviar_fn=self.envfn)
@@ -787,8 +804,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Anual", "whatsapp": "5543999990100", "email": "anual@x.com",
              "cpf": "22233344456", "plano": "anual"},
-            {"customer": "cus_anual", "payment": "pay_anual_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")
+            {"customer": "cus_anual", "payment": "pay_anual_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)
         plano_anual = self.cfg.plano_por_slug("anual")
         antes = self.s.por_id(reg["id"])
         self.assertTrue(regua.na_regua(antes, plano_anual))   # sem o id, ainda entraria na régua
@@ -826,8 +843,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Pix Anual", "whatsapp": "5543999990102", "email": "pixanual@x.com",
              "cpf": "44455566678", "plano": "anual"},
-            {"customer": "cus_pixanual", "payment": "pay_pixanual_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")
+            {"customer": "cus_pixanual", "payment": "pay_pixanual_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)
         plano_anual = self.cfg.plano_por_slug("anual")
         st, msg = self.w.processar(
             self._body_cpf(pid="pay_pixanual_2", sub=None, cpf_fmt="444.555.666-78"),
@@ -846,8 +863,8 @@ class TestProcessar(unittest.TestCase):
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. Overdue", "whatsapp": "5543999990103", "email": "overdue@x.com",
              "cpf": "55566677789", "plano": "mensal"},
-            {"customer": "cus_overdue", "payment": "pay_overdue_1", "proximo_vencimento": "2026-08-01"})
-        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate="2026-08-01")
+            {"customer": "cus_overdue", "payment": "pay_overdue_1", "proximo_vencimento": self.futuro})
+        self.s.marcar_status(reg["id"], "ATIVO", acesso_ate=self.futuro)
         st1, msg1 = self.w.processar(
             self._body_cpf(pid="pay_overdue_2", sub="sub_overdue_novo", cpf_fmt="555.666.777-89"),
             "segredo", enviar_fn=self.envfn)

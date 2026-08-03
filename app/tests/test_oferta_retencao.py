@@ -75,7 +75,20 @@ class TestOfertaRetencao(unittest.TestCase):
         base.update(over)
         return lambda k: base.get(k, "")
 
-    def _assinante(self, sid=None, acesso_ate="2026-08-01", oferta_em=None):
+    def _dia(self, delta):
+        """Data relativa a HOJE, em ISO.
+
+        Datas cravadas aqui eram bomba-relógio: o fixture nascia com
+        `acesso_ate="2026-08-01"` querendo dizer "uma data no futuro", e em 2026-08-01
+        essa data deixou de ser futuro. O acesso parou de contar como vigente, o ramo que
+        estende os +30 dias não disparou mais, e 3 testes quebraram sozinhos — sem que
+        nada no código de produção tivesse mudado.
+        """
+        return (datetime.now() + timedelta(days=delta)).date().isoformat()
+
+    def _assinante(self, sid=None, acesso_ate="__futuro__", oferta_em=None):
+        if acesso_ate == "__futuro__":
+            acesso_ate = self._dia(30)
         reg = self.s.criar_de_pagamento(
             {"nome": "Dr. A", "whatsapp": "5543999990000", "email": "a@x.com",
              "cpf": "11144477735", "plano": "anual"},
@@ -91,11 +104,12 @@ class TestOfertaRetencao(unittest.TestCase):
 
     # ── B11 ──
     def test_pix_ganha_os_30_dias_no_campo_que_controla_o_acesso(self):
-        sub = self._assinante(sid=None, acesso_ate="2026-08-01")
+        ate = self._dia(30)
+        sub = self._assinante(sid=None, acesso_ate=ate)
         self._aceitar(sub)
         atual = self.s.por_id(sub["id"])
-        self.assertEqual(atual["acesso_ate"], "2026-08-31")
-        self.assertEqual(atual["proximo_vencimento"], "2026-08-31")
+        self.assertEqual(atual["acesso_ate"], self._mais_30(ate))
+        self.assertEqual(atual["proximo_vencimento"], self._mais_30(ate))
 
     def test_cartao_recorrente_nao_ganha_acesso_ate_gravado(self):
         """Com assinatura recorrente quem controla o acesso é o ciclo do Asaas —
@@ -114,12 +128,13 @@ class TestOfertaRetencao(unittest.TestCase):
         """Os dois campos podem divergir (o `proximo_vencimento` fica para trás quando o
         acesso é estendido por bônus/cortesia). Quem governa o acesso do Pix é o
         `acesso_ate` — extender do outro entregaria menos de 30 dias reais de presente."""
-        sub = self._assinante(sid=None, acesso_ate="2026-08-01")
-        self.s.marcar_status(sub["id"], "ATIVO", proximo_vencimento="2026-07-01")
+        ate, atrasado = self._dia(30), self._dia(-30)
+        sub = self._assinante(sid=None, acesso_ate=ate)
+        self.s.marcar_status(sub["id"], "ATIVO", proximo_vencimento=atrasado)
         self._aceitar(self.s.por_id(sub["id"]))
         atual = self.s.por_id(sub["id"])
-        self.assertEqual(atual["acesso_ate"], "2026-08-31")     # 2026-08-01 + 30
-        self.assertNotEqual(atual["acesso_ate"], "2026-07-31")  # não veio de 2026-07-01
+        self.assertEqual(atual["acesso_ate"], self._mais_30(ate))          # veio do acesso_ate
+        self.assertNotEqual(atual["acesso_ate"], self._mais_30(atrasado))  # não do vencimento
 
     def test_pix_sem_acesso_ate_usa_o_proximo_vencimento_como_base(self):
         sub = self._assinante(sid=None, acesso_ate=None)
@@ -129,10 +144,11 @@ class TestOfertaRetencao(unittest.TestCase):
 
     # ── B8 ──
     def test_aceitar_duas_vezes_nao_empilha_mais_30_dias(self):
-        sub = self._assinante(sid=None, acesso_ate="2026-08-01")
+        ate = self._dia(30)
+        sub = self._assinante(sid=None, acesso_ate=ate)
         self._aceitar(sub)
         depois_do_1 = self.s.por_id(sub["id"])["acesso_ate"]
-        self.assertEqual(depois_do_1, "2026-08-31")
+        self.assertEqual(depois_do_1, self._mais_30(ate))
 
         # 2ª chamada: o assinante já tem oferta_retencao_em preenchido
         self._aceitar(self.s.por_id(sub["id"]))
