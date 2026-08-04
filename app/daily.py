@@ -334,7 +334,12 @@ def reenviar_pdf_do_dia(data=None):
         if not w:
             continue
         try:
-            deliver.enviar_pdf(w, master_pdf, caption=dg.get("titulo_pt", ""))
+            # Legenda leva o link do estudo (clicavel no WhatsApp); o NOME DO ARQUIVO
+            # vai separado, senao a url entra nele (deliver.py deriva um do outro).
+            _tit = dg.get("titulo_pt", "")
+            _url = (dg.get("url") or "").strip()
+            _leg = f"{_tit}\n\nEstudo original: {_url}" if _url else _tit
+            deliver.enviar_pdf(w, master_pdf, caption=_leg, nome_arquivo=_tit)
             ok += 1
             time.sleep(config.SEND_DELAY_SEC)
         except Exception as e:
@@ -719,7 +724,10 @@ def _enviar_estudo_para(whatsapp, nome, ctx):
     deliver.enviar_texto(whatsapp, msg)
     if ctx["master_pdf"]:
         try:
-            deliver.enviar_pdf(whatsapp, ctx["master_pdf"], caption=ctx["titulo"])
+            _tit = ctx["titulo"]
+            _url = (ctx["art"].get("url") or "").strip()
+            _leg = f"{_tit}\n\nEstudo original: {_url}" if _url else _tit
+            deliver.enviar_pdf(whatsapp, ctx["master_pdf"], caption=_leg, nome_arquivo=_tit)
         except Exception as e:
             print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
     if ctx["audio_bytes"]:

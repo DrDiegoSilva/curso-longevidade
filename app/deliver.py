@@ -43,9 +43,12 @@ def _evolution_texto_payload(whatsapp, msg):
     return {"number": phone.para_api(whatsapp), "text": msg}
 
 
-def _evolution_media_payload(whatsapp, pdf_path, caption):
+def _evolution_media_payload(whatsapp, pdf_path, caption, nome_arquivo=""):
+    """`nome_arquivo` separado da legenda de propósito: a legenda passou a levar o LINK
+    do estudo, e o nome do arquivo saía dela — o PDF chegava como
+    `Titulo_do_estudo_https_doi_org_10_1.pdf` no celular do assinante."""
     b64 = base64.b64encode(open(pdf_path, "rb").read()).decode("ascii")
-    nome = (re.sub(r"[^\w-]", "_", caption)[:40] or "documento") + ".pdf"
+    nome = (re.sub(r"[^\w-]", "_", (nome_arquivo or caption))[:40] or "documento") + ".pdf"
     return {"number": phone.para_api(whatsapp), "mediatype": "document", "mimetype": "application/pdf",
             "media": b64, "fileName": nome, "caption": caption}
 
@@ -76,10 +79,11 @@ def enviar_texto(whatsapp, msg):
     return _zapi_post("send-text", _zapi_texto_payload(whatsapp, msg))
 
 
-def enviar_pdf(whatsapp, pdf_path, caption=""):
+def enviar_pdf(whatsapp, pdf_path, caption="", nome_arquivo=""):
     """pdf_path = arquivo LOCAL. Evolution manda em base64; Z-API precisaria de URL."""
     if config.WHATSAPP_BACKEND == "evolution":
-        return _evolution_post("message/sendMedia", _evolution_media_payload(whatsapp, pdf_path, caption))
+        return _evolution_post("message/sendMedia",
+                               _evolution_media_payload(whatsapp, pdf_path, caption, nome_arquivo))
     return _zapi_post("send-document/pdf", _zapi_pdf_payload(whatsapp, pdf_path, caption))
 
 

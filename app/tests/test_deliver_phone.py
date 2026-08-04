@@ -50,3 +50,21 @@ class TestPayloadPhone(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNomeDoArquivo(unittest.TestCase):
+    """A legenda passou a levar o link do estudo; o nome do arquivo saia DELA."""
+
+    def test_nome_do_arquivo_ignora_a_url_da_legenda(self):
+        import deliver
+        p = deliver._evolution_media_payload(
+            "5543999990000", __file__,
+            caption="Tirzepatida semanal\n\nEstudo: https://doi.org/10.1056/x",
+            nome_arquivo="Tirzepatida semanal")
+        self.assertEqual(p["fileName"], "Tirzepatida_semanal.pdf")
+        self.assertIn("https://doi.org/10.1056/x", p["caption"])
+
+    def test_sem_nome_explicito_mantem_o_comportamento_antigo(self):
+        import deliver
+        p = deliver._evolution_media_payload("5543999990000", __file__, caption="Titulo do estudo")
+        self.assertEqual(p["fileName"], "Titulo_do_estudo.pdf")
