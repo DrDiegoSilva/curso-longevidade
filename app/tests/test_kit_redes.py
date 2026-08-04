@@ -114,5 +114,33 @@ class TestKitHtml(unittest.TestCase):
         self.assertNotIn("<script>", html)
 
 
+class TestMontarHtmlKit(unittest.TestCase):
+    def setUp(self):
+        import pdf
+        self.pdf = pdf
+        self.artigo = {"titulo": "Tirzepatide Once Weekly", "fonte": "NEJM", "data": "2022",
+                       "doi": "10.1056/x", "url": "https://doi.org/10.1056/x", "tema": "Obesidade"}
+        self.conteudo = {"titulo_pt": "Tirzepatida semanal", "resumo": "Resumo.",
+                         "gancho": '{"frase": "A frase.", "reels": [{"angulo": "Angulo."}]}',
+                         "grafico": None}
+        self.tema = {"cor": "#14332a", "rotulo": "Obesidade"}
+
+    def test_kit_entra_no_pdf(self):
+        html = self.pdf.montar_html(self.artigo, self.conteudo, self.tema)
+        self.assertIn("A frase.", html)
+        self.assertIn("Angulo.", html)
+        self.assertIn("Tirzepatide Once Weekly", html)
+
+    def test_referencia_vira_link_clicavel(self):
+        """Chromium --print-to-pdf preserva hyperlink; texto puro nao clica."""
+        html = self.pdf.montar_html(self.artigo, self.conteudo, self.tema)
+        self.assertIn('<a href="https://doi.org/10.1056/x"', html)
+
+    def test_sem_url_nao_gera_link_vazio(self):
+        art = dict(self.artigo, url="")
+        html = self.pdf.montar_html(art, self.conteudo, self.tema)
+        self.assertNotIn('<a href=""', html)
+
+
 if __name__ == "__main__":
     unittest.main()

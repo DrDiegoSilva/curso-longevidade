@@ -283,6 +283,11 @@ def montar_html(artigo, conteudo, tema_meta):
     bracos_html = _bracos_html(conteudo.get("grafico"))
     grafico_html = _grafico_html(conteudo.get("grafico"))
     kit_html = _kit_html(conteudo.get("gancho", ""), artigo)
+    url = (artigo.get("url") or "").strip()
+    # Link de verdade: o Chromium (--print-to-pdf, `gerar_pdf`) preserva hyperlink como
+    # anotacao no PDF. Como texto puro, o medico tinha que copiar o DOI na mao.
+    ref_html = (f'Refer&ecirc;ncia: <a href="{esc(url)}">{esc(url)}</a>' if url
+                else 'Refer&ecirc;ncia: &mdash;')
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <style>
   @page {{ size: A4; margin: 15mm 0 13mm; }}
@@ -365,6 +370,7 @@ def montar_html(artigo, conteudo, tema_meta):
            font-size:11.5px; font-weight:700; color:#6f7d78; }}
   .foot {{ margin-top:22px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
            break-inside:avoid; font-family:system-ui,sans-serif; font-size:13px; color:#6f7d78; }}
+  .foot a {{ color:#1b6b4f; }}
   .foot .wm {{ font-style:italic; color:#9aa8a0; }}
 </style></head><body>
   <div class="cover">{_MOTIF}
@@ -379,7 +385,7 @@ def montar_html(artigo, conteudo, tema_meta):
     {grafico_html}
     {kit_html}
     <div class="foot">
-      <span>Refer&ecirc;ncia: {esc(artigo.get('url',''))}</span>
+      <span>{ref_html}</span>
       <span class="wm">{_rodape_direitos()}</span>
     </div>
   </div>

@@ -177,7 +177,11 @@ class TestPreservacaoDoQueJaFunciona(unittest.TestCase):
                        # de Reels), decisao do Diego em 2026-08-04. O invariante que este
                        # guarda-corpo protege e a PRESENCA do bloco, nao o rotulo antigo.
                        "CRM-PR 54310", 'class="tag"', "🍎", "Obesidade", 'class="kit"',
-                       "Refer&ecirc;ncia: https://ex.com/a", "@page", "size: A4; margin: 15mm 0 13mm",
+                       # A referencia continua no rodape com a MESMA url, mas virou link
+                       # clicavel (2026-08-04): o Chromium preserva hyperlink no PDF, e como
+                       # texto puro o medico tinha que copiar o DOI na mao.
+                       'Refer&ecirc;ncia: <a href="https://ex.com/a">https://ex.com/a</a>',
+                       "@page", "size: A4; margin: 15mm 0 13mm",
                        "font-size:20px", "Georgia", "NEJM", "DOI 10.x",
                        "border-bottom:2px solid #c9a227", "<svg viewBox"):
             self.assertIn(pedaco, h, pedaco)
