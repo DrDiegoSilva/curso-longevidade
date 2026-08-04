@@ -234,9 +234,22 @@ button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:non
 .bar-track{flex:1;background:#e7e2d3;border-radius:100px;height:22px;overflow:hidden}
 .bar-fill{height:100%;border-radius:100px}
 .bar-val{font-family:ui-monospace,monospace;font-size:14px;font-weight:700;width:66px;text-align:right;flex:none}
-.social{margin:24px 0 6px;border:2px solid var(--ouro);border-radius:12px;padding:18px 20px;background:linear-gradient(180deg,#fff9e9,#fbf3d9)}
-.social .lab{font-family:system-ui,sans-serif;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:#8a6a06;font-weight:700;margin-bottom:8px}
-.social .post{font-size:17px;color:#3a2f10;font-style:italic;line-height:1.6}
+/* Kit de redes (mesmo bloco do PDF, via pdf._kit_html) — o site tem copia propria
+   do CSS do PDF, entao as classes precisam existir aqui tambem. */
+.kit{margin:24px 0 6px;display:flex;flex-direction:column;gap:20px}
+.kit-rot{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a6a06;font-weight:700;margin-bottom:8px}
+.paper-box{border:1px solid #d8ddd7;border-top:3px solid #14332a;background:#fcfdfc;padding:16px 18px}
+.paper-rev{font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#14332a;font-weight:700;margin-bottom:8px}
+.paper-tit{margin:0 0 10px;font-size:19px;line-height:1.28;color:#16211c}
+.paper-doi{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#6f7d78;word-break:break-word}
+.frase-box{border:2px solid var(--ouro);border-radius:12px;padding:20px 22px;background:linear-gradient(180deg,#fff9e9,#fbf3d9)}
+.frase-box p{margin:0;font-size:20px;line-height:1.4;color:#3a2f10}
+.kit-brief .kit-rot{color:#6f7d78}
+.reels{list-style:none;margin:0;padding:14px 16px;border-left:3px solid #c8cfca;background:#f6f8f6;border-radius:0 8px 8px 0}
+.reel{display:flex;gap:10px;align-items:flex-start;margin-bottom:9px;font-family:system-ui,sans-serif;font-size:14px;line-height:1.55;color:#4d5a54}
+.reel:last-child{margin-bottom:0}
+.reel b{color:#33403a}
+.reel-n{flex:0 0 20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border:1px solid #c3ccc6;border-radius:50%;font-size:11.5px;font-weight:700;color:#6f7d78}
 .docbtn{display:inline-block;margin-top:6px;font-family:system-ui,sans-serif;font-size:14px;color:var(--ouro2);text-decoration:none;border:1px solid rgba(201,162,39,.5);border-radius:100px;padding:10px 20px}
 .foot{padding:40px 0 60px;border-top:1px solid rgba(233,225,198,.1);color:var(--suave);font-family:system-ui,sans-serif;font-size:13px;margin-top:20px}
 .foot .flinks{margin-top:10px;font-size:12px}

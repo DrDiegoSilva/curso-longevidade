@@ -142,6 +142,29 @@ class TestMontarHtmlKit(unittest.TestCase):
         self.assertNotIn('<a href=""', html)
 
 
+class TestKitNoSite(unittest.TestCase):
+    def test_pagina_digest_mostra_o_kit(self):
+        import site_web
+        d = {"titulo_pt": "Tirzepatida semanal", "titulo_original": "Tirzepatide Once Weekly",
+             "fonte": "NEJM", "data": "2026-08-04", "doi": "10.1056/x", "url": "https://x",
+             "resumo": "Resumo.", "grafico": None,
+             "gancho": '{"frase": "A frase.", "reels": [{"angulo": "Angulo."}]}'}
+        html = site_web.pagina_digest({"rotulo": "Obesidade", "emoji": "", "slug": "obesidade", "cor": "#14332a"}, d)
+        self.assertIn("A frase.", html)
+        self.assertIn("Angulo.", html)
+        self.assertIn("Tirzepatide Once Weekly", html)
+
+    def test_site_tem_o_css_do_kit(self):
+        """O site tem copia PROPRIA do CSS do PDF: sem estas classes o kit sai sem estilo."""
+        import site_web
+        d = {"titulo_pt": "T", "titulo_original": "T EN", "fonte": "NEJM", "data": "2026-08-04",
+             "doi": "x", "url": "https://x", "resumo": "r", "grafico": None,
+             "gancho": '{"frase": "F", "reels": [{"angulo": "A"}]}'}
+        html = site_web.pagina_digest({"rotulo": "Obesidade", "emoji": "", "slug": "obesidade", "cor": "#14332a"}, d)
+        for classe in (".paper-box{", ".frase-box{", ".reels{", ".reel-n{"):
+            self.assertIn(classe, html, classe)
+
+
 class TestTituloOriginal(unittest.TestCase):
     """O cartao do estudo mostra o titulo em INGLES, e ele se perdia: `art["titulo"]`
     vira titulo_pt nos caminhos de reserva/classico/regeracao (daily.py:274/:319/:392)."""
