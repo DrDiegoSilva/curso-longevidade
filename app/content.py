@@ -108,6 +108,45 @@ def _braco(b):
     return nova
 
 
+MAX_REELS = 3
+
+
+def _txt(v):
+    """String limpa a partir de qualquer coisa que a IA devolva (inclusive None)."""
+    return str(v).strip() if v is not None else ""
+
+
+def parse_gancho(bruto):
+    """Normaliza o campo `gancho` para {"frase": str, "reels": [{"angulo","apoio"}]}.
+
+    Aceita tres formatos, porque os tres existem no banco:
+      1. JSON novo  -> {"frase": ..., "reels": [...]}
+      2. texto puro -> formato LEGADO (reserva/classicos/digests antigos); vira um reel
+      3. lixo/vazio -> estrutura vazia, sem levantar
+
+    Nunca levanta e nunca devolve None em campo nenhum: isto roda no caminho do PDF
+    do assinante, onde uma excecao custa o envio do dia.
+    """
+    texto = _txt(bruto)
+    if not texto:
+        return {"frase": "", "reels": []}
+    try:
+        dados = json.loads(texto)
+    except Exception:
+        dados = None
+    if not isinstance(dados, dict):
+        return {"frase": "", "reels": [{"angulo": texto, "apoio": ""}]}
+    reels = []
+    for item in (dados.get("reels") or []):
+        if not isinstance(item, dict):
+            continue
+        angulo = _txt(item.get("angulo"))
+        if not angulo:
+            continue                      # item sem angulo nao rende video nenhum
+        reels.append({"angulo": angulo, "apoio": _txt(item.get("apoio"))})
+    return {"frase": _txt(dados.get("frase")), "reels": reels[:MAX_REELS]}
+
+
 def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=None, gerar_titulo=None):
     """Retorna {titulo_pt, resumo, gancho, grafico}. grafico pode ser None."""
     if gerar_resumo is None:
