@@ -219,12 +219,50 @@ def _bracos_html(grafico):
     return f'<div class="bracos">{"".join(cards)}</div>'
 
 
-def _gancho_html(gancho):
-    if not gancho:
+def _kit_html(gancho_bruto, artigo):
+    """Kit de post no rodape: recorte do paper + a frase + as pautas de Reels.
+
+    Os dois primeiros blocos sao pensados para PRINT RECORTADO -- o medico ja fazia
+    isso na mao, printando o PDF do artigo. Por isso nao levam a marca do Diego: quem
+    posta e o assinante. O terceiro e briefing, e por isso e visualmente diferente:
+    se parecesse com os outros, alguem recortaria a instrucao junto e postaria.
+    """
+    import content
+    esc = _html.escape
+    dados = content.parse_gancho(gancho_bruto)
+    titulo = (artigo.get("titulo_original") or artigo.get("titulo") or "").strip()
+    blocos = []
+
+    if titulo:
+        revista = " · ".join(x for x in [(artigo.get("fonte") or "").strip(),
+                                         (artigo.get("data") or "").strip()] if x)
+        doi = (artigo.get("doi") or "").strip()
+        blocos.append(
+            f'<div class="kit-paper"><div class="kit-rot">1 &middot; O estudo</div>'
+            f'<div class="paper-box">'
+            f'<div class="paper-rev">{esc(revista)}</div>'
+            f'<p class="paper-tit">{esc(titulo)}</p>'
+            + (f'<div class="paper-doi">DOI {esc(doi)}</div>' if doi else "")
+            + '</div></div>')
+
+    if dados["frase"]:
+        blocos.append(
+            f'<div class="kit-frase"><div class="kit-rot">2 &middot; A frase</div>'
+            f'<div class="frase-box"><p>{esc(dados["frase"])}</p></div></div>')
+
+    if dados["reels"]:
+        itens = []
+        for i, r in enumerate(dados["reels"], 1):
+            apoio = f' <span class="reel-apoio">{esc(r["apoio"])}</span>' if r["apoio"] else ""
+            itens.append(f'<li class="reel"><span class="reel-n">{i}</span>'
+                         f'<span><b>{esc(r["angulo"])}</b>{apoio}</span></li>')
+        blocos.append(
+            f'<div class="kit-brief"><div class="kit-rot">Reels que saem deste estudo</div>'
+            f'<ul class="reels">{"".join(itens)}</ul></div>')
+
+    if not blocos:
         return ""
-    corpo = _html.escape(gancho.strip()).replace("\n", "<br>")
-    return (f'<div class="social"><div class="lab">📣 Para suas redes</div>'
-            f'<div class="post">{corpo}</div></div>')
+    return f'<div class="kit">{"".join(blocos)}</div>'
 
 
 def _rodape_direitos():
@@ -244,7 +282,7 @@ def montar_html(artigo, conteudo, tema_meta):
     resumo_html = _resumo_html(conteudo.get("resumo", ""))
     bracos_html = _bracos_html(conteudo.get("grafico"))
     grafico_html = _grafico_html(conteudo.get("grafico"))
-    gancho_html = _gancho_html(conteudo.get("gancho", ""))
+    kit_html = _kit_html(conteudo.get("gancho", ""), artigo)
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <style>
   @page {{ size: A4; margin: 15mm 0 13mm; }}
@@ -302,9 +340,29 @@ def montar_html(artigo, conteudo, tema_meta):
   .corpo .limites .lab {{ font-family:system-ui,sans-serif; font-size:14.5px; letter-spacing:.08em; text-transform:uppercase;
            color:#8a6a06; font-weight:700; margin-bottom:9px; }}
   .corpo .limites p {{ margin:.4em 0; font-size:15.5px; line-height:1.6; color:#4a4634; orphans:3; widows:3; }}
-  .social {{ margin:28px 0 8px; border:2px solid #c9a227; border-radius:12px; padding:20px 22px; background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
-  .social .lab {{ font-family:system-ui,sans-serif; font-size:14.5px; letter-spacing:.08em; text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
-  .social .post {{ font-size:16.5px; color:#3a2f10; font-style:italic; line-height:1.6; }}
+  .kit {{ margin:28px 0 8px; display:flex; flex-direction:column; gap:22px; }}
+  .kit-rot {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em;
+           text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
+  .paper-box {{ border:1px solid #d8ddd7; border-top:3px solid #14332a; background:#fcfdfc;
+           padding:18px 20px; break-inside:avoid; }}
+  .paper-rev {{ font-family:system-ui,sans-serif; font-size:11.5px; letter-spacing:.13em;
+           text-transform:uppercase; color:#14332a; font-weight:700; margin-bottom:9px; }}
+  .paper-tit {{ margin:0 0 11px; font-size:20px; line-height:1.28; color:#16211c; }}
+  .paper-doi {{ font-family:ui-monospace,Menlo,monospace; font-size:13px; color:#6f7d78; }}
+  .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:22px 24px;
+           background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
+  .frase-box p {{ margin:0; font-size:21px; line-height:1.4; color:#3a2f10; }}
+  .kit-brief {{ break-inside:avoid; }}
+  .kit-brief .kit-rot {{ color:#6f7d78; }}
+  .reels {{ list-style:none; margin:0; padding:15px 18px; border-left:3px solid #c8cfca;
+           background:#f6f8f6; border-radius:0 8px 8px 0; }}
+  .reel {{ display:flex; gap:10px; align-items:flex-start; margin-bottom:9px;
+           font-family:system-ui,sans-serif; font-size:14px; line-height:1.55; color:#4d5a54; }}
+  .reel:last-child {{ margin-bottom:0; }}
+  .reel b {{ color:#33403a; }}
+  .reel-n {{ flex:0 0 20px; height:20px; display:inline-flex; align-items:center;
+           justify-content:center; border:1px solid #c3ccc6; border-radius:50%;
+           font-size:11.5px; font-weight:700; color:#6f7d78; }}
   .foot {{ margin-top:22px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
            break-inside:avoid; font-family:system-ui,sans-serif; font-size:13px; color:#6f7d78; }}
   .foot .wm {{ font-style:italic; color:#9aa8a0; }}
@@ -319,7 +377,7 @@ def montar_html(artigo, conteudo, tema_meta):
     <div class="corpo">{resumo_html}</div>
     {bracos_html}
     {grafico_html}
-    {gancho_html}
+    {kit_html}
     <div class="foot">
       <span>Refer&ecirc;ncia: {esc(artigo.get('url',''))}</span>
       <span class="wm">{_rodape_direitos()}</span>

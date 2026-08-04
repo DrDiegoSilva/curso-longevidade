@@ -172,7 +172,11 @@ class TestPreservacaoDoQueJaFunciona(unittest.TestCase):
         # O texto que virava pra pagina 2 nascia colado no corte do papel. A capa segue
         # sangrando de borda a borda via `@page :first {{ margin-top: 0 }}`.
         for pedaco in ("height:185px", "Atualiza&ccedil;&atilde;o cient&iacute;fica", "Dr. Diego Silva",
-                       "CRM-PR 54310", 'class="tag"', "🍎", "Obesidade", "📣 Para suas redes",
+                       # O bloco de redes segue existindo, mas deixou de ser o card unico
+                       # "📣 Para suas redes": virou o KIT (recorte do paper + frase + pautas
+                       # de Reels), decisao do Diego em 2026-08-04. O invariante que este
+                       # guarda-corpo protege e a PRESENCA do bloco, nao o rotulo antigo.
+                       "CRM-PR 54310", 'class="tag"', "🍎", "Obesidade", 'class="kit"',
                        "Refer&ecirc;ncia: https://ex.com/a", "@page", "size: A4; margin: 15mm 0 13mm",
                        "font-size:20px", "Georgia", "NEJM", "DOI 10.x",
                        "border-bottom:2px solid #c9a227", "<svg viewBox"):

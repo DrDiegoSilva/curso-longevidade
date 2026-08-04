@@ -1875,7 +1875,7 @@ def pagina_digest(meta, d, vizinhos=None):
                  f'<h1 class="title">{_esc(d["titulo_pt"])}</h1>'
                  f'<div class="meta">{_esc(d.get("fonte",""))} · {_esc(_data_br(d["data"]))} · DOI {_esc(d.get("doi","") or "—")}</div>'
                  f'<div class="corpo">{pdf._resumo_html(d.get("resumo",""))}</div>'
-                 f'{pdf._grafico_html(grafico)}{pdf._gancho_html(d.get("gancho",""))}')
+                 f'{pdf._grafico_html(grafico)}{pdf._kit_html(d.get("gancho",""), d)}')
     if d.get("url"):
         corpo_doc += f'<div style="margin-top:22px"><a class="docbtn" href="{_esc(d["url"])}" target="_blank" rel="noopener">Ver o estudo original ↗</a></div>'
     corpo_doc += '</div>'
