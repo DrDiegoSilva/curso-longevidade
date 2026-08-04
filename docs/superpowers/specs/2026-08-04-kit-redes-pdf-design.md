@@ -44,9 +44,18 @@ retângulos do PDF e usa o texto que está ali.
    - Sem marca do Diego
 
 3. **Como falar** (NÃO recortável, de propósito)
-   - O porquê o tema importa + como abordar
+   - O porquê o tema importa
+   - **3 dicas de Instagram**, rotuladas (não numeradas — não são passos de uma sequência):
+     - **Formato** — como montar o post e qual peça vai em cada tela
+     - **Abertura** — a primeira frase, pensada pros 3 primeiros segundos
+     - **Cuidado** — a armadilha específica DESTE tema (ex.: comparar com bariátrica sem contexto)
    - Corpo menor e tratamento visual distinto dos dois de cima — tem que ficar óbvio que é
      briefing pro médico, não peça de post. Se parecer com os outros, alguém recorta junto.
+
+   ⚠️ **As 3 dicas têm que ser específicas do estudo do dia.** Dica genérica de rede social
+   ("poste às 19h", "use hashtags") o médico aprende a pular em uma semana, e aí o bloco inteiro
+   vira ruído — inclusive o "Por que importa", que é útil. O prompt precisa exigir especificidade
+   e proibir conselho que serviria para qualquer edição.
 
 O **gráfico** continua onde está. Recebe o mesmo tratamento de borda/respiro dos outros dois
 recortáveis, pra que os três cortem bem.
@@ -64,10 +73,25 @@ antes de mexer na legenda.
 
 ### Dados
 
-- **`gancho` vira JSON** `{"frase": "...", "como_falar": "..."}` — mesmo padrão que o `grafico` já
-  usa nessas mesmas tabelas (coluna TEXT com JSON dentro).
-  - **Compatibilidade:** valor antigo que não parseia como JSON é tratado como `como_falar`, e
+- **`gancho` vira JSON** — mesmo padrão que o `grafico` já usa nessas mesmas tabelas (coluna TEXT
+  com JSON dentro):
+
+  ```json
+  {
+    "frase": "…o achado em linguagem de paciente…",
+    "porque_importa": "…1 parágrafo curto…",
+    "dicas": [
+      {"rotulo": "Formato",  "texto": "…"},
+      {"rotulo": "Abertura", "texto": "…"},
+      {"rotulo": "Cuidado",  "texto": "…"}
+    ]
+  }
+  ```
+
+  - **Compatibilidade:** valor antigo que não parseia como JSON é tratado como `porque_importa`, e
     renderiza como hoje. A reserva, os clássicos e os digests antigos continuam funcionando.
+  - **Degradação parcial:** faltando `dicas`, some só a lista; faltando `frase`, some só o bloco 2.
+    Nenhum campo ausente pode levantar exceção nem imprimir "None" na página.
 - **Título original em inglês precisa ser guardado.** Hoje `digests` só tem `titulo_pt`
   (`db.py:1557`), então o site (`site_web.pagina_digest`) não tem como mostrar o cartão do estudo
   igual ao PDF. O título original tem que ser **carregado de ponta a ponta**: nasce no candidato
@@ -101,9 +125,10 @@ antes de mexer na legenda.
 
 ## Testes
 
-- `gancho` JSON novo → renderiza os três blocos.
-- `gancho` texto puro (formato antigo) → renderiza só o "como falar", sem quebrar.
-- `gancho` JSON inválido/parcial (só `frase`, só `como_falar`) → degrada sem levantar.
+- `gancho` JSON novo → renderiza os três blocos e as 3 dicas com seus rótulos.
+- `gancho` texto puro (formato antigo) → renderiza só o "porque importa", sem quebrar.
+- `gancho` JSON inválido ou parcial (sem `dicas`, sem `frase`, `dicas` vazia, `dicas` com mais de
+  3 itens) → degrada sem levantar e sem imprimir `None`.
 - Bloco "como falar" tem classe/visual distinto dos recortáveis.
 - Link do rodapé sai como `<a href>` com a URL do estudo.
 - Legenda do WhatsApp leva a URL **e** o nome do arquivo continua derivado só do título.
