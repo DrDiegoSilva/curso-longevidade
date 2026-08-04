@@ -6,14 +6,24 @@ import json
 import re
 
 SYS_GANCHO = (
-    "Você escreve uma DICA de como o médico pode abordar este tema nas redes sociais "
-    "para os pacientes dele. NÃO é um post pronto e NÃO tem chamada para ação "
-    "(nada de 'agende sua consulta'). "
-    "Dê (1) um ângulo/gancho para o médico falar e (2) a mensagem-chave em linguagem "
-    "simples de paciente. Tom educativo, posicionando o médico como autoridade. "
+    "Você prepara o material de redes sociais de um médico a partir de UM estudo. "
+    "Ele produz SÓ REELS (vídeo curto). "
+    "Responda SÓ JSON, sem cercas de código, neste formato:\n"
+    '{"frase":"...","reels":[{"angulo":"...","apoio":"..."}]}\n'
+    "- `frase`: o ACHADO PRINCIPAL em linguagem de paciente, uma frase, sem jargão. "
+    "É o texto que vai virar imagem de post: precisa se sustentar sozinho.\n"
+    "- `reels`: de 1 a 3 PAUTAS de vídeo. Cada `angulo` é a frase que o médico fala; "
+    "cada `apoio` é o dado do estudo que sustenta aquele ângulo (uma linha).\n"
+    "REGRAS DAS PAUTAS:\n"
+    "1. De 1 a 3. PREFIRA MENOS. Se o estudo só rende uma pauta boa, devolva UMA. "
+    "NUNCA invente pauta para fechar número — pauta fraca faz o médico parar de ler o bloco.\n"
+    "2. Cada pauta sai de uma PARTE DIFERENTE do estudo (ex.: o grupo comparador, a duração, "
+    "o desenho do protocolo). Três jeitos de dizer o mesmo achado é um Reels só, repetido.\n"
+    "3. Nada de conselho de produção (formato, horário, hashtag, iluminação) — só ASSUNTO.\n"
     "ÉTICA (CFM, inegociável): não prometa milagre/cura, não garanta resultado, "
     "NÃO promova remédio de receita para leigo (fale do CONCEITO, não do 'use tal remédio'), "
-    "sem sensacionalismo. Máximo 4 linhas, em português.")
+    "sem sensacionalismo, sem chamada para ação ('agende sua consulta'). "
+    "Tudo em português do Brasil.")
 
 
 def _prompt_titulo(artigo):
@@ -36,7 +46,7 @@ def _prompt_titulo_do_texto(artigo):
 def _prompt_gancho(artigo):
     return (f"Estudo: {artigo.get('titulo','')} ({artigo.get('fonte','')}).\n"
             f"Resumo: {(artigo.get('resumo','') or '')[:900]}\n\n"
-            "Escreva a dica de como levar ESTE tema para as redes sociais do médico.")
+            "Devolva o JSON com a frase e as pautas de Reels deste estudo.")
 
 
 def _prompt_grafico(artigo):
@@ -153,7 +163,7 @@ def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_j
         from resumo_diario import gerar_texto_do_artigo as gerar_resumo
     if gerar_gancho is None:
         from resumo_diario import claude, SONNET
-        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=500)
+        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=900)
     if gerar_grafico_json is None:
         from resumo_diario import claude, HAIKU
         gerar_grafico_json = lambda a: claude(HAIKU, _prompt_grafico(a), max_tokens=300)

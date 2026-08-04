@@ -142,6 +142,38 @@ class TestMontarHtmlKit(unittest.TestCase):
         self.assertNotIn('<a href=""', html)
 
 
+class TestPromptGancho(unittest.TestCase):
+    def setUp(self):
+        import content
+        self.c = content
+
+    def test_prompt_pede_json_com_frase_e_reels(self):
+        s = self.c.SYS_GANCHO
+        self.assertIn("frase", s)
+        self.assertIn("reels", s)
+        self.assertIn("angulo", s)
+
+    def test_prompt_proibe_completar_cota(self):
+        """Modelo de IA preenche ate o numero pedido; o 3o sai inventado."""
+        s = self.c.SYS_GANCHO.lower()
+        self.assertIn("1 a 3", s)
+        self.assertTrue("nunca invente" in s or "nao invente" in s)
+
+    def test_prompt_mantem_as_travas_do_cfm(self):
+        s = self.c.SYS_GANCHO.lower()
+        self.assertIn("cfm", s)
+        self.assertIn("receita", s)          # nao promover medicamento de receita p/ leigo
+
+    def test_gerar_conteudo_devolve_gancho_parseavel(self):
+        falso = '{"frase": "F", "reels": [{"angulo": "A", "apoio": "B"}]}'
+        r = self.c.gerar_conteudo({"titulo": "t", "resumo": "r", "fonte": "f"},
+                                  gerar_resumo=lambda a: "resumo",
+                                  gerar_gancho=lambda a: falso,
+                                  gerar_grafico_json=lambda a: "{}",
+                                  gerar_titulo=lambda a: "titulo")
+        self.assertEqual(self.c.parse_gancho(r["gancho"])["frase"], "F")
+
+
 class TestKitNoSite(unittest.TestCase):
     def test_pagina_digest_mostra_o_kit(self):
         import site_web
