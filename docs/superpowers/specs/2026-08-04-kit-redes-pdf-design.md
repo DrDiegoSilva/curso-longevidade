@@ -43,19 +43,23 @@ retângulos do PDF e usa o texto que está ali.
    - O achado em linguagem de paciente, corpo grande, legível sozinha
    - Sem marca do Diego
 
-3. **Como falar** (NÃO recortável, de propósito)
-   - O porquê o tema importa
-   - **3 dicas de Instagram**, rotuladas (não numeradas — não são passos de uma sequência):
-     - **Formato** — como montar o post e qual peça vai em cada tela
-     - **Abertura** — a primeira frase, pensada pros 3 primeiros segundos
-     - **Cuidado** — a armadilha específica DESTE tema (ex.: comparar com bariátrica sem contexto)
+3. **Reels que saem deste estudo** (NÃO recortável, de propósito)
+   - **De 1 a 3 assuntos de vídeo** tirados do estudo. Cada item: um ângulo curto (o que o médico
+     fala) + uma linha do dado que sustenta aquele ângulo.
+   - O Diego produz **só Reels** — não é conselho de formato, diagramação ou horário de post.
+     São PAUTAS.
    - Corpo menor e tratamento visual distinto dos dois de cima — tem que ficar óbvio que é
      briefing pro médico, não peça de post. Se parecer com os outros, alguém recorta junto.
+   - O título do bloco NÃO leva número fixo ("Reels que saem deste estudo"), porque a quantidade
+     varia.
 
-   ⚠️ **As 3 dicas têm que ser específicas do estudo do dia.** Dica genérica de rede social
-   ("poste às 19h", "use hashtags") o médico aprende a pular em uma semana, e aí o bloco inteiro
-   vira ruído — inclusive o "Por que importa", que é útil. O prompt precisa exigir especificidade
-   e proibir conselho que serviria para qualquer edição.
+   ⚠️ **Nunca completar cota.** Se o estudo só rende um assunto bom, vem **um**. Modelo de IA
+   preenche a lista até o número pedido quando você pede "3", e o terceiro sai inventado ou
+   redundante — o médico percebe e para de ler o bloco inteiro. O prompt tem que dizer
+   explicitamente: de 1 a 3, prefira menos, e **nunca** invente pra fechar número.
+
+   ⚠️ **Ângulos de partes DIFERENTES do estudo** (ex.: braço comparador, duração, desenho do
+   protocolo) — não três formas de dizer o mesmo achado, senão viram um Reels só repetido.
 
 O **gráfico** continua onde está. Recebe o mesmo tratamento de borda/respiro dos outros dois
 recortáveis, pra que os três cortem bem.
@@ -79,19 +83,23 @@ antes de mexer na legenda.
   ```json
   {
     "frase": "…o achado em linguagem de paciente…",
-    "porque_importa": "…1 parágrafo curto…",
-    "dicas": [
-      {"rotulo": "Formato",  "texto": "…"},
-      {"rotulo": "Abertura", "texto": "…"},
-      {"rotulo": "Cuidado",  "texto": "…"}
+    "reels": [
+      {"angulo": "Não é falta de força de vontade.",
+       "apoio": "O grupo sem tratamento fez a mesma dieta e perdeu 3,1%."}
     ]
   }
   ```
 
-  - **Compatibilidade:** valor antigo que não parseia como JSON é tratado como `porque_importa`, e
-    renderiza como hoje. A reserva, os clássicos e os digests antigos continuam funcionando.
-  - **Degradação parcial:** faltando `dicas`, some só a lista; faltando `frase`, some só o bloco 2.
-    Nenhum campo ausente pode levantar exceção nem imprimir "None" na página.
+  `reels` tem de **1 a 3** itens — a lista é curta de propósito (ver a trava de cota acima).
+
+  - **Compatibilidade:** valor antigo que não parseia como JSON vira um único item de `reels` com
+    o texto no `angulo`, e renderiza no lugar do bloco 3. A reserva, os clássicos e os digests
+    antigos continuam funcionando.
+  - **Degradação parcial:** faltando `reels`, some só o bloco 3; faltando `frase`, some só o
+    bloco 2. Item sem `apoio` renderiza só o ângulo. Nenhum campo ausente pode levantar exceção
+    nem imprimir "None" na página.
+  - **Corte defensivo:** se vierem mais de 3 itens, renderiza os 3 primeiros — a IA vai extrapolar
+    alguma hora e isso não pode virar um bloco gigante no PDF do assinante.
 - **Título original em inglês precisa ser guardado.** Hoje `digests` só tem `titulo_pt`
   (`db.py:1557`), então o site (`site_web.pagina_digest`) não tem como mostrar o cartão do estudo
   igual ao PDF. O título original tem que ser **carregado de ponta a ponta**: nasce no candidato
@@ -125,10 +133,12 @@ antes de mexer na legenda.
 
 ## Testes
 
-- `gancho` JSON novo → renderiza os três blocos e as 3 dicas com seus rótulos.
-- `gancho` texto puro (formato antigo) → renderiza só o "porque importa", sem quebrar.
-- `gancho` JSON inválido ou parcial (sem `dicas`, sem `frase`, `dicas` vazia, `dicas` com mais de
-  3 itens) → degrada sem levantar e sem imprimir `None`.
+- `gancho` JSON novo → renderiza os três blocos, com todos os itens de `reels`.
+- **`reels` com 1 item renderiza igual bem** que com 3 — sem "2." e "3." vazios, sem espaço órfão.
+- `gancho` texto puro (formato antigo) → vira um item só, sem quebrar.
+- `gancho` JSON inválido ou parcial (sem `reels`, sem `frase`, `reels` vazia, item sem `apoio`)
+  → degrada sem levantar e sem imprimir `None`.
+- `reels` com 5 itens → renderiza 3.
 - Bloco "como falar" tem classe/visual distinto dos recortáveis.
 - Link do rodapé sai como `<a href>` com a URL do estudo.
 - Legenda do WhatsApp leva a URL **e** o nome do arquivo continua derivado só do título.
