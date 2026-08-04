@@ -142,5 +142,39 @@ class TestMontarHtmlKit(unittest.TestCase):
         self.assertNotIn('<a href=""', html)
 
 
+class TestTituloOriginal(unittest.TestCase):
+    """O cartao do estudo mostra o titulo em INGLES, e ele se perdia: `art["titulo"]`
+    vira titulo_pt nos caminhos de reserva/classico/regeracao (daily.py:274/:319/:392)."""
+
+    def setUp(self):
+        import tempfile, importlib
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        import config, db
+        importlib.reload(config)
+        importlib.reload(db)
+        self.db = db
+        db.init()
+
+    def test_digest_guarda_o_titulo_original(self):
+        art = {"tema": "Obesidade", "titulo": "Tirzepatide Once Weekly",
+               "titulo_original": "Tirzepatide Once Weekly",
+               "fonte": "NEJM", "doi": "10.1056/x", "url": "https://x"}
+        self.db.registrar_digest(art, {"titulo_pt": "Tirzepatida semanal", "resumo": "r",
+                                       "gancho": "", "grafico": None}, data="2026-08-04")
+        d = self.db.digest_do_dia("2026-08-04")
+        self.assertEqual(d["titulo_original"], "Tirzepatide Once Weekly")
+
+    def test_digest_cai_para_titulo_quando_nao_ha_original(self):
+        """Caminho do candidato: `titulo` ja e o original em ingles."""
+        art = {"tema": "Obesidade", "titulo": "Original In English",
+               "fonte": "NEJM", "doi": "10.1056/y", "url": "https://y"}
+        self.db.registrar_digest(art, {"titulo_pt": "Titulo em portugues", "resumo": "r",
+                                       "gancho": "", "grafico": None}, data="2026-08-05")
+        self.assertEqual(self.db.digest_do_dia("2026-08-05")["titulo_original"],
+                         "Original In English")
+
+
 if __name__ == "__main__":
     unittest.main()

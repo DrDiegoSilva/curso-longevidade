@@ -271,7 +271,8 @@ def _preparar_da_reserva(reserva_id=None):
     if not r_res:
         deliver.enviar_curador("📭 Sem estudo fresco E reserva vazia. Nada preparado p/ amanhã.")
         return None
-    art = {"titulo": r_res.get("titulo_pt", ""), "tema": r_res.get("tema", ""),
+    art = {"titulo": r_res.get("titulo_pt", ""), "titulo_original": r_res.get("titulo_original", ""),
+           "tema": r_res.get("tema", ""),
            "fonte": r_res.get("fonte", ""), "doi": r_res.get("doi", ""),
            "url": r_res.get("url", ""), "data": r_res.get("data", "")}
     try:
@@ -317,6 +318,7 @@ def reenviar_pdf_do_dia(data=None):
     except Exception:
         grafico = None
     art = {"tema": dg.get("tema", ""), "titulo": dg.get("titulo_pt", ""),
+           "titulo_original": dg.get("titulo_original", ""),
            "fonte": dg.get("fonte", ""), "doi": dg.get("doi", ""),
            "url": dg.get("url", ""), "data": hoje}
     conteudo = {"titulo_pt": dg.get("titulo_pt", ""), "resumo": dg.get("resumo", ""),
@@ -372,7 +374,8 @@ def _preparar_de_candidato(cand_id):
     c = next((x for x in db.listar_candidatos() if x["id"] == cand_id), None)
     if not c:
         return None
-    art = {"titulo": c.get("titulo", ""), "tema": c.get("tema", ""), "fonte": c.get("fonte", ""),
+    art = {"titulo": c.get("titulo", ""), "titulo_original": c.get("titulo", ""),
+           "tema": c.get("tema", ""), "fonte": c.get("fonte", ""),
            "doi": c.get("doi", ""), "url": c.get("url", ""), "data": c.get("data", ""),
            "resumo": c.get("abstract", "")}
     r = _preparar_de_artigo(art)          # gera conteúdo, cria draft, manda preview + áudio
@@ -389,7 +392,8 @@ def _preparar_de_classico(classico_id):
     cl = db.obter_classico(classico_id)
     if not cl:
         return None
-    art = {"titulo": cl.get("titulo_pt", ""), "tema": cl.get("tema", ""), "fonte": cl.get("fonte", ""),
+    art = {"titulo": cl.get("titulo_pt", ""), "titulo_original": cl.get("titulo_original", ""),
+           "tema": cl.get("tema", ""), "fonte": cl.get("fonte", ""),
            "doi": cl.get("doi", ""), "url": cl.get("url", ""), "data": cl.get("data", "")}
     try:
         grafico = json.loads(cl.get("grafico") or "null")

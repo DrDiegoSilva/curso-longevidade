@@ -101,6 +101,7 @@ def init():
             """
             CREATE TABLE IF NOT EXISTS digests (
                 data TEXT NOT NULL,
+                titulo_original TEXT,
                 tema TEXT NOT NULL,
                 tema_slug TEXT NOT NULL,
                 titulo_pt TEXT NOT NULL,
@@ -187,13 +188,13 @@ def init():
                 status TEXT DEFAULT 'novo', criado_em TEXT, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS classicos (
-                id TEXT PRIMARY KEY, tema TEXT, titulo_pt TEXT, resumo TEXT,
+                id TEXT PRIMARY KEY, tema TEXT, titulo_pt TEXT, titulo_original TEXT, resumo TEXT,
                 gancho TEXT, grafico TEXT, doi TEXT, fonte TEXT, url TEXT, data TEXT,
                 citacoes INTEGER DEFAULT 0, ultimo_envio TEXT, criado_em TEXT, tags TEXT DEFAULT '[]'
             );
             CREATE TABLE IF NOT EXISTS reserva_resumos (
                 id TEXT PRIMARY KEY, candidato_id TEXT,
-                tema TEXT, titulo_pt TEXT, resumo TEXT, gancho TEXT, grafico TEXT,
+                tema TEXT, titulo_pt TEXT, titulo_original TEXT, resumo TEXT, gancho TEXT, grafico TEXT,
                 doi TEXT, fonte TEXT, url TEXT, data TEXT,
                 status TEXT DEFAULT 'pronto', prioridade INTEGER DEFAULT 0,
                 origem TEXT DEFAULT 'varredura', enviado_em TEXT, criado_em TEXT,
@@ -287,6 +288,12 @@ def _migrar_colunas():
         _add_coluna(c, "subscribers", "senha_hash", "TEXT")
         _add_coluna(c, "subscribers", "curador", "INTEGER DEFAULT 0")
         _add_coluna(c, "subscribers", "slot_envio", "TEXT")
+        # Titulo em INGLES do paper: o cartao "recorte do estudo" do kit mostra o
+        # original, e ele se perdia -- `art["titulo"]` vira titulo_pt nos caminhos de
+        # reserva/classico/regeracao (daily.py:274, :319, :392).
+        _add_coluna(c, "reserva_resumos", "titulo_original", "TEXT")
+        _add_coluna(c, "classicos", "titulo_original", "TEXT")
+        _add_coluna(c, "digests", "titulo_original", "TEXT")
         _add_coluna(c, "cupons", "usos", "INTEGER DEFAULT 0")
         _add_coluna(c, "cupons", "uso_unico", "INTEGER DEFAULT 1")
         _add_coluna(c, "cupons", "dias_acesso", "INTEGER DEFAULT 0")
@@ -1036,9 +1043,10 @@ def salvar_reserva(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO reserva_resumos
-               (id,candidato_id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score,tags)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?,?)""",
+               (id,candidato_id,tema,titulo_pt,titulo_original,resumo,gancho,grafico,doi,fonte,url,data,status,prioridade,origem,criado_em,score,tags)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'pronto', ?,?,?,?,?)""",
             (rid, reg.get("candidato_id"), reg.get("tema", ""), reg.get("titulo_pt", ""),
+             reg.get("titulo_original") or reg.get("titulo", ""),
              reg.get("resumo", ""), reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""),
              reg.get("fonte", ""), reg.get("url", ""), reg.get("data", ""),
              int(reg.get("prioridade", 0) or 0), reg.get("origem", "varredura"), datetime.now().isoformat(),
@@ -1108,9 +1116,10 @@ def salvar_classico(reg):
     with _conn() as c:
         c.execute(
             """INSERT INTO classicos
-               (id,tema,titulo_pt,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em,tags)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (cid, reg.get("tema", ""), reg.get("titulo_pt", ""), reg.get("resumo", ""),
+               (id,tema,titulo_pt,titulo_original,resumo,gancho,grafico,doi,fonte,url,data,citacoes,criado_em,tags)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (cid, reg.get("tema", ""), reg.get("titulo_pt", ""),
+             reg.get("titulo_original") or reg.get("titulo", ""), reg.get("resumo", ""),
              reg.get("gancho", ""), reg.get("grafico", ""), reg.get("doi", ""), reg.get("fonte", ""),
              reg.get("url", ""), reg.get("data", ""), int(reg.get("citacoes", 0) or 0),
              datetime.now().isoformat(), json.dumps(reg.get("tags") or [])))
@@ -1554,13 +1563,15 @@ def registrar_digest(art, conteudo, tmeta=None, data=None):
     grafico_txt = json.dumps(grafico, ensure_ascii=False) if grafico else ""
     with _conn() as c:
         c.execute(
-            """INSERT INTO digests (data,tema,tema_slug,titulo_pt,resumo,gancho,grafico,doi,fonte,url,criado_em)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """INSERT INTO digests (data,tema,tema_slug,titulo_pt,titulo_original,resumo,gancho,grafico,doi,fonte,url,criado_em)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(data,tema_slug) DO UPDATE SET
-                 tema=excluded.tema, titulo_pt=excluded.titulo_pt, resumo=excluded.resumo,
+                 tema=excluded.tema, titulo_pt=excluded.titulo_pt,
+                 titulo_original=excluded.titulo_original, resumo=excluded.resumo,
                  gancho=excluded.gancho, grafico=excluded.grafico, doi=excluded.doi,
                  fonte=excluded.fonte, url=excluded.url, criado_em=excluded.criado_em""",
             (d, tema, s, conteudo.get("titulo_pt", "") or art.get("titulo", ""),
+             art.get("titulo_original") or art.get("titulo", ""),
              conteudo.get("resumo", ""), conteudo.get("gancho", ""), grafico_txt,
              art.get("doi", ""), art.get("fonte", ""), art.get("url", ""),
              datetime.now().isoformat()),

@@ -252,7 +252,8 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
         geradores["gerar_titulo"] = lambda a: claude(HAIKU, content._prompt_titulo_do_texto(a), max_tokens=80)
     r = gerar_resumo(cand, modelo=modelo, **geradores)
     rid = db.salvar_reserva({
-        "tema": "Meus estudos", "titulo_pt": r["titulo_pt"], "resumo": r["resumo"],
+        "tema": "Meus estudos", "titulo_pt": r["titulo_pt"],
+        "titulo_original": cand.get("titulo", ""), "resumo": r["resumo"],
         "gancho": r.get("gancho", ""),
         "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
         "doi": doi, "fonte": fonte, "url": url, "data": data,
@@ -315,7 +316,8 @@ def gerar_selecionados(db_mod=None, gerar_resumo_fn=None):
     for c in db_mod.listar_candidatos(status="selecionado"):
         try:
             r = _gera(c)
-            reg = {"tema": c["tema"], "titulo_pt": r["titulo_pt"], "resumo": r["resumo"],
+            reg = {"tema": c["tema"], "titulo_pt": r["titulo_pt"],
+                   "titulo_original": c.get("titulo", ""), "resumo": r["resumo"],
                    "gancho": r.get("gancho", ""),
                    "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
                    "doi": c.get("doi", ""), "fonte": c.get("fonte", ""), "url": c.get("url", ""),
