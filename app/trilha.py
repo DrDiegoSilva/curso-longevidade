@@ -69,3 +69,38 @@ def semear(diretorio=None):
                               p["micro_resultado"], p["mentalidade"], p["ferramenta"])
         n += 1
     return n
+
+
+_DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+
+
+def e_dia_da_trilha(quando=None):
+    """True se `quando` cai no dia da trilha (config.TRILHA_DIA). Aceita date ou datetime."""
+    from datetime import datetime
+    d = quando or datetime.now()
+    return _DIAS[d.weekday()] == config.TRILHA_DIA
+
+
+def proxima_peca(sub_id):
+    """A peça que este assinante deve receber agora. None se já concluiu a trilha
+    (ou se a peça não existe no banco — trilha incompleta não vira envio errado)."""
+    n = db.trilha_posicao(sub_id)
+    if n > config.TRILHA_TOTAL:
+        return None
+    p = db.trilha_peca(n)
+    if not p:
+        return None
+    p["numero"] = n
+    return p
+
+
+def abertura(sub_id, numero):
+    """Linha de retomada no topo da peça, olhando a peça anterior.
+
+    É a cobrança da trilha: sem grupo, sem live, sem canal de entrada no WhatsApp —
+    a peça seguinte é que reconhece ou retoma. Vazia na peça 1 (não há anterior)."""
+    if numero <= 1:
+        return ""
+    if db.trilha_fez(sub_id, numero - 1):
+        return "Você marcou a tarefa da semana passada como feita. É assim que essa trilha funciona."
+    return "A tarefa da semana passada continua em aberto — ela leva menos tempo do que parece."

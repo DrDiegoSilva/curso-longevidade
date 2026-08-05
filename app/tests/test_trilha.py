@@ -169,5 +169,50 @@ class TestParseESeed(unittest.TestCase):
             self.assertTrue(p["titulo"].strip(), f"peça {n} sem título")
 
 
+class TestDrip(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+        self.t.semear()
+
+    def test_dia_da_trilha_e_sabado(self):
+        from datetime import date
+        self.assertTrue(self.t.e_dia_da_trilha(date(2026, 8, 8)))     # sábado
+        self.assertFalse(self.t.e_dia_da_trilha(date(2026, 8, 7)))    # sexta
+        self.assertFalse(self.t.e_dia_da_trilha(date(2026, 8, 9)))    # domingo
+
+    def test_assinante_novo_recebe_a_peca_1(self):
+        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)
+
+    def test_peca_nao_avanca_sozinha(self):
+        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)
+        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)   # sem avanço, mesma peça
+
+    def test_avanco_leva_a_proxima(self):
+        self.db.trilha_avancar("sub-a", 1)
+        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 2)
+
+    def test_quem_concluiu_nao_tem_proxima(self):
+        self.db.trilha_avancar("sub-a", self.cfg.TRILHA_TOTAL)
+        self.assertIsNone(self.t.proxima_peca("sub-a"))
+
+    def test_abertura_da_peca_1_nao_cobra_nada(self):
+        self.assertEqual(self.t.abertura("sub-a", 1), "")
+
+    def test_abertura_reconhece_quem_fez(self):
+        self.db.trilha_registrar_envio("sub-a", 1)
+        self.db.trilha_marcar_feito("sub-a", 1)
+        self.assertIn("semana passada", self.t.abertura("sub-a", 2).lower())
+
+    def test_abertura_retoma_quem_nao_fez(self):
+        self.db.trilha_registrar_envio("sub-a", 1)
+        texto = self.t.abertura("sub-a", 2)
+        self.assertTrue(texto)
+        self.assertNotIn("parabéns", texto.lower())
+
+
 if __name__ == "__main__":
     unittest.main()
