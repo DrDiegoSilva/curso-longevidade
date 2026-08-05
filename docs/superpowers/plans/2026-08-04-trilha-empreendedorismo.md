@@ -1578,6 +1578,154 @@ git commit -m "feat(trilha): painel do admin com posicao e execucao por assinant
 
 ---
 
+### Task 8: Prévia das 12 peças no admin
+
+**Files:**
+- Modify: `app/db.py`
+- Modify: `app/site_web.py` (`pagina_admin_trilha`)
+- Modify: `app/serve.py` (rota `/admin/trilha/peca/<n>`)
+- Test: `app/tests/test_trilha_web.py` (classe nova)
+
+Por que existe: sem isto, ninguém vê a peça diagramada antes dela chegar no WhatsApp de um
+assinante pagante. Escrever o `.md` **não** é o mesmo que ver o resultado. Não é portão de envio
+— é prévia sob demanda: o conteúdo é evergreen e igual pra todos, então um portão semanal
+perguntaria a mesma coisa pra sempre.
+
+**Interfaces:**
+- Consumes: `db.trilha_peca` (Task 1); `pdf_trilha.montar_html` (Task 4)
+- Produces: `db.trilha_listar_pecas() -> list[dict]` — todas as peças, ordenadas por número
+
+- [ ] **Step 1: Escrever os testes que falham**
+
+Acrescentar a `app/tests/test_trilha_web.py`:
+
+```python
+class TestPreviaPecas(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "trilha", "pdf_trilha", "site_web"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, trilha, pdf_trilha, site_web
+        for m in (config, db, trilha, pdf_trilha, site_web):
+            importlib.reload(m)
+        db.init()
+        self.cfg, self.db, self.t, self.w = config, db, trilha, site_web
+        self.t.semear()
+
+    def test_listar_pecas_vem_ordenado(self):
+        nums = [p["numero"] for p in self.db.trilha_listar_pecas()]
+        self.assertEqual(nums, sorted(nums))
+        self.assertEqual(len(nums), self.cfg.TRILHA_TOTAL)
+
+    def test_admin_lista_as_12_pecas_com_link_de_previa(self):
+        h = self.w.pagina_admin_trilha([], pecas=self.db.trilha_listar_pecas())
+        self.assertIn("/admin/trilha/peca/1", h)
+        self.assertIn(f"/admin/trilha/peca/{self.cfg.TRILHA_TOTAL}", h)
+
+    def test_admin_sem_pecas_nao_quebra(self):
+        h = self.w.pagina_admin_trilha([], pecas=[])
+        self.assertIn("Nenhuma peça", h)
+```
+
+- [ ] **Step 2: Rodar e confirmar que falha**
+
+Run: `cd app && python3 -m unittest tests.test_trilha_web.TestPreviaPecas -v`
+Expected: FAIL — `AttributeError: module 'db' has no attribute 'trilha_listar_pecas'`
+
+- [ ] **Step 3: Implementar a listagem**
+
+Ao fim de `app/db.py`, junto das outras funções de trilha:
+
+```python
+def trilha_listar_pecas():
+    """Todas as peças, em ordem. Alimenta a prévia do admin."""
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM trilha_pecas ORDER BY numero").fetchall()
+    return [dict(r) for r in rows]
+```
+
+- [ ] **Step 4: Acrescentar a lista na página do admin**
+
+Em `app/site_web.py`, mudar a assinatura de `pagina_admin_trilha` para
+`def pagina_admin_trilha(linhas, token="", pecas=None):` e, logo antes do `corpo = f"""`,
+montar o bloco das peças:
+
+```python
+    pecas = pecas or []
+    if not pecas:
+        bloco_pecas = '<p class="hint">Nenhuma peça carregada.</p>'
+    else:
+        itens = []
+        for p in pecas:
+            itens.append(
+                f'<p style="margin:0 0 6px"><a class="cta ghost" '
+                f'href="/admin/trilha/peca/{int(p["numero"])}?token={_esc(token)}">'
+                f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
+        bloco_pecas = "".join(itens)
+```
+
+E incluir no corpo, depois de `{corpo_lista}`:
+
+```python
+      <div class="panel"><p class="plabel">As {_cfg.TRILHA_TOTAL} peças</p>
+        <p class="hint">Abra cada uma pra ver exatamente o que vira PDF no WhatsApp.</p>
+        {bloco_pecas}</div>
+```
+
+`pecas=None` é default de propósito: os testes do Task 7 chamam `pagina_admin_trilha(linhas)` e
+continuam valendo. Mas a rota `/admin/trilha` do Task 7 passa a mandar a lista — trocar a última
+linha dela por:
+
+```python
+            return self._html(site_web.pagina_admin_trilha(
+                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas()), 200)
+```
+
+- [ ] **Step 5: Ligar a rota de prévia**
+
+Em `app/serve.py`, no handler GET, **antes** de `if path == "/admin/trilha":` (a rota mais
+específica vem primeiro):
+
+```python
+        if path.startswith("/admin/trilha/peca/"):
+            import config, db as _db, pdf_trilha
+            q = up.parse_qs(up.urlparse(self.path).query)
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            _db.init()
+            try:
+                numero = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                return self._html("<h3>Peça inválida</h3>", 404)
+            peca = _db.trilha_peca(numero)
+            if not peca:
+                return self._html("<h3>Peça não encontrada</h3>", 404)
+            peca["numero"] = numero
+            link = (f"{config.PUBLIC_URL}/ferramentas/{peca['ferramenta_slug']}"
+                    if peca.get("ferramenta_slug") else "")
+            # mesma função que gera o PDF: a prévia não pode divergir do que é enviado
+            return self._html(pdf_trilha.montar_html(
+                peca, "(prévia)", abertura="", link_ferramenta=link), 200)
+```
+
+- [ ] **Step 6: Rodar a suíte inteira**
+
+Run: `cd app && python3 -m unittest discover -s tests`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add app/db.py app/site_web.py app/serve.py app/tests/test_trilha_web.py
+git commit -m "feat(trilha): previa das 12 pecas no admin, mesma renderizacao do PDF"
+```
+
+---
+
 ## Depois do plano (não são tasks)
 
 1. **Escrever o texto das 12 peças.** O que entra aqui é esqueleto. As peças 7 e 8 são do sócio comercial.
