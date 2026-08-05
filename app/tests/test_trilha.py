@@ -264,5 +264,105 @@ class TestPdfTrilha(unittest.TestCase):
         self.assertNotIn("<img src=x", h)
 
 
+class TestEnvio(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+        self.t.semear()
+        self.enviados = []
+
+    def _fake_enviar(self, whatsapp, pdf_path, caption="", nome_arquivo=""):
+        self.enviados.append({"whatsapp": whatsapp, "caption": caption})
+
+    def _fake_render(self, html, out_path):
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("pdf")
+        return out_path
+
+    def _sub(self, nome="Fulano", numero="5543999990000", slot="08h"):
+        reg = self.subs.adicionar(nome, numero)
+        self.subs.definir_slot(reg["id"], slot)
+        return self.subs.por_id(reg["id"])
+
+    def test_envia_a_peca_1_e_avanca(self):
+        sub = self._sub()
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertTrue(ok)
+        self.assertEqual(len(self.enviados), 1)
+        self.assertEqual(self.db.trilha_posicao(sub["id"]), 2)
+
+    def test_nao_envia_a_mesma_peca_duas_vezes(self):
+        sub = self._sub()
+        self.db.trilha_registrar_envio(sub["id"], 1)          # já reivindicada
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertFalse(ok)
+        self.assertEqual(self.enviados, [])
+
+    def test_falha_no_envio_nao_avanca_a_posicao(self):
+        sub = self._sub()
+
+        def explode(*a, **k):
+            raise RuntimeError("zap caiu")
+
+        ok = self.t.enviar_para(sub, enviar_fn=explode, render_fn=self._fake_render)
+        self.assertFalse(ok)
+        self.assertEqual(self.db.trilha_posicao(sub["id"]), 1)   # continua na peça 1
+
+    def test_falha_no_envio_libera_o_claim_pra_proxima_semana(self):
+        sub = self._sub()
+
+        def explode(*a, **k):
+            raise RuntimeError("zap caiu")
+
+        self.t.enviar_para(sub, enviar_fn=explode, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertTrue(ok, "a mesma peça tem que poder ser reenviada depois de falhar")
+
+    def test_quem_concluiu_nao_recebe_mais(self):
+        sub = self._sub()
+        self.db.trilha_avancar(sub["id"], self.cfg.TRILHA_TOTAL)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertFalse(ok)
+        self.assertEqual(self.enviados, [])
+
+    def test_slot_envia_so_pro_proprio_slot(self):
+        from datetime import date
+        a = self._sub("A", "5543999990001", "08h")
+        b = self._sub("B", "5543999990002", "18h")
+        res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 1)
+        self.assertEqual(self.db.trilha_posicao(a["id"]), 2)
+        self.assertEqual(self.db.trilha_posicao(b["id"]), 1)
+
+    def test_slot_nao_envia_em_dia_util(self):
+        from datetime import date
+        self._sub()
+        res = self.t.enviar_slot("08h", quando=date(2026, 8, 7),   # sexta
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 0)
+        self.assertEqual(self.enviados, [])
+
+    def test_slot_e_idempotente_no_mesmo_sabado(self):
+        from datetime import date
+        self._sub()
+        sab = date(2026, 8, 8)
+        self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        res = self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 0)
+        self.assertEqual(len(self.enviados), 1)
+
+    def test_cancelado_nao_recebe(self):
+        from datetime import date
+        sub = self._sub()
+        self.subs.marcar_status(sub["id"], "CANCELADO", acesso_ate="2020-01-01")
+        res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

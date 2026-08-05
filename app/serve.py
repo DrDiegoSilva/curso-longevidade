@@ -71,16 +71,30 @@ def _pct_str(pct):
 def agendador():
     """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
-    import daily, config
+    import daily, config, trilha
+
+    def _trilha_tick(sl):
+        """Sábado: manda a peça da trilha nesse slot. Dia útil: no-op.
+        Fica FORA de daily.enviar_slot de propósito — o motor do estudo não muda."""
+        try:
+            trilha.enviar_slot(sl)
+        except Exception as e:
+            print(f"[trilha] slot {sl} erro: {e}", flush=True)
+
+    def _rotina08():
+        daily.rotina_08h()      # régua + estudo (o estudo é no-op no sábado)
+        _trilha_tick("08h")
+
     def _prep_e_18h():
         daily.enviar_slot("18h")   # envia HOJE 1º (independente da preparação de amanhã, que pode falhar)
+        _trilha_tick("18h")
         daily.preparar_18h()       # prepara amanhã (o try/except do loop do agendador cobre se falhar)
-    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h,
+    tarefas = {"rotina08": _rotina08, "prep18": _prep_e_18h,
                "varredura_semanal": daily.varredura_semanal,
                "gerar_curadoria": daily.gerar_selecionados_noturno}
     for s in config.SLOTS:
         if s not in ("08h", "18h"):
-            tarefas[f"slot:{s}"] = (lambda sl=s: daily.enviar_slot(sl))
+            tarefas[f"slot:{s}"] = (lambda sl=s: (daily.enviar_slot(sl), _trilha_tick(sl)))
     # (hora, nome) — 08h e 18h têm tarefas especiais; os demais slots enviam direto.
     horarios = []
     for s in config.SLOTS:
@@ -1852,6 +1866,11 @@ if __name__ == "__main__":
         db.init()
     except Exception as e:
         print(f"[web] db.init falhou: {e}", flush=True)
+    try:
+        import trilha as _trilha
+        _trilha.semear()          # idempotente: upsert por número
+    except Exception as e:
+        print(f"[trilha] seed falhou: {e}", flush=True)
     threading.Thread(target=agendador, daemon=True).start()
     print(f"[web] servindo ebook (curso.) + site artigos (artigos.) em :{PORT}", flush=True)
     Server(("0.0.0.0", PORT), Handler).serve_forever()

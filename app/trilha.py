@@ -104,3 +104,92 @@ def abertura(sub_id, numero):
     if db.trilha_fez(sub_id, numero - 1):
         return "Você marcou a tarefa da semana passada como feita. É assim que essa trilha funciona."
     return "A tarefa da semana passada continua em aberto — ela leva menos tempo do que parece."
+
+
+def _liberar_claim(sub_id, numero):
+    """Desfaz o claim de `trilha_registrar_envio` quando o envio falhou. Sem isso o
+    assinante ficaria travado: a posição não avançou (certo) mas o claim impediria
+    a retentativa no sábado seguinte (errado) — ele nunca mais receberia a peça."""
+    with db._conn() as c:
+        c.execute("DELETE FROM trilha_envios WHERE subscriber_id=? AND numero=? "
+                  "AND feito_em IS NULL", (sub_id or "", int(numero)))
+
+
+def enviar_para(sub, enviar_fn=None, render_fn=None):
+    """Envia a peça da vez a UM assinante. True se enviou.
+
+    Ordem que importa: claim -> render -> envia -> avança. A posição só anda depois
+    do envio dar certo; se falhar, o claim é liberado e ele recebe a MESMA peça no
+    sábado seguinte. Nunca pula conteúdo."""
+    import os
+    import tempfile
+    import deliver
+    import phone
+
+    sub_id = sub.get("id")
+    peca = proxima_peca(sub_id)
+    if peca is None:
+        return False
+    numero = peca["numero"]
+    if not db.trilha_registrar_envio(sub_id, numero):    # já reivindicada
+        return False
+
+    enviar_fn = enviar_fn or deliver.enviar_pdf
+    if render_fn is None:
+        import pdf as _pdf
+        render_fn = _pdf.gerar_pdf
+
+    try:
+        import pdf_trilha
+        link = ""
+        if peca.get("ferramenta_slug"):
+            link = f"{config.PUBLIC_URL}/ferramentas/{peca['ferramenta_slug']}"
+        html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
+                                           abertura=abertura(sub_id, numero), link_ferramenta=link)
+        out = os.path.join(tempfile.gettempdir(), f"trilha-{numero}-{sub_id}.pdf")
+        render_fn(html_peca, out)
+        # nota: deliver.enviar_pdf(whatsapp, pdf_path, caption="") não tem parâmetro
+        # `nome_arquivo` (o nome do arquivo no WhatsApp sai do próprio `caption`,
+        # ver deliver._evolution_media_payload) — não passar aqui derrubaria todo
+        # envio real com TypeError, capturado abaixo e mascarado como "zap caiu".
+        enviar_fn(phone.normalizar(sub.get("whatsapp", "")), out,
+                  caption=f"{config.TRILHA_NOME} · Semana {numero}: {peca.get('titulo','')}")
+    except Exception as e:
+        print(f"[trilha] peça {numero} p/ {sub_id} falhou: {e}", flush=True)
+        _liberar_claim(sub_id, numero)
+        return False
+
+    db.trilha_avancar(sub_id, numero)
+    return True
+
+
+def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
+    """Envia a peça da semana aos assinantes ativos de `slot`. Só roda no dia da
+    trilha. Idempotente por (data, slot) usando `envios_slot` com chave namespaced —
+    mesmo truque da varredura semanal, sem tabela nova."""
+    from datetime import datetime
+    import subscribers
+
+    d = quando or datetime.now()
+    if not e_dia_da_trilha(d):
+        return {"enviados": 0, "falhas": 0}
+    data = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
+    if not db.registrar_envio_slot(f"trilha:{data}", slot):   # slot já rodou hoje
+        return {"enviados": 0, "falhas": 0}
+
+    enviados = falhas = 0
+    for s in subscribers.ativos():
+        if subscribers.slot_de(s) != slot:
+            continue
+        if enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn):
+            enviados += 1
+        else:
+            falhas += 1
+    if enviados or falhas:
+        try:
+            import deliver
+            deliver.enviar_curador(f"📘 Trilha (slot {slot}): {enviados} enviada(s)"
+                                   + (f" · {falhas} sem envio" if falhas else ""))
+        except Exception as e:
+            print(f"[trilha] aviso ao curador falhou: {e}", flush=True)
+    return {"enviados": enviados, "falhas": falhas}
