@@ -274,7 +274,10 @@ class TestEnvio(unittest.TestCase):
         self.t.semear()
         self.enviados = []
 
-    def _fake_enviar(self, whatsapp, pdf_path, caption="", nome_arquivo=""):
+    def _fake_enviar(self, whatsapp, pdf_path, caption=""):
+        # assinatura igual a deliver.enviar_pdf(whatsapp, pdf_path, caption="") de
+        # propósito: um dublê que aceita mais parâmetros do que a função real é
+        # como o bug do `nome_arquivo` passou despercebido da primeira vez.
         self.enviados.append({"whatsapp": whatsapp, "caption": caption})
 
     def _fake_render(self, html, out_path):
@@ -362,6 +365,58 @@ class TestEnvio(unittest.TestCase):
         res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
                                  enviar_fn=self._fake_enviar, render_fn=self._fake_render)
         self.assertEqual(res["enviados"], 0)
+
+    def test_falha_no_avanco_apos_envio_nao_trava_o_assinante(self):
+        # Cenário do achado da revisão: a mensagem JÁ saiu (enviar_fn deu certo) e
+        # SÓ o db.trilha_avancar falha (lock, disco cheio, banco fora do ar). Sem
+        # a correção, o claim ficava órfão e o assinante nunca mais recebia nada.
+        sub = self._sub()
+        avancar_original = self.db.trilha_avancar
+        chamadas = {"n": 0}
+
+        def avancar_com_falha(sub_id, numero):
+            chamadas["n"] += 1
+            if chamadas["n"] == 1:
+                raise RuntimeError("disco cheio")
+            return avancar_original(sub_id, numero)
+
+        self.db.trilha_avancar = avancar_com_falha
+        try:
+            ok1 = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+            self.assertFalse(ok1, "avanço falhou -- não pode reportar sucesso")
+            self.assertEqual(self.db.trilha_posicao(sub["id"]), 1, "não avançou de verdade")
+
+            # a mensagem já tinha saído na 1ª tentativa -- é a duplicata aceitável
+            ok2 = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+            self.assertTrue(ok2, "claim liberado -- a mesma peça tem que poder sair de novo")
+            self.assertEqual(self.db.trilha_posicao(sub["id"]), 2)
+        finally:
+            self.db.trilha_avancar = avancar_original
+
+        self.assertEqual(len(self.enviados), 2, "peça 1 saiu duas vezes -- duplicata, não sumiço")
+
+    def test_falha_inesperada_num_assinante_nao_impede_os_demais_do_slot(self):
+        from datetime import date
+        a = self._sub("A", "5543999990005", "08h")
+        b = self._sub("B", "5543999990006", "08h")
+
+        posicao_original = self.db.trilha_posicao
+
+        def posicao_com_explosao(sub_id):
+            if sub_id == a["id"]:
+                raise RuntimeError("banco caiu bem na hora do Fulano A")
+            return posicao_original(sub_id)
+
+        self.db.trilha_posicao = posicao_com_explosao
+        try:
+            res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
+                                     enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        finally:
+            self.db.trilha_posicao = posicao_original
+
+        self.assertEqual(res["enviados"], 1, "B tinha que receber mesmo com A explodindo")
+        self.assertEqual(res["falhas"], 1)
+        self.assertEqual(self.db.trilha_posicao(b["id"]), 2)   # B avançou normalmente
 
 
 if __name__ == "__main__":

@@ -159,7 +159,20 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
         _liberar_claim(sub_id, numero)
         return False
 
-    db.trilha_avancar(sub_id, numero)
+    try:
+        db.trilha_avancar(sub_id, numero)
+    except Exception as e:
+        # a mensagem JÁ SAIU no WhatsApp aqui — não dá pra desfazer o envio. Se a
+        # posição não avançar e o claim continuar de pé, o assinante trava nessa
+        # peça pra sempre, em silêncio (proxima_peca some, mas trilha_registrar_envio
+        # devolve False pro resto da vida). Preferimos o oposto: libera o claim e
+        # ele recebe a MESMA peça de novo no sábado seguinte — duplicata é visível
+        # e recuperável; travamento silencioso não é.
+        print(f"[trilha] AVANÇO da peça {numero} p/ {sub_id} falhou (mensagem JÁ enviada!): {e}",
+              flush=True)
+        _liberar_claim(sub_id, numero)
+        return False
+
     return True
 
 
@@ -181,7 +194,16 @@ def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
     for s in subscribers.ativos():
         if subscribers.slot_de(s) != slot:
             continue
-        if enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn):
+        try:
+            ok = enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn)
+        except Exception as e:
+            # cinto e suspensório: enviar_para já cobre claim/render/envio/avanço
+            # com try/except próprios, mas uma falha em UM assinante (ex.: erro no
+            # próprio `proxima_peca`, antes do try interno) não pode abortar o
+            # `for` e deixar o resto do slot sem receber nada.
+            print(f"[trilha] envio a {s.get('id')} explodiu fora do enviar_para: {e}", flush=True)
+            ok = False
+        if ok:
             enviados += 1
         else:
             falhas += 1
