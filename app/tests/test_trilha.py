@@ -91,5 +91,83 @@ class TestBancoTrilha(unittest.TestCase):
             self.assertIn(t, self.db._TABELAS)
 
 
+class TestParseESeed(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+
+    def test_parse_le_cabecalho_e_secoes(self):
+        p = self.t.parse_peca(
+            "titulo: O custo real da sua hora\n"
+            "eixo: Saber onde você está\n"
+            "ferramenta: planilha-custo-hora\n"
+            "\n"
+            "## corpo\n"
+            "Primeiro parágrafo.\n"
+            "\n"
+            "Segundo parágrafo.\n"
+            "\n"
+            "## micro-resultado\n"
+            "Calcule o custo da sua hora.\n"
+            "\n"
+            "## mentalidade\n"
+            "Empenho é diferente de desempenho.\n")
+        self.assertEqual(p["titulo"], "O custo real da sua hora")
+        self.assertEqual(p["eixo"], "Saber onde você está")
+        self.assertEqual(p["ferramenta"], "planilha-custo-hora")
+        self.assertIn("Segundo parágrafo.", p["corpo"])
+        self.assertEqual(p["micro_resultado"], "Calcule o custo da sua hora.")
+        self.assertEqual(p["mentalidade"], "Empenho é diferente de desempenho.")
+
+    def test_parse_sem_ferramenta_devolve_vazio(self):
+        p = self.t.parse_peca("titulo: X\neixo: Y\n\n## corpo\nz\n")
+        self.assertEqual(p["ferramenta"], "")
+        self.assertEqual(p["micro_resultado"], "")
+
+    def test_semear_grava_as_pecas_do_diretorio(self):
+        d = os.path.join(self.tmp, "trilha")
+        os.makedirs(d)
+        with open(os.path.join(d, "01-um.md"), "w", encoding="utf-8") as f:
+            f.write("titulo: Um\neixo: A\n\n## corpo\ncorpo um\n")
+        with open(os.path.join(d, "02-dois.md"), "w", encoding="utf-8") as f:
+            f.write("titulo: Dois\neixo: A\n\n## corpo\ncorpo dois\n")
+        self.assertEqual(self.t.semear(d), 2)
+        self.assertEqual(self.db.trilha_peca(1)["titulo"], "Um")
+        self.assertEqual(self.db.trilha_peca(2)["titulo"], "Dois")
+
+    def test_semear_e_idempotente_e_atualiza_texto_editado(self):
+        d = os.path.join(self.tmp, "trilha")
+        os.makedirs(d)
+        caminho = os.path.join(d, "01-um.md")
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write("titulo: Um\neixo: A\n\n## corpo\nversao 1\n")
+        self.t.semear(d)
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write("titulo: Um\neixo: A\n\n## corpo\nversao 2\n")
+        self.t.semear(d)
+        self.assertIn("versao 2", self.db.trilha_peca(1)["corpo"])
+
+    def test_semear_ignora_arquivo_sem_numero_no_nome(self):
+        d = os.path.join(self.tmp, "trilha")
+        os.makedirs(d)
+        with open(os.path.join(d, "leiame.md"), "w", encoding="utf-8") as f:
+            f.write("titulo: X\n\n## corpo\ny\n")
+        self.assertEqual(self.t.semear(d), 0)
+
+    def test_semear_diretorio_inexistente_nao_quebra(self):
+        self.assertEqual(self.t.semear(os.path.join(self.tmp, "nao-existe")), 0)
+
+    def test_as_12_pecas_do_repo_carregam(self):
+        # o diretório real do repo tem que estar parseável e completo
+        self.assertEqual(self.t.semear(), self.cfg.TRILHA_TOTAL)
+        for n in range(1, self.cfg.TRILHA_TOTAL + 1):
+            p = self.db.trilha_peca(n)
+            self.assertIsNotNone(p, f"peça {n} não carregou")
+            self.assertTrue(p["titulo"].strip(), f"peça {n} sem título")
+
+
 if __name__ == "__main__":
     unittest.main()

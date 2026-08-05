@@ -67,6 +67,15 @@ SLOT_HORA = {"07h": 7, "08h": 8, "12h": 12, "18h": 18, "20h": 20}
 SLOT_DEFAULT = "08h"
 SLOT_TETO_DEFAULT = 100
 
+# Trilha semanal de empreendedorismo médico (sábado, drip por assinante).
+# TRILHA_NOME é provisório: o nome do produto ainda vai ser decidido. Mora aqui,
+# e não espalhado no código, justamente pra troca ser um campo e não uma varredura.
+TRILHA_NOME = os.environ.get("DSCURSO_TRILHA_NOME") or "Trilha do Consultório"
+TRILHA_DIA = "sabado"
+TRILHA_TOTAL = 12
+TRILHA_DIR = os.environ.get("DSCURSO_TRILHA_DIR") or os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed", "trilha")
+
 # ── Máquina de conteúdo ──
 FRESCO_DIAS = int(os.environ.get("DSCURSO_FRESCO_DIAS") or 30)   # ≤ N dias = "Estudo recente"
 CLASSICO_REUSO_MESES = int(os.environ.get("DSCURSO_CLASSICO_REUSO_MESES") or 6)   # piso p/ repetir um clássico
