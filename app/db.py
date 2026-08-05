@@ -240,6 +240,29 @@ def init():
             );
             CREATE UNIQUE INDEX IF NOT EXISTS ux_serie_itens_dedup
                 ON serie_itens(serie_id, ref_tipo, ref_id);
+            CREATE TABLE IF NOT EXISTS trilha_pecas (
+                numero INTEGER PRIMARY KEY,
+                eixo TEXT DEFAULT '',
+                titulo TEXT DEFAULT '',
+                corpo TEXT DEFAULT '',
+                micro_resultado TEXT DEFAULT '',
+                mentalidade TEXT DEFAULT '',
+                ferramenta_slug TEXT DEFAULT '',
+                ativa INTEGER DEFAULT 1,
+                atualizado_em TEXT
+            );
+            CREATE TABLE IF NOT EXISTS trilha_progresso (
+                subscriber_id TEXT PRIMARY KEY,
+                proxima_peca INTEGER DEFAULT 1,
+                ultimo_envio TEXT DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS trilha_envios (
+                subscriber_id TEXT,
+                numero INTEGER,
+                enviado_em TEXT,
+                feito_em TEXT,
+                PRIMARY KEY (subscriber_id, numero)
+            );
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
                 ativo INTEGER DEFAULT 1, criado_em TEXT
@@ -265,7 +288,8 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
             "automacoes_renovacao", "avisos_renovacao", "classicos",
-            "series", "serie_itens"]
+            "series", "serie_itens",
+            "trilha_pecas", "trilha_progresso", "trilha_envios"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -1627,3 +1651,101 @@ def obter(s, data):
     with _conn() as c:
         r = c.execute("SELECT * FROM digests WHERE tema_slug=? AND data=?", (s, data)).fetchone()
     return dict(r) if r else None
+
+
+# ---------------------------------------------------------------- trilha
+def trilha_upsert_peca(numero, eixo, titulo, corpo, micro_resultado,
+                       mentalidade, ferramenta_slug=""):
+    """Grava (ou atualiza) a peça `numero`. É upsert de propósito: editar o arquivo
+    em seed/trilha/ e redeployar tem que propagar o texto novo, não criar duplicata."""
+    from datetime import datetime
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO trilha_pecas "
+            "(numero,eixo,titulo,corpo,micro_resultado,mentalidade,ferramenta_slug,ativa,atualizado_em) "
+            "VALUES (?,?,?,?,?,?,?,1,?) "
+            "ON CONFLICT (numero) DO UPDATE SET eixo=excluded.eixo, titulo=excluded.titulo, "
+            "corpo=excluded.corpo, micro_resultado=excluded.micro_resultado, "
+            "mentalidade=excluded.mentalidade, ferramenta_slug=excluded.ferramenta_slug, "
+            "atualizado_em=excluded.atualizado_em",
+            (int(numero), eixo or "", titulo or "", corpo or "", micro_resultado or "",
+             mentalidade or "", ferramenta_slug or "", datetime.now().isoformat()))
+
+
+def trilha_peca(numero):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM trilha_pecas WHERE numero=? AND ativa=1",
+                      (int(numero),)).fetchone()
+    return dict(r) if r else None
+
+
+def trilha_posicao(sub_id):
+    """Posição do assinante na trilha. Quem nunca recebeu nasce em 1."""
+    with _conn() as c:
+        c.execute("INSERT INTO trilha_progresso (subscriber_id,proxima_peca,ultimo_envio) "
+                  "VALUES (?,1,'') ON CONFLICT (subscriber_id) DO NOTHING", (sub_id or "",))
+        r = c.execute("SELECT proxima_peca FROM trilha_progresso WHERE subscriber_id=?",
+                      (sub_id or "",)).fetchone()
+    return int(r["proxima_peca"]) if r else 1
+
+
+def trilha_registrar_envio(sub_id, numero):
+    """Claim atômico do envio de UMA peça a UM assinante. True só na 1ª vez.
+    Mesma defesa de `registrar_envio_assinante`: mata reenvio em restart/retry."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("INSERT INTO trilha_envios (subscriber_id,numero,enviado_em,feito_em) "
+                        "VALUES (?,?,?,NULL) ON CONFLICT (subscriber_id,numero) DO NOTHING",
+                        (sub_id or "", int(numero), datetime.now().isoformat()))
+        return cur.rowcount > 0
+
+
+def trilha_avancar(sub_id, numero):
+    """Move a posição para `numero`+1. Chamado SÓ depois do envio dar certo."""
+    from datetime import datetime
+    agora = datetime.now().isoformat()
+    with _conn() as c:
+        c.execute("INSERT INTO trilha_progresso (subscriber_id,proxima_peca,ultimo_envio) "
+                  "VALUES (?,?,?) ON CONFLICT (subscriber_id) DO UPDATE SET "
+                  "proxima_peca=excluded.proxima_peca, ultimo_envio=excluded.ultimo_envio",
+                  (sub_id or "", int(numero) + 1, agora))
+
+
+def trilha_marcar_feito(sub_id, numero):
+    """Marca o '✅ fiz'. False se a peça não foi enviada a ele ou já estava marcada
+    (o botão é idempotente: 2º clique não duplica nem mente pro usuário)."""
+    from datetime import datetime
+    with _conn() as c:
+        cur = c.execute("UPDATE trilha_envios SET feito_em=? "
+                        "WHERE subscriber_id=? AND numero=? AND feito_em IS NULL",
+                        (datetime.now().isoformat(), sub_id or "", int(numero)))
+        return cur.rowcount > 0
+
+
+def trilha_fez(sub_id, numero):
+    with _conn() as c:
+        r = c.execute("SELECT 1 FROM trilha_envios WHERE subscriber_id=? AND numero=? "
+                      "AND feito_em IS NOT NULL", (sub_id or "", int(numero))).fetchone()
+    return r is not None
+
+
+def trilha_historico(sub_id):
+    with _conn() as c:
+        rows = c.execute("SELECT numero, enviado_em, feito_em FROM trilha_envios "
+                         "WHERE subscriber_id=? ORDER BY numero DESC", (sub_id or "",)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def trilha_painel():
+    """Uma linha por assinante que já entrou na trilha: posição, quantas recebeu e
+    quantas marcou como feitas. Alimenta /admin/trilha."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT p.subscriber_id AS subscriber_id, p.proxima_peca AS proxima_peca, "
+            "COUNT(e.numero) AS enviadas, "
+            "COUNT(e.feito_em) AS feitas "
+            "FROM trilha_progresso p LEFT JOIN trilha_envios e "
+            "ON e.subscriber_id = p.subscriber_id "
+            "GROUP BY p.subscriber_id, p.proxima_peca "
+            "ORDER BY p.proxima_peca DESC").fetchall()
+    return [dict(r) for r in rows]
