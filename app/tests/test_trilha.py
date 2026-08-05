@@ -214,5 +214,55 @@ class TestDrip(unittest.TestCase):
         self.assertNotIn("parabéns", texto.lower())
 
 
+class TestPdfTrilha(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import pdf_trilha
+        importlib.reload(pdf_trilha)
+        self.p = pdf_trilha
+        self.peca = {"numero": 3, "titulo": "Escolha uma linha", "eixo": "Saber onde você está",
+                     "corpo": "Primeiro.\n\nSegundo.", "micro_resultado": "Faça a conta.",
+                     "mentalidade": "Pense grande.", "ferramenta_slug": "mapa-de-linha"}
+
+    def test_html_traz_titulo_e_progresso(self):
+        h = self.p.montar_html(self.peca, "Diego")
+        self.assertIn("Escolha uma linha", h)
+        self.assertIn(f"3 de {self.cfg.TRILHA_TOTAL}", h)
+
+    def test_html_traz_as_tres_camadas(self):
+        h = self.p.montar_html(self.peca, "Diego")
+        self.assertIn("Faça a conta.", h)
+        self.assertIn("Pense grande.", h)
+        self.assertIn("Segundo.", h)
+
+    def test_paragrafos_do_corpo_viram_p(self):
+        h = self.p.montar_html(self.peca, "Diego")
+        self.assertIn("<p>Primeiro.</p>", h)
+        self.assertIn("<p>Segundo.</p>", h)
+
+    def test_link_da_ferramenta_aparece_quando_existe(self):
+        h = self.p.montar_html(self.peca, "Diego", link_ferramenta="https://x/ferramentas/mapa")
+        self.assertIn('href="https://x/ferramentas/mapa"', h)
+
+    def test_sem_ferramenta_nao_deixa_botao_orfao(self):
+        h = self.p.montar_html(self.peca, "Diego")
+        self.assertNotIn("Baixar", h)
+
+    def test_abertura_entra_quando_existe(self):
+        h = self.p.montar_html(self.peca, "Diego", abertura="Continua em aberto.")
+        self.assertIn("Continua em aberto.", h)
+
+    def test_escapa_html_do_conteudo(self):
+        peca = dict(self.peca, titulo="Dose <script>alert(1)</script>")
+        h = self.p.montar_html(peca, "Diego")
+        self.assertNotIn("<script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
+    def test_escapa_nome_do_assinante(self):
+        h = self.p.montar_html(self.peca, "<img src=x onerror=1>")
+        self.assertNotIn("<img src=x", h)
+
+
 if __name__ == "__main__":
     unittest.main()
