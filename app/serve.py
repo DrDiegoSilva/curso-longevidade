@@ -540,6 +540,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
         if path == "/renovar":
             return self._get_rota_renovar()
+        if path == "/trilha":
+            sub = self._sub_logado()
+            if not sub:
+                return self._redirect("/entrar")
+            return self._html(self._pagina_trilha(sub))
+        if path.startswith("/ferramentas/"):
+            if not self._sub_logado():          # download é fechado: só assinante logado
+                return self._redirect("/entrar")
+            import mimetypes
+            import trilha as _trilha
+            caminho = _trilha.caminho_ferramenta(path[len("/ferramentas/"):])
+            if not caminho:
+                return self._html("<h3>Arquivo não encontrado</h3>", 404)
+            tipo = mimetypes.guess_type(caminho)[0] or "application/octet-stream"
+            body = open(caminho, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", tipo)
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{os.path.basename(caminho)}"')
+            self.end_headers()
+            return self.wfile.write(body)
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             # /artigos só LÊ conteúdo (não muta dado nenhum do assinante) — o critério
@@ -1092,6 +1113,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._meus_dados_post(g)
         if path == "/renovar":
             return self._post_renovar(g)
+        if path == "/trilha":
+            sub = self._sub_logado()
+            if not sub:
+                return self._redirect("/entrar")
+            msg = ""
+            if g("acao") == "marcar_feito":
+                import db as _db
+                try:
+                    numero = int(g("numero") or 0)
+                except ValueError:
+                    numero = 0
+                if _db.trilha_marcar_feito(sub["id"], numero):
+                    msg = "Marcado. Bom trabalho."
+            return self._html(self._pagina_trilha(sub, msg=msg))
         return self._html("<h3>rota inválida</h3>", 404)
 
     def _meus_dados_post(self, g):
@@ -1161,6 +1196,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not sess:
             return None
         return subscribers.por_whatsapp(sess["whatsapp"])
+
+    def _pagina_trilha(self, sub, msg=""):
+        """Monta os itens da trilha do assinante (peça atual + anteriores)."""
+        import db as _db, site_web as _sw, trilha as _trilha
+        itens = []
+        atual = _trilha.proxima_peca(sub["id"])
+        vistos = set()
+        for env in _db.trilha_historico(sub["id"]):
+            p = _db.trilha_peca(env["numero"]) or {}
+            itens.append({"numero": env["numero"], "titulo": p.get("titulo", ""),
+                          "feito": bool(env.get("feito_em")),
+                          "ferramenta_slug": p.get("ferramenta_slug", "")})
+            vistos.add(env["numero"])
+        if atual and atual["numero"] not in vistos:
+            # ainda não recebeu por WhatsApp (entrou hoje): mostra o que vem aí
+            itens.insert(0, {"numero": atual["numero"], "titulo": atual.get("titulo", ""),
+                             "feito": False, "ferramenta_slug": atual.get("ferramenta_slug", "")})
+        return _sw.pagina_trilha(sub, itens, msg=msg)
 
     def _parse_multipart(self, ctype, body):
         """Parser mínimo de multipart/form-data. Retorna (campos:dict, arquivos:{nome:(filename,bytes)})."""

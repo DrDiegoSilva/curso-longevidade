@@ -1913,9 +1913,55 @@ def pagina_minha(sub, admin=False):
       <h2 class="disp">Minha assinatura</h2>
       <p class="hint">Olá, {_esc(sub.get("nome") or "assinante")}. Sua assinatura está ativa.</p>
       {admin_html}
-      <p style="margin:22px 0 0"><a class="cta ghost" href="/meus-dados">Meus dados</a></p>
+      <p style="margin:22px 0 0"><a class="cta ghost" href="/trilha">Minha trilha</a>
+      <a class="cta ghost" href="/meus-dados">Meus dados</a></p>
     </div></div>"""
     return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, atual="/minha",
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_trilha(sub, itens, msg=""):
+    """Trilha do assinante: peça da semana no topo, anteriores abaixo.
+
+    `itens` já vem pronto do serve (mais recente primeiro), com numero, titulo,
+    feito e ferramenta_slug. A página não consulta banco."""
+    import config as _cfg
+    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+    if not itens:
+        linhas = ('<p class="hint">Sua primeira peça chega no próximo sábado, '
+                  'no mesmo horário em que você recebe os estudos.</p>')
+    else:
+        partes = []
+        for i, it in enumerate(itens):
+            ferramenta = ""
+            if it.get("ferramenta_slug"):
+                ferramenta = (f'<p style="margin:8px 0 0"><a class="cta ghost" '
+                              f'href="/ferramentas/{_esc(it["ferramenta_slug"])}">'
+                              f'📎 Baixar a ferramenta</a></p>')
+            if it.get("feito"):
+                acao = '<p class="hint" style="margin:8px 0 0">✅ Você marcou como feita.</p>'
+            else:
+                acao = (f'<form method="post" action="/trilha" style="margin:8px 0 0">'
+                        f'<input type="hidden" name="acao" value="marcar_feito">'
+                        f'<input type="hidden" name="numero" value="{int(it["numero"])}">'
+                        f'<button class="actbtn" type="submit">✅ Fiz a tarefa desta semana</button>'
+                        f'</form>')
+            destaque = ' style="border-color:var(--ouro2)"' if i == 0 else ""
+            partes.append(
+                f'<div class="panel"{destaque}>'
+                f'<p class="plabel">Semana {int(it["numero"])} de {_cfg.TRILHA_TOTAL}</p>'
+                f'<h3 style="margin:4px 0 0">{_esc(it["titulo"])}</h3>'
+                f'{ferramenta}{acao}</div>')
+        linhas = "".join(partes)
+    corpo = f"""
+    <div class="wrap">
+      <h2 class="disp">{_esc(_cfg.TRILHA_NOME)}</h2>
+      <p class="hint">Uma peça por sábado. Cada uma tem uma tarefa pequena — é ela que faz a diferença.</p>
+      {msg_html}
+      {linhas}
+      <p style="margin:22px 0 0"><a class="cta ghost" href="/minha">Voltar</a></p>
+    </div>"""
+    return _pagina(f"{_cfg.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="/trilha",
                    meta_extra='<meta name="robots" content="noindex">')
 
 
