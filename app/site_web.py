@@ -151,6 +151,7 @@ button.btn{border:none;cursor:pointer}
   border-radius:20px;padding:38px 32px}
 .panel h2{font-family:"Cormorant Garamond",Georgia,serif;font-size:34px;color:var(--creme);margin-bottom:6px}
 .panel p.hint{color:var(--suave);margin-bottom:22px;font-size:15px}
+.plabel{font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ouro2)}
 label{display:block;font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);margin-bottom:8px}
 input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;
   color:var(--creme);font-size:20px;font-family:Georgia,serif;padding:14px 16px;margin-bottom:18px;letter-spacing:.04em}
@@ -669,6 +670,7 @@ def _admin_nav(token="", atual=""):
             + lk("/series", "🎬 Séries", "series")
             + lk("/admin/precos", "💰 Preços", "precos")
             + lk("/admin/envio", "🗓️ Dias", "envio")
+            + lk("/admin/trilha", "📘 Trilha", "trilha")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
             + lk("/admin/mensagens", "📝 Mensagens", "mensagens")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
@@ -825,6 +827,61 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
       </form>
     </div>"""
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_admin_trilha(linhas, token="", pecas=None):
+    """Painel do admin: quem está em qual semana da trilha, quanto recebeu e
+    quanto executou. Cartões (não tabela: `.tbl` não existe no CSS deste repo, e
+    a tela de Assinantes já foi redesenhada em cartões por causa disso no celular).
+    Cada linha: nome, proxima_peca, enviadas, feitas, concluiu:bool.
+
+    `pecas` alimenta a prévia sob demanda: um link por peça pra
+    `/admin/trilha/peca/<n>`, que renderiza com a MESMA função que gera o PDF
+    enviado no WhatsApp -- assim a prévia não pode divergir do envio real.
+    Default `None` de propósito: chamadores antigos (sem essa lista) continuam
+    funcionando."""
+    pecas = pecas or []
+    if not pecas:
+        bloco_pecas = '<p class="hint">Nenhuma peça carregada.</p>'
+    else:
+        itens = []
+        for p in pecas:
+            itens.append(
+                f'<p style="margin:0 0 6px"><a class="cta ghost" '
+                f'href="/admin/trilha/peca/{int(p["numero"])}?token={_esc(token)}">'
+                f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
+        bloco_pecas = "".join(itens)
+    if not linhas:
+        corpo_lista = '<p class="hint">Ninguém entrou na trilha ainda.</p>'
+    else:
+        cards = []
+        for l in linhas:
+            estado = "Concluiu" if l.get("concluiu") else f"Semana {int(l['proxima_peca'])}"
+            cards.append(
+                # .panel padrão é feito p/ 1 caixa centralizada (login/forms), não p/ lista
+                # repetida -- max-width/margin sobrescritos aqui, mesma técnica já usada em
+                # pagina_admin_envio logo acima (senão dezenas de assinantes viram uma coluna
+                # estreita e centralizada com 40px de vão entre cada cartão).
+                f'<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
+                f'<h3 style="margin:0;font-family:var(--disp);color:var(--creme);font-size:20px">'
+                f'{_esc(l.get("nome") or "—")}</h3>'
+                f'<p class="hint" style="margin:6px 0 0">{_esc(estado)} · '
+                f'{int(l.get("enviadas", 0))} recebida(s) · {int(l.get("feitas", 0))} feita(s)</p>'
+                f'</div>')
+        corpo_lista = "".join(cards)
+    corpo = f"""
+    <div class="wrap">
+      {_admin_nav(token, "trilha")}
+      <div class="sectag" style="margin-top:8px">Painel do curador</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">{_esc(config.TRILHA_NOME)}</h2>
+      <p class="hint">{len(linhas)} assinante(s) na trilha · {config.TRILHA_TOTAL} peças no total.</p>
+      {corpo_lista}
+      <div class="panel"><p class="plabel">As {config.TRILHA_TOTAL} peças</p>
+        <p class="hint">Abra cada uma pra ver exatamente o que vira PDF no WhatsApp.</p>
+        {bloco_pecas}</div>
+    </div>"""
+    return _pagina(f"{config.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="trilha",
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="",
@@ -1913,8 +1970,7 @@ def pagina_minha(sub, admin=False):
     def card(href, ic, nm, ds):
         return (f'<a class="curbtn" href="{href}"><span class="ic">{ic}</span>'
                 f'<span><span class="nm">{nm}</span><span class="ds">{ds}</span></span></a>')
-    admin_html = ('<p class="plabel" style="margin-top:18px;font-family:system-ui,sans-serif;'
-                  'font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ouro2)">Painel do curador</p>'
+    admin_html = ('<p class="plabel" style="margin-top:18px">Painel do curador</p>'
                   '<div class="curgrid">'
                   + card("/curadoria", "🔬", "Curadoria &amp; Estoque", "Varredura, seleção e fila de resumos")
                   + card("/agenda", "📅", "Agenda de envios", "O que sai cada dia da semana")
@@ -1926,9 +1982,64 @@ def pagina_minha(sub, admin=False):
       <h2 class="disp">Minha assinatura</h2>
       <p class="hint">Olá, {_esc(sub.get("nome") or "assinante")}. Sua assinatura está ativa.</p>
       {admin_html}
-      <p style="margin:22px 0 0"><a class="cta ghost" href="/meus-dados">Meus dados</a></p>
+      <p style="margin:22px 0 0"><a class="cta ghost" href="/trilha">Minha trilha</a>
+      <a class="cta ghost" href="/meus-dados">Meus dados</a></p>
     </div></div>"""
     return _pagina(f"Minha assinatura · {PRODUTO}", corpo, logado=True, atual="/minha",
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_trilha(sub, itens, msg=""):
+    """Trilha do assinante: peça da semana no topo, anteriores abaixo.
+
+    `itens` já vem pronto do serve (mais recente primeiro), com numero, titulo,
+    feito, ferramenta_slug e entregue. `entregue=False` é a peça de prévia que
+    `serve._pagina_trilha` insere quando o assinante ainda não recebeu aquela peça
+    pelo WhatsApp — sem botão de "fiz" (clicar antes do envio real sempre devolveria
+    False em silêncio, porque não existe linha em trilha_envios ainda) e com um
+    aviso de que ela chega no sábado. Item sem a chave `entregue` é tratado como
+    entregue (True), pra não quebrar dado antigo. A página não consulta banco."""
+    import config as _cfg
+    nome = _esc(sub.get("nome") or "assinante")
+    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+    if not itens:
+        linhas = ('<p class="hint">Sua primeira peça chega no próximo sábado, '
+                  'no mesmo horário em que você recebe os estudos.</p>')
+    else:
+        partes = []
+        for i, it in enumerate(itens):
+            ferramenta = ""
+            if it.get("ferramenta_slug"):
+                ferramenta = (f'<p style="margin:8px 0 0"><a class="cta ghost" '
+                              f'href="/ferramentas/{_esc(it["ferramenta_slug"])}">'
+                              f'📎 Baixar a ferramenta</a></p>')
+            if not it.get("entregue", True):
+                acao = ('<p class="hint" style="margin:8px 0 0">Ainda não chegou — '
+                        'você recebe esta peça no seu WhatsApp no próximo sábado.</p>')
+            elif it.get("feito"):
+                acao = '<p class="hint" style="margin:8px 0 0">✅ Você marcou como feita.</p>'
+            else:
+                acao = (f'<form method="post" action="/trilha" style="margin:8px 0 0">'
+                        f'<input type="hidden" name="acao" value="marcar_feito">'
+                        f'<input type="hidden" name="numero" value="{int(it["numero"])}">'
+                        f'<button class="actbtn" type="submit">✅ Fiz a tarefa desta semana</button>'
+                        f'</form>')
+            destaque = ' style="border-color:var(--ouro2)"' if i == 0 else ""
+            partes.append(
+                f'<div class="panel"{destaque}>'
+                f'<p class="plabel">Semana {int(it["numero"])} de {_cfg.TRILHA_TOTAL}</p>'
+                f'<h3 style="margin:4px 0 0">{_esc(it["titulo"])}</h3>'
+                f'{ferramenta}{acao}</div>')
+        linhas = "".join(partes)
+    corpo = f"""
+    <div class="wrap">
+      <h2 class="disp">{_esc(_cfg.TRILHA_NOME)}</h2>
+      <p class="hint">Olá, {nome}. Uma peça por sábado — cada uma tem uma tarefa pequena, é ela que faz a diferença.</p>
+      {msg_html}
+      {linhas}
+      <p style="margin:22px 0 0"><a class="cta ghost" href="/minha">Voltar</a></p>
+    </div>"""
+    return _pagina(f"{_cfg.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="/trilha",
                    meta_extra='<meta name="robots" content="noindex">')
 
 

@@ -68,19 +68,55 @@ def _pct_str(pct):
     return ("%g" % float(pct)).replace(".", ",") + "%"
 
 
+def _trilha_numero_valido(numero_str):
+    """Converte um `numero` (form do POST /trilha OU segmento de URL da rota GET
+    /admin/trilha/peca/<n>) num inteiro de peça válido (1..config.TRILHA_TOTAL), ou
+    devolve 0 se não for. Único ponto de verdade pras duas rotas -- nenhuma delas
+    tem permissão de validar `numero` por conta própria.
+
+    A faixa é checada AQUI, antes de qualquer valor chegar em `db.trilha_marcar_feito`
+    ou `db.trilha_peca`: `int()` do Python não estoura com uma string de dezenas de
+    dígitos (inteiro de precisão arbitrária), mas o `sqlite3` estoura ao tentar
+    converter esse Python int pra INTEGER de 64 bits do SQLite (`OverflowError:
+    Python int too large to convert to SQLite INTEGER`), sem try/except no caminho do
+    banco — qualquer requisição (form OU URL) conseguiria derrubar a resposta só
+    mandando um número gigante. Preferimos rejeitar aqui (peça inválida vira 0,
+    silenciosamente ignorada) a deixar a exceção subir."""
+    import config
+    try:
+        numero = int(numero_str or 0)
+    except ValueError:
+        return 0
+    return numero if 1 <= numero <= config.TRILHA_TOTAL else 0
+
+
 def agendador():
     """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
-    import daily, config
+    import daily, config, trilha
+
+    def _trilha_tick(sl):
+        """Sábado: manda a peça da trilha nesse slot. Dia útil: no-op.
+        Fica FORA de daily.enviar_slot de propósito — o motor do estudo não muda."""
+        try:
+            trilha.enviar_slot(sl)
+        except Exception as e:
+            print(f"[trilha] slot {sl} erro: {e}", flush=True)
+
+    def _rotina08():
+        daily.rotina_08h()      # régua + estudo (o estudo é no-op no sábado)
+        _trilha_tick("08h")
+
     def _prep_e_18h():
         daily.enviar_slot("18h")   # envia HOJE 1º (independente da preparação de amanhã, que pode falhar)
+        _trilha_tick("18h")
         daily.preparar_18h()       # prepara amanhã (o try/except do loop do agendador cobre se falhar)
-    tarefas = {"rotina08": daily.rotina_08h, "prep18": _prep_e_18h,
+    tarefas = {"rotina08": _rotina08, "prep18": _prep_e_18h,
                "varredura_semanal": daily.varredura_semanal,
                "gerar_curadoria": daily.gerar_selecionados_noturno}
     for s in config.SLOTS:
         if s not in ("08h", "18h"):
-            tarefas[f"slot:{s}"] = (lambda sl=s: daily.enviar_slot(sl))
+            tarefas[f"slot:{s}"] = (lambda sl=s: (daily.enviar_slot(sl), _trilha_tick(sl)))
     # (hora, nome) — 08h e 18h têm tarefas especiais; os demais slots enviam direto.
     horarios = []
     for s in config.SLOTS:
@@ -340,6 +376,49 @@ class Handler(http.server.BaseHTTPRequestHandler):
             planos = [visiveis[s] for s in ("mensal", "anual") if s in visiveis]
             return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
                                                       msg=q.get("msg", [""])[0]), 200)
+        if path.startswith("/admin/trilha/peca/"):
+            import config, db as _db, pdf_trilha, trilha as _trilha_mod
+            q = up.parse_qs(up.urlparse(self.path).query)
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            _db.init()
+            # mesmo helper do POST /trilha (linha ~1251): rejeita fora da faixa
+            # 1..TRILHA_TOTAL ANTES de tocar o banco -- um `numero` gigante na URL
+            # não pode virar OverflowError do sqlite3 dentro de `db.trilha_peca`
+            # (duas validações paralelas pra mesma entrada é como a 2ª volta fura).
+            numero = _trilha_numero_valido(path.rsplit("/", 1)[1])
+            if not numero:
+                return self._html("<h3>Peça inválida</h3>", 404)
+            peca = _db.trilha_peca(numero)
+            if not peca:
+                return self._html("<h3>Peça não encontrada</h3>", 404)
+            peca["numero"] = numero
+            # só afirma o link se o ARQUIVO existir -- mesma correção do envio real
+            # (app/trilha.py, enviar_para): a prévia não pode divergir do que sai no
+            # WhatsApp, e mostrar aqui um botão que dá 404 seria exatamente isso.
+            slug = peca.get("ferramenta_slug")
+            link = (f"{config.PUBLIC_URL}/ferramentas/{slug}"
+                    if slug and _trilha_mod.caminho_ferramenta(slug) else "")
+            # mesma função que gera o PDF: a prévia não pode divergir do que é enviado
+            return self._html(pdf_trilha.montar_html(
+                peca, "(prévia)", abertura="", link_ferramenta=link), 200)
+        if path == "/admin/trilha":
+            import config, site_web, db as _db, subscribers as _subs
+            q = up.parse_qs(up.urlparse(self.path).query)
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            _db.init()
+            linhas = []
+            for l in _db.trilha_painel():
+                reg = _subs.por_id(l["subscriber_id"]) or {}
+                linhas.append({"nome": reg.get("nome") or l["subscriber_id"],
+                               "proxima_peca": l["proxima_peca"],
+                               "enviadas": l["enviadas"], "feitas": l["feitas"],
+                               "concluiu": l["proxima_peca"] > config.TRILHA_TOTAL})
+            return self._html(site_web.pagina_admin_trilha(
+                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas()), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -526,6 +605,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 sub, slots=_subs.slots_com_vaga(teto, atual), slot_atual=atual))
         if path == "/renovar":
             return self._get_rota_renovar()
+        if path == "/trilha":
+            sub = self._sub_logado()
+            if not sub:
+                return self._redirect("/entrar")
+            return self._html(self._pagina_trilha(sub))
+        if path.startswith("/ferramentas/"):
+            if not self._sub_logado():          # download é fechado: só assinante logado
+                return self._redirect("/entrar")
+            import mimetypes
+            import trilha as _trilha
+            caminho = _trilha.caminho_ferramenta(path[len("/ferramentas/"):])
+            if not caminho:
+                return self._html("<h3>Arquivo não encontrado</h3>", 404)
+            tipo = mimetypes.guess_type(caminho)[0] or "application/octet-stream"
+            body = open(caminho, "rb").read()
+            self.send_response(200)
+            self.send_header("Content-Type", tipo)
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="{os.path.basename(caminho)}"')
+            self.end_headers()
+            return self.wfile.write(body)
         parts = [p for p in path.split("/") if p]
         if parts and parts[0] == "artigos":
             # /artigos só LÊ conteúdo (não muta dado nenhum do assinante) — o critério
@@ -1078,6 +1178,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._meus_dados_post(g)
         if path == "/renovar":
             return self._post_renovar(g)
+        if path == "/trilha":
+            return self._trilha_post(g)
         return self._html("<h3>rota inválida</h3>", 404)
 
     def _meus_dados_post(self, g):
@@ -1141,12 +1243,68 @@ class Handler(http.server.BaseHTTPRequestHandler):
                               novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
         return self._redirect("/meus-dados")
 
+    def _trilha_post(self, g):
+        """POST /trilha: `marcar_feito` MUTA dado do assinante (trilha_envios.feito_em)
+        — mesmo gate de aceite que `_meus_dados_post` usa, pelo mesmo motivo: sem esta
+        checagem aqui, aceite pendente não impede a mutação, só o link direto pra cá
+        (ver docstring de `_meus_dados_post` pro cenário completo)."""
+        import subscribers
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if subscribers.precisa_aceitar(sub):
+            import site_legal
+            return self._html(site_legal.pagina_aceite_termos("/trilha"))
+        msg = ""
+        if g("acao") == "marcar_feito":
+            numero = _trilha_numero_valido(g("numero"))
+            if numero:
+                import db as _db
+                if _db.trilha_marcar_feito(sub["id"], numero):
+                    msg = "Marcado. Bom trabalho."
+        return self._html(self._pagina_trilha(sub, msg=msg))
+
     def _sub_logado(self):
         import subscribers
         sess = self._sessao()
         if not sess:
             return None
         return subscribers.por_whatsapp(sess["whatsapp"])
+
+    def _pagina_trilha(self, sub, msg=""):
+        """Monta os itens da trilha do assinante (peça atual + anteriores)."""
+        import db as _db, site_web as _sw, trilha as _trilha
+
+        def _slug_disponivel(slug):
+            # só afirma a ferramenta se o ARQUIVO existir -- a peça pode declarar
+            # `ferramenta:` no cabeçalho antes do arquivo ser subido em
+            # seed/trilha/ferramentas/ (Important 4 da revisão: 7 das 12 peças
+            # declaram ferramenta e o diretório só tinha .gitkeep). Sem esta
+            # checagem, `pagina_trilha` mostra "📎 Baixar" e a rota /ferramentas/
+            # devolve 404.
+            return slug if slug and _trilha.caminho_ferramenta(slug) else ""
+
+        itens = []
+        atual = _trilha.proxima_peca(sub["id"])
+        vistos = set()
+        for env in _db.trilha_historico(sub["id"]):
+            p = _db.trilha_peca(env["numero"]) or {}
+            itens.append({"numero": env["numero"], "titulo": p.get("titulo", ""),
+                          "feito": bool(env.get("feito_em")),
+                          "ferramenta_slug": _slug_disponivel(p.get("ferramenta_slug", "")),
+                          "entregue": True})
+            vistos.add(env["numero"])
+        if atual and atual["numero"] not in vistos:
+            # ainda não recebeu por WhatsApp (entrou hoje): mostra o que vem aí, mas
+            # `entregue=False` — marcar "fiz" antes do envio real sempre devolveria
+            # False em silêncio (não existe linha em trilha_envios pra essa peça
+            # ainda), e o botão viraria decoração morta. `pagina_trilha` usa essa
+            # chave pra trocar o botão por um aviso de "chega no sábado".
+            itens.insert(0, {"numero": atual["numero"], "titulo": atual.get("titulo", ""),
+                             "feito": False,
+                             "ferramenta_slug": _slug_disponivel(atual.get("ferramenta_slug", "")),
+                             "entregue": False})
+        return _sw.pagina_trilha(sub, itens, msg=msg)
 
     def _parse_multipart(self, ctype, body):
         """Parser mínimo de multipart/form-data. Retorna (campos:dict, arquivos:{nome:(filename,bytes)})."""
@@ -1860,6 +2018,11 @@ if __name__ == "__main__":
         db.init()
     except Exception as e:
         print(f"[web] db.init falhou: {e}", flush=True)
+    try:
+        import trilha as _trilha
+        _trilha.semear()          # idempotente: upsert por número
+    except Exception as e:
+        print(f"[trilha] seed falhou: {e}", flush=True)
     threading.Thread(target=agendador, daemon=True).start()
     print(f"[web] servindo ebook (curso.) + site artigos (artigos.) em :{PORT}", flush=True)
     Server(("0.0.0.0", PORT), Handler).serve_forever()
