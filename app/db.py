@@ -1749,3 +1749,10 @@ def trilha_painel():
             "GROUP BY p.subscriber_id, p.proxima_peca "
             "ORDER BY p.proxima_peca DESC").fetchall()
     return [dict(r) for r in rows]
+
+
+def trilha_listar_pecas():
+    """Todas as peças, em ordem. Alimenta a prévia do admin."""
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM trilha_pecas ORDER BY numero").fetchall()
+    return [dict(r) for r in rows]

@@ -374,6 +374,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
             planos = [visiveis[s] for s in ("mensal", "anual") if s in visiveis]
             return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
                                                       msg=q.get("msg", [""])[0]), 200)
+        if path.startswith("/admin/trilha/peca/"):
+            import config, db as _db, pdf_trilha
+            q = up.parse_qs(up.urlparse(self.path).query)
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            _db.init()
+            try:
+                numero = int(path.rsplit("/", 1)[1])
+            except ValueError:
+                return self._html("<h3>Peça inválida</h3>", 404)
+            peca = _db.trilha_peca(numero)
+            if not peca:
+                return self._html("<h3>Peça não encontrada</h3>", 404)
+            peca["numero"] = numero
+            link = (f"{config.PUBLIC_URL}/ferramentas/{peca['ferramenta_slug']}"
+                    if peca.get("ferramenta_slug") else "")
+            # mesma função que gera o PDF: a prévia não pode divergir do que é enviado
+            return self._html(pdf_trilha.montar_html(
+                peca, "(prévia)", abertura="", link_ferramenta=link), 200)
         if path == "/admin/trilha":
             import config, site_web, db as _db, subscribers as _subs
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -388,7 +408,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                "proxima_peca": l["proxima_peca"],
                                "enviadas": l["enviadas"], "feitas": l["feitas"],
                                "concluiu": l["proxima_peca"] > config.TRILHA_TOTAL})
-            return self._html(site_web.pagina_admin_trilha(linhas, config.ADMIN_TOKEN or ""), 200)
+            return self._html(site_web.pagina_admin_trilha(
+                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas()), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)

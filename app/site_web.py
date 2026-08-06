@@ -815,11 +815,28 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_admin_trilha(linhas, token=""):
+def pagina_admin_trilha(linhas, token="", pecas=None):
     """Painel do admin: quem está em qual semana da trilha, quanto recebeu e
     quanto executou. Cartões (não tabela: `.tbl` não existe no CSS deste repo, e
     a tela de Assinantes já foi redesenhada em cartões por causa disso no celular).
-    Cada linha: nome, proxima_peca, enviadas, feitas, concluiu:bool."""
+    Cada linha: nome, proxima_peca, enviadas, feitas, concluiu:bool.
+
+    `pecas` alimenta a prévia sob demanda: um link por peça pra
+    `/admin/trilha/peca/<n>`, que renderiza com a MESMA função que gera o PDF
+    enviado no WhatsApp -- assim a prévia não pode divergir do envio real.
+    Default `None` de propósito: chamadores antigos (sem essa lista) continuam
+    funcionando."""
+    pecas = pecas or []
+    if not pecas:
+        bloco_pecas = '<p class="hint">Nenhuma peça carregada.</p>'
+    else:
+        itens = []
+        for p in pecas:
+            itens.append(
+                f'<p style="margin:0 0 6px"><a class="cta ghost" '
+                f'href="/admin/trilha/peca/{int(p["numero"])}?token={_esc(token)}">'
+                f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
+        bloco_pecas = "".join(itens)
     if not linhas:
         corpo_lista = '<p class="hint">Ninguém entrou na trilha ainda.</p>'
     else:
@@ -845,6 +862,9 @@ def pagina_admin_trilha(linhas, token=""):
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">{_esc(config.TRILHA_NOME)}</h2>
       <p class="hint">{len(linhas)} assinante(s) na trilha · {config.TRILHA_TOTAL} peças no total.</p>
       {corpo_lista}
+      <div class="panel"><p class="plabel">As {config.TRILHA_TOTAL} peças</p>
+        <p class="hint">Abra cada uma pra ver exatamente o que vira PDF no WhatsApp.</p>
+        {bloco_pecas}</div>
     </div>"""
     return _pagina(f"{config.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="trilha",
                    meta_extra='<meta name="robots" content="noindex">')

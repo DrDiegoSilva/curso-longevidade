@@ -101,6 +101,14 @@ class TestFerramentaSegura(unittest.TestCase):
         with open(os.path.join(self.tmp, "ferramentas", "planilha-x.csv"), "w") as f:
             f.write("a,b\n")
 
+    def tearDown(self):
+        # `DSCURSO_TRILHA_DIR` é global (os.environ) e só esta classe o define --
+        # sem limpar, ele vaza pras classes seguintes desta suíte (ex.: quem chama
+        # `trilha.semear()` sem realimentar a env var passa a ler deste tmpdir vazio
+        # de peças em vez do `seed/trilha/` de verdade, e `trilha_listar_pecas()`
+        # some com as 12 peças). Achado ao rodar a suíte inteira do arquivo.
+        os.environ.pop("DSCURSO_TRILHA_DIR", None)
+
     def test_acha_a_ferramenta_existente(self):
         self.assertTrue(self.t.caminho_ferramenta("planilha-x"))
 
@@ -267,6 +275,110 @@ class TestAdminTrilha(unittest.TestCase):
         linhas = [{"nome": "<script>x</script>", "proxima_peca": 1, "enviadas": 0,
                    "feitas": 0, "concluiu": False}]
         self.assertNotIn("<script>x", self.w.pagina_admin_trilha(linhas))
+
+
+class TestPreviaPecas(unittest.TestCase):
+    """Prévia das 12 peças no admin: `db.trilha_listar_pecas` alimenta a lista de
+    links em `pagina_admin_trilha`, um por peça, apontando pra `/admin/trilha/peca/<n>`
+    -- a mesma renderização (`pdf_trilha.montar_html`) que vira o PDF no WhatsApp."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "trilha", "pdf_trilha", "site_web"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, trilha, pdf_trilha, site_web
+        for m in (config, db, trilha, pdf_trilha, site_web):
+            importlib.reload(m)
+        db.init()
+        self.cfg, self.db, self.t, self.w = config, db, trilha, site_web
+        self.t.semear()
+
+    def test_listar_pecas_vem_ordenado(self):
+        nums = [p["numero"] for p in self.db.trilha_listar_pecas()]
+        self.assertEqual(nums, sorted(nums))
+        self.assertEqual(len(nums), self.cfg.TRILHA_TOTAL)
+
+    def test_admin_lista_as_12_pecas_com_link_de_previa(self):
+        h = self.w.pagina_admin_trilha([], pecas=self.db.trilha_listar_pecas())
+        self.assertIn("/admin/trilha/peca/1", h)
+        self.assertIn(f"/admin/trilha/peca/{self.cfg.TRILHA_TOTAL}", h)
+
+    def test_admin_sem_pecas_nao_quebra(self):
+        h = self.w.pagina_admin_trilha([], pecas=[])
+        self.assertIn("Nenhuma peça", h)
+
+
+class _RotaPecaStub:
+    """Stub mínimo pro `self` de `do_GET`: só `path` e `_html` -- mesmo padrão do
+    `_RouteStub` de test_admin_precos.py, sem abrir socket real. A rota de prévia
+    (`/admin/trilha/peca/<n>`) não lê cookie nem corpo, então nem `headers` nem
+    `rfile` são necessários aqui."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def _html(self, s, code=200):
+        return {"code": code, "body": s}
+
+
+class TestRotaPreviaPeca(unittest.TestCase):
+    """`/admin/trilha/peca/<n>`: prévia sob demanda, renderizada com a MESMA
+    `pdf_trilha.montar_html` que vira PDF no WhatsApp -- por isso a prévia não
+    pode divergir do envio real. Testa a rota de verdade via `serve.Handler.do_GET`
+    (sem servidor real, mesmo padrão de `TestRotaAdminPrecos`) porque a ORDEM das
+    guardas importa: token errado tem que barrar ANTES de qualquer parse de
+    `numero` ou leitura de banco, e a rota mais específica
+    (`/admin/trilha/peca/<n>`) tem que vencer `/admin/trilha` -- nenhuma das duas
+    coisas aparece num teste de função pura."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ["DSCURSO_ADMIN_TOKEN"] = "tok123"
+        for m in ("config", "db", "trilha", "pdf_trilha", "serve"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, trilha, pdf_trilha, serve
+        for m in (config, db, trilha, pdf_trilha, serve):
+            importlib.reload(m)
+        db.init()
+        self.cfg, self.db, self.t, self.serve = config, db, trilha, serve
+        self.t.semear()
+
+    def tearDown(self):
+        os.environ.pop("DSCURSO_ADMIN_TOKEN", None)
+
+    def _get(self, path):
+        return self.serve.Handler.do_GET(_RotaPecaStub(path))
+
+    def test_sem_token_barra_antes_de_ler_o_banco(self):
+        r = self._get("/admin/trilha/peca/1")
+        self.assertEqual(r["code"], 403)
+
+    def test_token_errado_barra_mesmo_com_numero_invalido(self):
+        # prova a ordem das guardas: token errado + numero não-numérico ainda
+        # devolve 403 (a guarda de admin roda primeiro) e não 404 (o parse do
+        # `numero`, que viria depois, nunca chega a rodar).
+        r = self._get("/admin/trilha/peca/abc?token=errado")
+        self.assertEqual(r["code"], 403)
+
+    def test_numero_nao_inteiro_com_token_bom_devolve_404_sem_traceback(self):
+        r = self._get("/admin/trilha/peca/abc?token=tok123")
+        self.assertEqual(r["code"], 404)
+
+    def test_numero_inexistente_devolve_404(self):
+        r = self._get(f"/admin/trilha/peca/{self.cfg.TRILHA_TOTAL + 1}?token=tok123")
+        self.assertEqual(r["code"], 404)
+
+    def test_token_certo_devolve_a_mesma_renderizacao_do_pdf(self):
+        titulo = self.db.trilha_peca(1)["titulo"]
+        r = self._get("/admin/trilha/peca/1?token=tok123")
+        self.assertEqual(r["code"], 200)
+        self.assertIn(titulo, r["body"])
 
 
 if __name__ == "__main__":
