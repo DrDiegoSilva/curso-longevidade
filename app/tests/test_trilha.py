@@ -297,12 +297,19 @@ class TestEnvio(unittest.TestCase):
         self.assertEqual(len(self.enviados), 1)
         self.assertEqual(self.db.trilha_posicao(sub["id"]), 2)
 
-    def test_nao_envia_a_mesma_peca_duas_vezes(self):
+    def test_claim_orfao_e_retomado_assinante_volta_a_receber(self):
+        # Important 2 da revisão: um claim em trilha_envios sem a posição ter
+        # avançado só pode ser órfão (execução anterior morreu entre o INSERT do
+        # claim e o envio/avanço -- deploy, OOM, restart). Sem a correção, isto
+        # travava o assinante NESSA peça pra sempre: `enviar_para` devolvia False
+        # em TODO sábado seguinte porque o claim nunca era liberado.
         sub = self._sub()
-        self.db.trilha_registrar_envio(sub["id"], 1)          # já reivindicada
+        self.db.trilha_registrar_envio(sub["id"], 1)     # claim órfão de uma execução anterior
+        self.assertEqual(self.db.trilha_posicao(sub["id"]), 1)   # não avançou -- é o sinal do órfão
         ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
-        self.assertFalse(ok)
-        self.assertEqual(self.enviados, [])
+        self.assertTrue(ok, "claim órfão tem que ser retomado, não travar o assinante pra sempre")
+        self.assertEqual(len(self.enviados), 1)
+        self.assertEqual(self.db.trilha_posicao(sub["id"]), 2)
 
     def test_falha_no_envio_nao_avanca_a_posicao(self):
         sub = self._sub()
@@ -397,6 +404,7 @@ class TestEnvio(unittest.TestCase):
 
     def test_falha_inesperada_num_assinante_nao_impede_os_demais_do_slot(self):
         from datetime import date
+        from unittest.mock import patch
         a = self._sub("A", "5543999990005", "08h")
         b = self._sub("B", "5543999990006", "08h")
 
@@ -409,14 +417,117 @@ class TestEnvio(unittest.TestCase):
 
         self.db.trilha_posicao = posicao_com_explosao
         try:
-            res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
-                                     enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+            with patch("time.sleep"):    # 2 assinantes no mesmo slot -> pacing dormiria de verdade
+                res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
+                                         enviar_fn=self._fake_enviar, render_fn=self._fake_render)
         finally:
             self.db.trilha_posicao = posicao_original
 
         self.assertEqual(res["enviados"], 1, "B tinha que receber mesmo com A explodindo")
         self.assertEqual(res["falhas"], 1)
         self.assertEqual(self.db.trilha_posicao(b["id"]), 2)   # B avançou normalmente
+
+    def test_slot_respeita_o_delay_entre_assinantes(self):
+        # Important 1 da revisão: é o MESMO número de WhatsApp que sustenta o
+        # produto pago inteiro -- disparar em rajada arrisca banimento. O loop
+        # tem que dormir config.SEND_DELAY_SEC entre assinantes, mas não antes
+        # do 1º nem depois do último (atraso inútil).
+        from datetime import date
+        from unittest.mock import patch
+        a = self._sub("A", "5543999990010", "08h")
+        b = self._sub("B", "5543999990011", "08h")
+        c = self._sub("C", "5543999990012", "08h")
+        with patch("time.sleep") as mock_sleep:
+            res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
+                                     enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 3)
+        self.assertEqual(mock_sleep.call_count, 2, "3 envios -> 2 pausas entre eles, nunca no fim")
+        for chamada in mock_sleep.call_args_list:
+            self.assertEqual(chamada.args[0], self.cfg.SEND_DELAY_SEC)
+
+    def test_troca_de_slot_no_mesmo_sabado_nao_duplica(self):
+        # Important 3 da revisão, provado por execução: assinante no 08h recebe a
+        # peça 1, troca o horário pro 18h no MEIO do mesmo sábado, e o tick das 18h
+        # dispara a peça 2 -- posição pula de 1 pra 3 num dia só. Correção: claim
+        # por (sábado, assinante), não só por (peça, assinante).
+        from datetime import date
+        sub = self._sub(slot="08h")
+        sab = date(2026, 8, 8)
+
+        res1 = self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar,
+                                  render_fn=self._fake_render)
+        self.assertEqual(res1["enviados"], 1)
+        self.assertEqual(self.db.trilha_posicao(sub["id"]), 2)
+
+        self.subs.definir_slot(sub["id"], "18h")   # troca de horário no meio do sábado
+
+        res2 = self.t.enviar_slot("18h", quando=sab, enviar_fn=self._fake_enviar,
+                                  render_fn=self._fake_render)
+        self.assertEqual(res2["enviados"], 0, "já recebeu a peça da semana -- não pode duplicar")
+        self.assertEqual(len(self.enviados), 1, "só UMA peça no sábado, apesar da troca de slot")
+        self.assertEqual(self.db.trilha_posicao(sub["id"]), 2, "posição não pode pular pra 3")
+
+
+class TestLinkFerramentaNoEnvio(unittest.TestCase):
+    """Important 4 da revisão: o PDF só pode oferecer o link de download da
+    ferramenta quando o arquivo existe de verdade em seed/trilha/ferramentas/ --
+    caso contrário o assinante loga e recebe 404. Usa `DSCURSO_TRILHA_DIR` isolado
+    (mesmo padrão de TestFerramentaSegura em test_trilha_web.py) pra não escrever
+    arquivo nenhum no diretório real do repo."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_TRILHA_DIR"] = os.path.join(self.tmp, "trilha")
+        os.makedirs(os.path.join(self.tmp, "trilha", "ferramentas"))
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+        self.db.trilha_upsert_peca(1, "eixo", "Peça 1", "corpo", "micro", "mentalidade",
+                                   "planilha-custo-hora")
+        self.enviados = []
+
+    def tearDown(self):
+        # DSCURSO_TRILHA_DIR é global -- sem limpar, vaza pras classes seguintes
+        # da suíte (mesmo achado documentado em TestFerramentaSegura).
+        os.environ.pop("DSCURSO_TRILHA_DIR", None)
+
+    def _fake_enviar(self, whatsapp, pdf_path, caption=""):
+        self.enviados.append({"whatsapp": whatsapp, "caption": caption})
+
+    def _render_capturando(self, htmls):
+        def render(html, out_path):
+            htmls.append(html)
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("pdf")
+            return out_path
+        return render
+
+    def _sub(self, nome="Fulano", numero="5543999990000", slot="08h"):
+        reg = self.subs.adicionar(nome, numero)
+        self.subs.definir_slot(reg["id"], slot)
+        return self.subs.por_id(reg["id"])
+
+    def test_link_some_quando_arquivo_da_ferramenta_nao_existe(self):
+        sub = self._sub()
+        htmls = []
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar,
+                                render_fn=self._render_capturando(htmls))
+        self.assertTrue(ok)
+        self.assertNotIn("Baixar", htmls[0])
+        self.assertNotIn("planilha-custo-hora", htmls[0])
+
+    def test_link_aparece_quando_arquivo_da_ferramenta_existe(self):
+        caminho = os.path.join(self.cfg.TRILHA_DIR, "ferramentas", "planilha-custo-hora.csv")
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write("a,b\n")
+        sub = self._sub()
+        htmls = []
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar,
+                                render_fn=self._render_capturando(htmls))
+        self.assertTrue(ok)
+        self.assertIn("/ferramentas/planilha-custo-hora", htmls[0])
+        self.assertIn("Baixar", htmls[0])
 
 
 if __name__ == "__main__":

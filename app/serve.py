@@ -377,7 +377,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
                                                       msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin/trilha/peca/"):
-            import config, db as _db, pdf_trilha
+            import config, db as _db, pdf_trilha, trilha as _trilha_mod
             q = up.parse_qs(up.urlparse(self.path).query)
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
             if not token_ok:
@@ -394,8 +394,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not peca:
                 return self._html("<h3>Peça não encontrada</h3>", 404)
             peca["numero"] = numero
-            link = (f"{config.PUBLIC_URL}/ferramentas/{peca['ferramenta_slug']}"
-                    if peca.get("ferramenta_slug") else "")
+            # só afirma o link se o ARQUIVO existir -- mesma correção do envio real
+            # (app/trilha.py, enviar_para): a prévia não pode divergir do que sai no
+            # WhatsApp, e mostrar aqui um botão que dá 404 seria exatamente isso.
+            slug = peca.get("ferramenta_slug")
+            link = (f"{config.PUBLIC_URL}/ferramentas/{slug}"
+                    if slug and _trilha_mod.caminho_ferramenta(slug) else "")
             # mesma função que gera o PDF: a prévia não pode divergir do que é enviado
             return self._html(pdf_trilha.montar_html(
                 peca, "(prévia)", abertura="", link_ferramenta=link), 200)
@@ -1270,6 +1274,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _pagina_trilha(self, sub, msg=""):
         """Monta os itens da trilha do assinante (peça atual + anteriores)."""
         import db as _db, site_web as _sw, trilha as _trilha
+
+        def _slug_disponivel(slug):
+            # só afirma a ferramenta se o ARQUIVO existir -- a peça pode declarar
+            # `ferramenta:` no cabeçalho antes do arquivo ser subido em
+            # seed/trilha/ferramentas/ (Important 4 da revisão: 7 das 12 peças
+            # declaram ferramenta e o diretório só tinha .gitkeep). Sem esta
+            # checagem, `pagina_trilha` mostra "📎 Baixar" e a rota /ferramentas/
+            # devolve 404.
+            return slug if slug and _trilha.caminho_ferramenta(slug) else ""
+
         itens = []
         atual = _trilha.proxima_peca(sub["id"])
         vistos = set()
@@ -1277,7 +1291,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             p = _db.trilha_peca(env["numero"]) or {}
             itens.append({"numero": env["numero"], "titulo": p.get("titulo", ""),
                           "feito": bool(env.get("feito_em")),
-                          "ferramenta_slug": p.get("ferramenta_slug", ""),
+                          "ferramenta_slug": _slug_disponivel(p.get("ferramenta_slug", "")),
                           "entregue": True})
             vistos.add(env["numero"])
         if atual and atual["numero"] not in vistos:
@@ -1287,7 +1301,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # ainda), e o botão viraria decoração morta. `pagina_trilha` usa essa
             # chave pra trocar o botão por um aviso de "chega no sábado".
             itens.insert(0, {"numero": atual["numero"], "titulo": atual.get("titulo", ""),
-                             "feito": False, "ferramenta_slug": atual.get("ferramenta_slug", ""),
+                             "feito": False,
+                             "ferramenta_slug": _slug_disponivel(atual.get("ferramenta_slug", "")),
                              "entregue": False})
         return _sw.pagina_trilha(sub, itens, msg=msg)
 

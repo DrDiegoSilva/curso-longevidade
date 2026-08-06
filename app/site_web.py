@@ -151,6 +151,7 @@ button.btn{border:none;cursor:pointer}
   border-radius:20px;padding:38px 32px}
 .panel h2{font-family:"Cormorant Garamond",Georgia,serif;font-size:34px;color:var(--creme);margin-bottom:6px}
 .panel p.hint{color:var(--suave);margin-bottom:22px;font-size:15px}
+.plabel{font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ouro2)}
 label{display:block;font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--suave);margin-bottom:8px}
 input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(233,225,198,.2);border-radius:12px;
   color:var(--creme);font-size:20px;font-family:Georgia,serif;padding:14px 16px;margin-bottom:18px;letter-spacing:.04em}
@@ -1956,8 +1957,7 @@ def pagina_minha(sub, admin=False):
     def card(href, ic, nm, ds):
         return (f'<a class="curbtn" href="{href}"><span class="ic">{ic}</span>'
                 f'<span><span class="nm">{nm}</span><span class="ds">{ds}</span></span></a>')
-    admin_html = ('<p class="plabel" style="margin-top:18px;font-family:system-ui,sans-serif;'
-                  'font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ouro2)">Painel do curador</p>'
+    admin_html = ('<p class="plabel" style="margin-top:18px">Painel do curador</p>'
                   '<div class="curgrid">'
                   + card("/curadoria", "🔬", "Curadoria &amp; Estoque", "Varredura, seleção e fila de resumos")
                   + card("/agenda", "📅", "Agenda de envios", "O que sai cada dia da semana")

@@ -131,8 +131,23 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
     if peca is None:
         return False
     numero = peca["numero"]
-    if not db.trilha_registrar_envio(sub_id, numero):    # já reivindicada
-        return False
+    if not db.trilha_registrar_envio(sub_id, numero):
+        # INVARIANTE que sustenta este "retomar" em vez de `return False`: `numero`
+        # acabou de sair de `proxima_peca(sub_id)`, ou seja, É a posição ATUAL do
+        # assinante. Se esta peça já tivesse sido enviada com sucesso, `trilha_avancar`
+        # já teria movido a posição pra frente e `proxima_peca` teria devolvido outro
+        # número -- não este. Logo, um claim que colide com a posição atual só pode
+        # ser órfão: uma execução anterior morreu entre o INSERT do claim e o
+        # envio/avanço (deploy, OOM, restart do container) e nunca chegou nos
+        # try/except abaixo, que liberariam o claim via `_liberar_claim`. Sem retomar
+        # aqui, o assinante trava NESSA peça pra sempre, em silêncio -- provado em
+        # produção: 3 sábados seguidos com {'enviados': 0, 'falhas': 1}, posição
+        # sempre 1, zero mensagens de verdade. O que evita reenvio duplicado DENTRO
+        # do mesmo sábado não é este claim por peça -- é o claim por (sábado,
+        # assinante) que `enviar_slot` faz ANTES de chamar esta função (chave
+        # `trilha:{data}` em `registrar_envio_assinante`).
+        print(f"[trilha] retomando claim órfão da peça {numero} p/ {sub_id} "
+              f"(execução anterior não completou)", flush=True)
 
     enviar_fn = enviar_fn or deliver.enviar_pdf
     if render_fn is None:
@@ -142,7 +157,11 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
     try:
         import pdf_trilha
         link = ""
-        if peca.get("ferramenta_slug"):
+        # só afirma o link se o ARQUIVO existir -- a peça pode declarar `ferramenta:`
+        # no cabeçalho antes do arquivo ser subido em seed/trilha/ferramentas/, e um
+        # link morto na peça 1 é o pior lugar pra isso acontecer (todo assinante
+        # pagante recebe a peça 1 primeiro).
+        if peca.get("ferramenta_slug") and caminho_ferramenta(peca["ferramenta_slug"]):
             link = f"{config.PUBLIC_URL}/ferramentas/{peca['ferramenta_slug']}"
         html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
                                            abertura=abertura(sub_id, numero), link_ferramenta=link)
@@ -179,8 +198,17 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
 def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
     """Envia a peça da semana aos assinantes ativos de `slot`. Só roda no dia da
     trilha. Idempotente por (data, slot) usando `envios_slot` com chave namespaced —
-    mesmo truque da varredura semanal, sem tabela nova."""
+    mesmo truque da varredura semanal, sem tabela nova.
+
+    Dois claims empilhados, cada um matando um bug diferente:
+    - por (data, slot), acima: o TICK inteiro não roda duas vezes (restart do cron).
+    - por (data, assinante), no loop: o ASSINANTE não leva DUAS peças no mesmo
+      sábado por causa de troca de horário no meio do dia — mesma defesa que
+      `daily.enviar_slot` usa pro estudo diário (ver `db.registrar_envio_assinante`),
+      aqui reaproveitada com chave namespaced (`trilha:{data}`) pra não brigar com
+      o claim do estudo diário na mesma tabela `envios_dia`."""
     from datetime import datetime
+    import time
     import subscribers
 
     d = quando or datetime.now()
@@ -191,9 +219,18 @@ def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
         return {"enviados": 0, "falhas": 0}
 
     enviados = falhas = 0
+    primeiro = True
     for s in subscribers.ativos():
         if subscribers.slot_de(s) != slot:
             continue
+        if not db.registrar_envio_assinante(f"trilha:{data}", s.get("id")):
+            continue   # já recebeu a peça da semana hoje (troca de horário no mesmo sábado)
+        # pacing: é o MESMO número de WhatsApp que sustenta o produto pago inteiro —
+        # sem o delay, o 1º sábado dispara a base inteira de um slot em rajada. Não
+        # dorme antes do 1º envio (sem atraso inútil no início do lote).
+        if not primeiro:
+            time.sleep(config.SEND_DELAY_SEC)
+        primeiro = False
         try:
             ok = enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn)
         except Exception as e:

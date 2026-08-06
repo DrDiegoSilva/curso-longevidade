@@ -82,6 +82,12 @@ class TestPaginaTrilha(unittest.TestCase):
         h = self.w.pagina_trilha({"nome": "Diego"}, [])
         self.assertIn("Diego", h)
 
+    def test_plabel_tem_regra_no_css_global(self):
+        # Minor da revisão FINAL: `.plabel` era usada em pagina_trilha (rótulo
+        # "Semana N de 12") e no painel do admin sem regra correspondente em
+        # site_web._CSS -- renderizava como parágrafo comum, sem destaque nenhum.
+        self.assertIn(".plabel", self.w._CSS)
+
 
 class TestFerramentaSegura(unittest.TestCase):
     def setUp(self):
@@ -119,6 +125,49 @@ class TestFerramentaSegura(unittest.TestCase):
         for mau in ("../db.py", "..%2Fdb.py", "a/../../etc/passwd", "/etc/passwd",
                     "..", ".", "a\\..\\b"):
             self.assertIsNone(self.t.caminho_ferramenta(mau), f"passou: {mau}")
+
+
+class TestPaginaTrilhaFerramentaFaltando(unittest.TestCase):
+    """Important 4 da revisão, na página do assinante: `serve.Handler._pagina_trilha`
+    alimenta `ferramenta_slug` pra `site_web.pagina_trilha`, que sempre mostrou o
+    link sem checar se o arquivo existe. Usa `DSCURSO_TRILHA_DIR` isolado (mesmo
+    padrão de TestFerramentaSegura) pra não escrever nada no diretório real do
+    repo."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ["DSCURSO_TRILHA_DIR"] = os.path.join(self.tmp, "trilha")
+        os.makedirs(os.path.join(self.tmp, "trilha", "ferramentas"))
+        for m in ("config", "db", "subscribers", "trilha", "site_web", "serve"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, subscribers, trilha, site_web, serve
+        for m in (config, db, subscribers, trilha, site_web, serve):
+            importlib.reload(m)
+        subscribers._migrado = False
+        db.init()
+        self.cfg, self.db, self.subs, self.serve = config, db, subscribers, serve
+        self.db.trilha_upsert_peca(1, "eixo", "Peça 1", "corpo", "micro", "mentalidade",
+                                   "planilha-custo-hora")
+        self.sub = {"id": "sub-a", "nome": "Diego"}
+        self.db.trilha_registrar_envio(self.sub["id"], 1)
+        self.db.trilha_avancar(self.sub["id"], 1)
+
+    def tearDown(self):
+        os.environ.pop("DSCURSO_TRILHA_DIR", None)
+
+    def test_link_some_quando_arquivo_nao_existe(self):
+        html = self.serve.Handler._pagina_trilha(None, self.sub)
+        self.assertNotIn("/ferramentas/planilha-custo-hora", html)
+
+    def test_link_aparece_quando_arquivo_existe(self):
+        caminho = os.path.join(self.cfg.TRILHA_DIR, "ferramentas", "planilha-custo-hora.csv")
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write("a,b\n")
+        html = self.serve.Handler._pagina_trilha(None, self.sub)
+        self.assertIn("/ferramentas/planilha-custo-hora", html)
 
 
 class TestTrilhaNumeroValido(unittest.TestCase):
@@ -400,6 +449,16 @@ class TestRotaPreviaPeca(unittest.TestCase):
         r = self._get("/admin/trilha/peca/1?token=tok123")
         self.assertEqual(r["code"], 200)
         self.assertIn(titulo, r["body"])
+
+    def test_previa_nao_mostra_link_de_ferramenta_que_nao_existe(self):
+        # Important 4 da revisão: a peça 1 do seed real declara `ferramenta:
+        # planilha-custo-hora` no cabeçalho, mas seed/trilha/ferramentas/ só tem
+        # .gitkeep -- a prévia do admin não pode divergir do envio real e mostrar
+        # um botão que dá 404.
+        self.assertTrue(self.db.trilha_peca(1)["ferramenta_slug"])   # a peça DECLARA ferramenta
+        r = self._get("/admin/trilha/peca/1?token=tok123")
+        self.assertEqual(r["code"], 200)
+        self.assertNotIn("Baixar", r["body"])
 
 
 if __name__ == "__main__":
