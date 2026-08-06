@@ -374,6 +374,27 @@ class TestRotaPreviaPeca(unittest.TestCase):
         r = self._get(f"/admin/trilha/peca/{self.cfg.TRILHA_TOTAL + 1}?token=tok123")
         self.assertEqual(r["code"], 404)
 
+    def test_numero_gigante_devolve_404_sem_estourar(self):
+        # Rodada de correção 1: achado Important do revisor. Antes da correção, o
+        # `int(path.rsplit(...))` cru não estourava (Python tem inteiro de precisão
+        # arbitrária), então o valor gigante chegava intacto em `db.trilha_peca`, que
+        # tenta vincular esse int no sqlite3 -- e AÍ estoura (`OverflowError: Python
+        # int too large to convert to SQLite INTEGER`), sem try/except no caminho do
+        # banco. Mesma classe de bug já corrigida no POST /trilha (`45350e2`), agora
+        # fechada aqui reaproveitando `_trilha_numero_valido` em vez de validação
+        # paralela. ~90 dígitos: bem além de qualquer INTEGER de 64 bits do SQLite,
+        # mesma grandeza usada em TestTrilhaNumeroValido.
+        r = self._get(f"/admin/trilha/peca/{'9' * 90}?token=tok123")
+        self.assertEqual(r["code"], 404)
+
+    def test_numero_zero_devolve_404(self):
+        r = self._get("/admin/trilha/peca/0?token=tok123")
+        self.assertEqual(r["code"], 404)
+
+    def test_numero_negativo_devolve_404(self):
+        r = self._get("/admin/trilha/peca/-1?token=tok123")
+        self.assertEqual(r["code"], 404)
+
     def test_token_certo_devolve_a_mesma_renderizacao_do_pdf(self):
         titulo = self.db.trilha_peca(1)["titulo"]
         r = self._get("/admin/trilha/peca/1?token=tok123")

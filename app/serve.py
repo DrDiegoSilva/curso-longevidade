@@ -69,17 +69,19 @@ def _pct_str(pct):
 
 
 def _trilha_numero_valido(numero_str):
-    """Converte o `numero` do form de POST /trilha num inteiro de peça válido
-    (1..config.TRILHA_TOTAL), ou devolve 0 se não for.
+    """Converte um `numero` (form do POST /trilha OU segmento de URL da rota GET
+    /admin/trilha/peca/<n>) num inteiro de peça válido (1..config.TRILHA_TOTAL), ou
+    devolve 0 se não for. Único ponto de verdade pras duas rotas -- nenhuma delas
+    tem permissão de validar `numero` por conta própria.
 
-    A faixa é checada AQUI, antes de qualquer valor chegar em `db.trilha_marcar_feito`:
-    `int()` do Python não estoura com uma string de dezenas de dígitos (inteiro de
-    precisão arbitrária), mas o `sqlite3` estoura ao tentar converter esse Python int
-    pra INTEGER de 64 bits do SQLite (`OverflowError: Python int too large to convert
-    to SQLite INTEGER`), sem try/except no caminho do banco — qualquer assinante
-    logado conseguiria derrubar a requisição só mandando um número gigante no form.
-    Preferimos rejeitar aqui (peça inválida vira 0, silenciosamente ignorada) a deixar
-    a exceção subir."""
+    A faixa é checada AQUI, antes de qualquer valor chegar em `db.trilha_marcar_feito`
+    ou `db.trilha_peca`: `int()` do Python não estoura com uma string de dezenas de
+    dígitos (inteiro de precisão arbitrária), mas o `sqlite3` estoura ao tentar
+    converter esse Python int pra INTEGER de 64 bits do SQLite (`OverflowError:
+    Python int too large to convert to SQLite INTEGER`), sem try/except no caminho do
+    banco — qualquer requisição (form OU URL) conseguiria derrubar a resposta só
+    mandando um número gigante. Preferimos rejeitar aqui (peça inválida vira 0,
+    silenciosamente ignorada) a deixar a exceção subir."""
     import config
     try:
         numero = int(numero_str or 0)
@@ -381,9 +383,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not token_ok:
                 return self._html("<h3>Acesso negado</h3>", 403)
             _db.init()
-            try:
-                numero = int(path.rsplit("/", 1)[1])
-            except ValueError:
+            # mesmo helper do POST /trilha (linha ~1251): rejeita fora da faixa
+            # 1..TRILHA_TOTAL ANTES de tocar o banco -- um `numero` gigante na URL
+            # não pode virar OverflowError do sqlite3 dentro de `db.trilha_peca`
+            # (duas validações paralelas pra mesma entrada é como a 2ª volta fura).
+            numero = _trilha_numero_valido(path.rsplit("/", 1)[1])
+            if not numero:
                 return self._html("<h3>Peça inválida</h3>", 404)
             peca = _db.trilha_peca(numero)
             if not peca:
