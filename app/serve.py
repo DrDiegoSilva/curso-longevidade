@@ -68,6 +68,26 @@ def _pct_str(pct):
     return ("%g" % float(pct)).replace(".", ",") + "%"
 
 
+def _trilha_numero_valido(numero_str):
+    """Converte o `numero` do form de POST /trilha num inteiro de peça válido
+    (1..config.TRILHA_TOTAL), ou devolve 0 se não for.
+
+    A faixa é checada AQUI, antes de qualquer valor chegar em `db.trilha_marcar_feito`:
+    `int()` do Python não estoura com uma string de dezenas de dígitos (inteiro de
+    precisão arbitrária), mas o `sqlite3` estoura ao tentar converter esse Python int
+    pra INTEGER de 64 bits do SQLite (`OverflowError: Python int too large to convert
+    to SQLite INTEGER`), sem try/except no caminho do banco — qualquer assinante
+    logado conseguiria derrubar a requisição só mandando um número gigante no form.
+    Preferimos rejeitar aqui (peça inválida vira 0, silenciosamente ignorada) a deixar
+    a exceção subir."""
+    import config
+    try:
+        numero = int(numero_str or 0)
+    except ValueError:
+        return 0
+    return numero if 1 <= numero <= config.TRILHA_TOTAL else 0
+
+
 def agendador():
     """Dispara o envio em CADA slot (config.SLOTS) + prepara às 18h. Fuso TZ.
     08h: pré-renovação + envio do slot 08h. 18h: prepara amanhã + envia o slot 18h."""
@@ -1114,19 +1134,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/renovar":
             return self._post_renovar(g)
         if path == "/trilha":
-            sub = self._sub_logado()
-            if not sub:
-                return self._redirect("/entrar")
-            msg = ""
-            if g("acao") == "marcar_feito":
-                import db as _db
-                try:
-                    numero = int(g("numero") or 0)
-                except ValueError:
-                    numero = 0
-                if _db.trilha_marcar_feito(sub["id"], numero):
-                    msg = "Marcado. Bom trabalho."
-            return self._html(self._pagina_trilha(sub, msg=msg))
+            return self._trilha_post(g)
         return self._html("<h3>rota inválida</h3>", 404)
 
     def _meus_dados_post(self, g):
@@ -1190,6 +1198,27 @@ class Handler(http.server.BaseHTTPRequestHandler):
                               novo_num=g("novo_numero"), msg=erros.get(st, "Não deu.")), 200)
         return self._redirect("/meus-dados")
 
+    def _trilha_post(self, g):
+        """POST /trilha: `marcar_feito` MUTA dado do assinante (trilha_envios.feito_em)
+        — mesmo gate de aceite que `_meus_dados_post` usa, pelo mesmo motivo: sem esta
+        checagem aqui, aceite pendente não impede a mutação, só o link direto pra cá
+        (ver docstring de `_meus_dados_post` pro cenário completo)."""
+        import subscribers
+        sub = self._sub_logado()
+        if not sub:
+            return self._redirect("/entrar")
+        if subscribers.precisa_aceitar(sub):
+            import site_legal
+            return self._html(site_legal.pagina_aceite_termos("/trilha"))
+        msg = ""
+        if g("acao") == "marcar_feito":
+            numero = _trilha_numero_valido(g("numero"))
+            if numero:
+                import db as _db
+                if _db.trilha_marcar_feito(sub["id"], numero):
+                    msg = "Marcado. Bom trabalho."
+        return self._html(self._pagina_trilha(sub, msg=msg))
+
     def _sub_logado(self):
         import subscribers
         sess = self._sessao()
@@ -1207,12 +1236,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             p = _db.trilha_peca(env["numero"]) or {}
             itens.append({"numero": env["numero"], "titulo": p.get("titulo", ""),
                           "feito": bool(env.get("feito_em")),
-                          "ferramenta_slug": p.get("ferramenta_slug", "")})
+                          "ferramenta_slug": p.get("ferramenta_slug", ""),
+                          "entregue": True})
             vistos.add(env["numero"])
         if atual and atual["numero"] not in vistos:
-            # ainda não recebeu por WhatsApp (entrou hoje): mostra o que vem aí
+            # ainda não recebeu por WhatsApp (entrou hoje): mostra o que vem aí, mas
+            # `entregue=False` — marcar "fiz" antes do envio real sempre devolveria
+            # False em silêncio (não existe linha em trilha_envios pra essa peça
+            # ainda), e o botão viraria decoração morta. `pagina_trilha` usa essa
+            # chave pra trocar o botão por um aviso de "chega no sábado".
             itens.insert(0, {"numero": atual["numero"], "titulo": atual.get("titulo", ""),
-                             "feito": False, "ferramenta_slug": atual.get("ferramenta_slug", "")})
+                             "feito": False, "ferramenta_slug": atual.get("ferramenta_slug", ""),
+                             "entregue": False})
         return _sw.pagina_trilha(sub, itens, msg=msg)
 
     def _parse_multipart(self, ctype, body):

@@ -1924,8 +1924,14 @@ def pagina_trilha(sub, itens, msg=""):
     """Trilha do assinante: peça da semana no topo, anteriores abaixo.
 
     `itens` já vem pronto do serve (mais recente primeiro), com numero, titulo,
-    feito e ferramenta_slug. A página não consulta banco."""
+    feito, ferramenta_slug e entregue. `entregue=False` é a peça de prévia que
+    `serve._pagina_trilha` insere quando o assinante ainda não recebeu aquela peça
+    pelo WhatsApp — sem botão de "fiz" (clicar antes do envio real sempre devolveria
+    False em silêncio, porque não existe linha em trilha_envios ainda) e com um
+    aviso de que ela chega no sábado. Item sem a chave `entregue` é tratado como
+    entregue (True), pra não quebrar dado antigo. A página não consulta banco."""
     import config as _cfg
+    nome = _esc(sub.get("nome") or "assinante")
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     if not itens:
         linhas = ('<p class="hint">Sua primeira peça chega no próximo sábado, '
@@ -1938,7 +1944,10 @@ def pagina_trilha(sub, itens, msg=""):
                 ferramenta = (f'<p style="margin:8px 0 0"><a class="cta ghost" '
                               f'href="/ferramentas/{_esc(it["ferramenta_slug"])}">'
                               f'📎 Baixar a ferramenta</a></p>')
-            if it.get("feito"):
+            if not it.get("entregue", True):
+                acao = ('<p class="hint" style="margin:8px 0 0">Ainda não chegou — '
+                        'você recebe esta peça no seu WhatsApp no próximo sábado.</p>')
+            elif it.get("feito"):
                 acao = '<p class="hint" style="margin:8px 0 0">✅ Você marcou como feita.</p>'
             else:
                 acao = (f'<form method="post" action="/trilha" style="margin:8px 0 0">'
@@ -1956,7 +1965,7 @@ def pagina_trilha(sub, itens, msg=""):
     corpo = f"""
     <div class="wrap">
       <h2 class="disp">{_esc(_cfg.TRILHA_NOME)}</h2>
-      <p class="hint">Uma peça por sábado. Cada uma tem uma tarefa pequena — é ela que faz a diferença.</p>
+      <p class="hint">Olá, {nome}. Uma peça por sábado — cada uma tem uma tarefa pequena, é ela que faz a diferença.</p>
       {msg_html}
       {linhas}
       <p style="margin:22px 0 0"><a class="cta ghost" href="/minha">Voltar</a></p>
