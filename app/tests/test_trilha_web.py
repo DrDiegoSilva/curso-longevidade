@@ -228,5 +228,46 @@ class TestTrilhaPostRota(unittest.TestCase):
         self.assertIn("pagina msg=", html)
 
 
+class TestAdminTrilha(unittest.TestCase):
+    """Painel `/admin/trilha`: quem está em qual semana, quanto recebeu e quanto
+    executou. Testa só a função de renderização (`pagina_admin_trilha`), mesmo
+    padrão de TestPaginaTrilha -- a rota em si é fiação simples em serve.py."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "site_web"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, site_web
+        for m in (config, db, site_web):
+            importlib.reload(m)
+        db.init()
+        self.w = site_web
+
+    def test_lista_assinantes_com_posicao(self):
+        linhas = [{"nome": "Diego", "proxima_peca": 4, "enviadas": 3, "feitas": 2,
+                   "concluiu": False}]
+        h = self.w.pagina_admin_trilha(linhas)
+        self.assertIn("Diego", h)
+        self.assertIn("4", h)
+
+    def test_marca_quem_concluiu(self):
+        linhas = [{"nome": "Ana", "proxima_peca": 13, "enviadas": 12, "feitas": 12,
+                   "concluiu": True}]
+        h = self.w.pagina_admin_trilha(linhas)
+        self.assertIn("Concluiu", h)
+
+    def test_sem_ninguem_na_trilha_nao_quebra(self):
+        h = self.w.pagina_admin_trilha([])
+        self.assertIn("Ninguém", h)
+
+    def test_escapa_nome(self):
+        linhas = [{"nome": "<script>x</script>", "proxima_peca": 1, "enviadas": 0,
+                   "feitas": 0, "concluiu": False}]
+        self.assertNotIn("<script>x", self.w.pagina_admin_trilha(linhas))
+
+
 if __name__ == "__main__":
     unittest.main()

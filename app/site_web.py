@@ -656,6 +656,7 @@ def _admin_nav(token="", atual=""):
             + lk("/series", "🎬 Séries", "series")
             + lk("/admin/precos", "💰 Preços", "precos")
             + lk("/admin/envio", "🗓️ Dias", "envio")
+            + lk("/admin/trilha", "📘 Trilha", "trilha")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
             + lk("/admin/mensagens", "📝 Mensagens", "mensagens")
             + lk("/admin/whatsapp", "📱 WhatsApp", "whatsapp")
@@ -812,6 +813,41 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
       </form>
     </div>"""
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+
+
+def pagina_admin_trilha(linhas, token=""):
+    """Painel do admin: quem está em qual semana da trilha, quanto recebeu e
+    quanto executou. Cartões (não tabela: `.tbl` não existe no CSS deste repo, e
+    a tela de Assinantes já foi redesenhada em cartões por causa disso no celular).
+    Cada linha: nome, proxima_peca, enviadas, feitas, concluiu:bool."""
+    if not linhas:
+        corpo_lista = '<p class="hint">Ninguém entrou na trilha ainda.</p>'
+    else:
+        cards = []
+        for l in linhas:
+            estado = "Concluiu" if l.get("concluiu") else f"Semana {int(l['proxima_peca'])}"
+            cards.append(
+                # .panel padrão é feito p/ 1 caixa centralizada (login/forms), não p/ lista
+                # repetida -- max-width/margin sobrescritos aqui, mesma técnica já usada em
+                # pagina_admin_envio logo acima (senão dezenas de assinantes viram uma coluna
+                # estreita e centralizada com 40px de vão entre cada cartão).
+                f'<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
+                f'<h3 style="margin:0;font-family:var(--disp);color:var(--creme);font-size:20px">'
+                f'{_esc(l.get("nome") or "—")}</h3>'
+                f'<p class="hint" style="margin:6px 0 0">{_esc(estado)} · '
+                f'{int(l.get("enviadas", 0))} recebida(s) · {int(l.get("feitas", 0))} feita(s)</p>'
+                f'</div>')
+        corpo_lista = "".join(cards)
+    corpo = f"""
+    <div class="wrap">
+      {_admin_nav(token, "trilha")}
+      <div class="sectag" style="margin-top:8px">Painel do curador</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">{_esc(config.TRILHA_NOME)}</h2>
+      <p class="hint">{len(linhas)} assinante(s) na trilha · {config.TRILHA_TOTAL} peças no total.</p>
+      {corpo_lista}
+    </div>"""
+    return _pagina(f"{config.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="trilha",
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_admin_mensagens(wa, email_assunto, email_corpo, email_renov_assunto="",
