@@ -829,7 +829,7 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_admin_trilha(linhas, token="", pecas=None):
+def pagina_admin_trilha(linhas, token="", pecas=None, ativa=False, msg=""):
     """Painel do admin: quem está em qual semana da trilha, quanto recebeu e
     quanto executou. Cartões (não tabela: `.tbl` não existe no CSS deste repo, e
     a tela de Assinantes já foi redesenhada em cartões por causa disso no celular).
@@ -851,6 +851,31 @@ def pagina_admin_trilha(linhas, token="", pecas=None):
                 f'href="/admin/trilha/peca/{int(p["numero"])}?token={_esc(token)}">'
                 f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
         bloco_pecas = "".join(itens)
+    msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
+    # O interruptor mestre. Fica no topo porque é a única coisa nesta tela que muda o
+    # que o assinante recebe -- o resto é leitura.
+    if ativa:
+        bloco_switch = (
+            '<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px;'
+            'border-color:var(--ouro2)">'
+            '<p class="plabel" style="color:var(--ouro2)">Trilha LIGADA</p>'
+            '<p class="hint" style="margin:6px 0 12px">Todo sábado os assinantes recebem a '
+            'peça da vez, cada um no horário que escolheu.</p>'
+            f'<form method="post" action="/admin/trilha">'
+            f'<input type="hidden" name="token" value="{_esc(token)}">'
+            '<input type="hidden" name="acao" value="desligar">'
+            '<button class="actbtn ghost" type="submit">Desligar a trilha</button></form></div>')
+    else:
+        bloco_switch = (
+            '<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
+            '<p class="plabel">Trilha desligada</p>'
+            '<p class="hint" style="margin:6px 0 12px">Nenhum assinante recebe nada. Leia as '
+            f'{config.TRILHA_TOTAL} peças abaixo antes de ligar — depois de ligada, a primeira '
+            'sai no próximo sábado e não tem como voltar atrás no que já saiu.</p>'
+            f'<form method="post" action="/admin/trilha">'
+            f'<input type="hidden" name="token" value="{_esc(token)}">'
+            '<input type="hidden" name="acao" value="ligar">'
+            '<button class="actbtn" type="submit">Ligar a trilha</button></form></div>')
     if not linhas:
         corpo_lista = '<p class="hint">Ninguém entrou na trilha ainda.</p>'
     else:
@@ -875,10 +900,13 @@ def pagina_admin_trilha(linhas, token="", pecas=None):
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">{_esc(config.TRILHA_NOME)}</h2>
       <p class="hint">{len(linhas)} assinante(s) na trilha · {config.TRILHA_TOTAL} peças no total.</p>
-      {corpo_lista}
-      <div class="panel"><p class="plabel">As {config.TRILHA_TOTAL} peças</p>
+      {msg_html}
+      {bloco_switch}
+      <div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">
+        <p class="plabel">As {config.TRILHA_TOTAL} peças</p>
         <p class="hint">Abra cada uma pra ver exatamente o que vira PDF no WhatsApp.</p>
         {bloco_pecas}</div>
+      {corpo_lista}
     </div>"""
     return _pagina(f"{config.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="trilha",
                    meta_extra='<meta name="robots" content="noindex">')

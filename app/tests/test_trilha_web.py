@@ -1,5 +1,6 @@
 """Testes das rotas da trilha: página do assinante, '✅ fiz' e download. Standalone."""
 import os
+import shutil
 import sys
 import tempfile
 import importlib
@@ -388,6 +389,20 @@ class TestRotaPreviaPeca(unittest.TestCase):
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         os.environ["DSCURSO_ADMIN_TOKEN"] = "tok123"
+        # DSCURSO_TRILHA_DIR isolado (mesmo padrão de TestFerramentaSegura /
+        # TestPaginaTrilhaFerramentaFaltando): copia as peças reais de
+        # seed/trilha/*.md pra um tmpdir e cria "ferramentas/" vazio de
+        # propósito ali dentro. Sem isso, test_previa_nao_mostra_link_de_
+        # ferramenta_que_nao_existe dependia do diretório real do repo estar
+        # vazio -- e passou a falhar assim que as 7 ferramentas da trilha
+        # foram commitadas.
+        self.trilha_dir = os.path.join(self.tmp, "trilha")
+        os.makedirs(os.path.join(self.trilha_dir, "ferramentas"))
+        seed_real = os.path.join(os.path.dirname(__file__), "..", "..", "seed", "trilha")
+        for nome in os.listdir(seed_real):
+            if nome.endswith(".md"):
+                shutil.copy(os.path.join(seed_real, nome), os.path.join(self.trilha_dir, nome))
+        os.environ["DSCURSO_TRILHA_DIR"] = self.trilha_dir
         for m in ("config", "db", "trilha", "pdf_trilha", "serve"):
             if m in sys.modules:
                 importlib.reload(sys.modules[m])
@@ -400,6 +415,7 @@ class TestRotaPreviaPeca(unittest.TestCase):
 
     def tearDown(self):
         os.environ.pop("DSCURSO_ADMIN_TOKEN", None)
+        os.environ.pop("DSCURSO_TRILHA_DIR", None)
 
     def _get(self, path):
         return self.serve.Handler.do_GET(_RotaPecaStub(path))

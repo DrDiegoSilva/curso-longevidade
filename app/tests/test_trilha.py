@@ -263,6 +263,80 @@ class TestPdfTrilha(unittest.TestCase):
         h = self.p.montar_html(self.peca, "<img src=x onerror=1>")
         self.assertNotIn("<img src=x", h)
 
+    def test_subtitulo_vira_h2_sem_sobrar_marcador(self):
+        peca = dict(self.peca, corpo="### Um passo importante\n\nTexto normal.")
+        h = self.p.montar_html(peca, "Diego")
+        self.assertIn("<h2>Um passo importante</h2>", h)
+        self.assertNotIn("###", h)
+
+    def test_tabela_de_cano_vira_table_com_thead_e_tbody(self):
+        corpo = "| Item | Valor |\n| --- | --- |\n| Aluguel | R$ 100 |"
+        peca = dict(self.peca, corpo=corpo)
+        h = self.p.montar_html(peca, "Diego")
+        self.assertIn("<table>", h)
+        self.assertIn("<thead>", h)
+        self.assertIn("<tbody>", h)
+        self.assertIn("<th>Item</th>", h)
+        self.assertIn("<td>Aluguel</td>", h)
+        self.assertNotIn("|", h)
+
+    def test_negrito_vira_strong_em_paragrafo_tabela_e_lista(self):
+        corpo = ("Isto é **forte**.\n\n"
+                 "| Item | Valor |\n| --- | --- |\n| **Total** | R$ 100 |\n\n"
+                 "- Primeiro **item**.")
+        peca = dict(self.peca, corpo=corpo)
+        h = self.p.montar_html(peca, "Diego")
+        self.assertIn("<strong>forte</strong>", h)
+        self.assertIn("<strong>Total</strong>", h)
+        self.assertIn("<strong>item</strong>", h)
+        self.assertNotIn("**", h)
+
+    def test_lista_com_marcador_vira_ul(self):
+        peca = dict(self.peca, corpo="- Um\n- Dois\n- Três")
+        h = self.p.montar_html(peca, "Diego")
+        self.assertIn("<ul><li>Um</li><li>Dois</li><li>Três</li></ul>", h)
+
+    def test_lista_numerada_vira_ol(self):
+        peca = dict(self.peca, corpo="1. Um\n2. Dois\n3. Três")
+        h = self.p.montar_html(peca, "Diego")
+        self.assertIn("<ol><li>Um</li><li>Dois</li><li>Três</li></ol>", h)
+
+    def test_escapa_script_dentro_de_celula_de_tabela(self):
+        corpo = "| Item | Valor |\n| --- | --- |\n| <script>alert(1)</script> | R$ 1 |"
+        peca = dict(self.peca, corpo=corpo)
+        h = self.p.montar_html(peca, "Diego")
+        self.assertNotIn("<script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
+    def test_escapa_script_dentro_de_item_de_lista(self):
+        peca = dict(self.peca, corpo="- <script>alert(1)</script>")
+        h = self.p.montar_html(peca, "Diego")
+        self.assertNotIn("<script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
+    def test_texto_sem_marcacao_continua_saindo_como_antes(self):
+        peca = dict(self.peca, corpo="Primeiro.\n\nSegundo.")
+        h = self.p.montar_html(peca, "Diego")
+        self.assertIn("<p>Primeiro.</p>", h)
+        self.assertIn("<p>Segundo.</p>", h)
+        self.assertNotIn("<h2>", h)
+        self.assertNotIn("<ul>", h)
+        self.assertNotIn("<table>", h)
+
+    def test_peca_real_renderiza_sem_sobrar_marcador(self):
+        import trilha
+        caminho = os.path.join(os.path.dirname(__file__), "..", "..", "seed", "trilha",
+                               "05-precificacao.md")
+        with open(caminho, encoding="utf-8") as f:
+            peca = trilha.parse_peca(f.read())
+        peca["numero"] = 5
+        h = self.p.montar_html(peca, "Diego")
+        self.assertNotIn("|", h)
+        self.assertNotIn("###", h)
+        self.assertNotIn("**", h)
+        self.assertIn("<table>", h)
+        self.assertIn("<h2>", h)
+
 
 class TestEnvio(unittest.TestCase):
     def setUp(self):
@@ -272,6 +346,7 @@ class TestEnvio(unittest.TestCase):
         importlib.reload(trilha)
         self.t = trilha
         self.t.semear()
+        self.t.definir_ativa(True)   # interruptor mestre nasce DESLIGADO (ver trilha.ativa)
         self.enviados = []
 
     def _fake_enviar(self, whatsapp, pdf_path, caption=""):
@@ -528,6 +603,62 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
         self.assertTrue(ok)
         self.assertIn("/ferramentas/planilha-custo-hora", htmls[0])
         self.assertIn("Baixar", htmls[0])
+
+
+class TestInterruptor(unittest.TestCase):
+    """O interruptor mestre. Nasce DESLIGADO porque a trilha não tem aprovação por
+    envio (o estudo diário tem, às 18h): o conteúdo vai do arquivo direto pro
+    WhatsApp de assinante pagante. Um deploy sozinho não pode começar a enviar."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+        self.t.semear()
+        self.enviados = []
+
+    def _fake_enviar(self, whatsapp, pdf_path, caption=""):
+        self.enviados.append(whatsapp)
+
+    def _fake_render(self, html, out_path):
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("pdf")
+        return out_path
+
+    def test_nasce_desligada(self):
+        self.assertFalse(self.t.ativa())
+
+    def test_desligada_nao_envia_nem_no_sabado(self):
+        from datetime import date
+        reg = self.subs.adicionar("Fulano", "5543999990000")
+        self.subs.definir_slot(reg["id"], "08h")
+        res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 0)
+        self.assertEqual(self.enviados, [])
+        self.assertTrue(res.get("desligada"))
+
+    def test_desligada_nao_queima_o_claim_do_sabado(self):
+        """Se o gate viesse DEPOIS do claim, ligar o interruptor no mesmo sábado
+        deixaria a base sem receber e ninguém entenderia por quê."""
+        from datetime import date
+        reg = self.subs.adicionar("Fulano", "5543999990000")
+        self.subs.definir_slot(reg["id"], "08h")
+        sab = date(2026, 8, 8)
+        self.t.enviar_slot("08h", quando=sab,
+                           enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.t.definir_ativa(True)
+        res = self.t.enviar_slot("08h", quando=sab,
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 1, "ligar no mesmo sábado tem que passar a enviar")
+
+    def test_ligar_e_desligar(self):
+        self.t.definir_ativa(True)
+        self.assertTrue(self.t.ativa())
+        self.t.definir_ativa(False)
+        self.assertFalse(self.t.ativa())
 
 
 if __name__ == "__main__":

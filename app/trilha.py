@@ -195,10 +195,25 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
     return True
 
 
+def ativa():
+    """Interruptor mestre da trilha. Nasce DESLIGADA, de propósito.
+
+    O conteúdo é escrito uma vez e vai direto pro WhatsApp de assinante pagante —
+    não existe etapa de aprovação por envio, como tem no estudo diário. Então a
+    trilha só dispara depois que o dono leu as 12 peças na prévia do admin e ligou
+    o interruptor. Um deploy sozinho nunca é suficiente pra começar a enviar."""
+    return db.get_config("trilha_ativa", "0") == "1"
+
+
+def definir_ativa(ligada):
+    db.set_config("trilha_ativa", "1" if ligada else "0")
+
+
 def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
     """Envia a peça da semana aos assinantes ativos de `slot`. Só roda no dia da
-    trilha. Idempotente por (data, slot) usando `envios_slot` com chave namespaced —
-    mesmo truque da varredura semanal, sem tabela nova.
+    trilha, e só com o interruptor `ativa()` ligado. Idempotente por (data, slot)
+    usando `envios_slot` com chave namespaced — mesmo truque da varredura semanal,
+    sem tabela nova.
 
     Dois claims empilhados, cada um matando um bug diferente:
     - por (data, slot), acima: o TICK inteiro não roda duas vezes (restart do cron).
@@ -212,6 +227,11 @@ def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
     import subscribers
 
     d = quando or datetime.now()
+    if not ativa():
+        # ANTES de qualquer claim: desligar a trilha não pode queimar o envio do
+        # sábado. Se o claim fosse consumido aqui, ligar o interruptor no mesmo dia
+        # deixaria a base sem receber e ninguém entenderia por quê.
+        return {"enviados": 0, "falhas": 0, "desligada": True}
     if not e_dia_da_trilha(d):
         return {"enviados": 0, "falhas": 0}
     data = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)

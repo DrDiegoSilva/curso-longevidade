@@ -404,7 +404,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(pdf_trilha.montar_html(
                 peca, "(prévia)", abertura="", link_ferramenta=link), 200)
         if path == "/admin/trilha":
-            import config, site_web, db as _db, subscribers as _subs
+            import config, site_web, db as _db, subscribers as _subs, trilha as _trilha
             q = up.parse_qs(up.urlparse(self.path).query)
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
             if not token_ok:
@@ -418,7 +418,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                "enviadas": l["enviadas"], "feitas": l["feitas"],
                                "concluiu": l["proxima_peca"] > config.TRILHA_TOTAL})
             return self._html(site_web.pagina_admin_trilha(
-                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas()), 200)
+                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas(),
+                ativa=_trilha.ativa(), msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -794,6 +795,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.set_config("dias_envio", ",".join(form.get("dia", [])))
             return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg=Dias+salvos"
                                   if token_ok else "/admin/envio?msg=Dias+salvos")
+        if path == "/admin/trilha":
+            import config, db, trilha as _trilha
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            ligar = g("acao") == "ligar"
+            _trilha.definir_ativa(ligar)
+            msg = ("Trilha LIGADA — a partir do próximo sábado os assinantes recebem."
+                   if ligar else "Trilha desligada. Nenhum assinante recebe.")
+            return self._redirect(f"/admin/trilha?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/admin/precos":
             import config, db
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN

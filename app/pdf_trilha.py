@@ -6,6 +6,7 @@ trilha é outro objeto — texto, uma tarefa e uma frase de cabeça — e não t
 que herdar aquele CSS nem fazer aquele arquivo crescer.
 """
 import html
+import re
 
 import config
 
@@ -15,10 +16,21 @@ _CSS = """
   .selo { font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: .18em;
           text-transform: uppercase; color: #8a6a2f; }
   h1 { font-size: 26px; line-height: 1.2; margin: 6px 0 2px; }
+  h2 { font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700;
+       color: #4a3a12; letter-spacing: .01em; margin: 18px 0 8px; line-height: 1.3; }
   .eixo { font-family: system-ui, sans-serif; font-size: 12px; color: #6b6b6b; margin: 0 0 22px; }
   .abertura { font-style: italic; color: #4a4a4a; border-left: 3px solid #d8c9a6;
               padding-left: 12px; margin: 0 0 22px; }
   .corpo p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 12px; padding-left: 20px; }
+  li { margin: 0 0 6px; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse;
+          margin: 6px 0 16px; font-family: system-ui, sans-serif; font-size: 11px; }
+  th, td { border: 1px solid #e2dccc; padding: 5px 7px; text-align: left;
+           overflow-wrap: break-word; font-variant-numeric: tabular-nums; }
+  th { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #6b6b6b;
+       background: #f7f4ec; font-weight: 600; }
+  td.num { text-align: right; }
   .bloco { border: 1px solid #e2dccc; border-radius: 8px; padding: 14px 16px; margin: 22px 0 0; }
   .bloco .rot { font-family: system-ui, sans-serif; font-size: 10px; letter-spacing: .16em;
                 text-transform: uppercase; color: #8a6a2f; margin: 0 0 6px; }
@@ -28,16 +40,102 @@ _CSS = """
   .rodape { margin-top: 30px; font-family: system-ui, sans-serif; font-size: 11px; color: #8a8a8a; }
 """
 
+_BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+_ITEM_NUMERADO_RE = re.compile(r"^\d+\.\s+")
+_SEPARADOR_TABELA_RE = re.compile(r"^:?-{1,}:?$")
+
 
 def _esc(s):
     return html.escape(str(s or ""), quote=True)
 
 
+def _negrito(texto_escapado):
+    """Troca `**texto**` por <strong>. Roda DEPOIS de `_esc`: o `**` sobrevive ao
+    escape (não é caractere especial de HTML), então isto nunca reabre uma tag que
+    o escape já tinha fechado -- é o que garante que um <script> no meio do texto
+    saia como texto, não como marcação."""
+    return _BOLD_RE.sub(r"<strong>\1</strong>", texto_escapado)
+
+
+def _linha_de_tabela(linha):
+    l = linha.strip()
+    return len(l) >= 2 and l.startswith("|") and l.endswith("|")
+
+
+def _linha_separadora(linha):
+    l = linha.strip()
+    if not _linha_de_tabela(l):
+        return False
+    celulas = [c.strip() for c in l[1:-1].split("|")]
+    return bool(celulas) and all(_SEPARADOR_TABELA_RE.match(c) for c in celulas)
+
+
+def _celulas_da_linha(linha):
+    return [c.strip() for c in linha.strip()[1:-1].split("|")]
+
+
+def _celula_numerica(celula):
+    """Célula de valor (R$ ou %) alinha à direita, mesmo dentro de **negrito** --
+    checa o texto CRU (antes de escapar/marcar), só decide a classe CSS."""
+    c = celula.strip()
+    if c.startswith("**") and c.endswith("**") and len(c) > 4:
+        c = c[2:-2].strip()
+    return c.startswith("R$") or c.endswith("%")
+
+
+def _tabela_html(linhas):
+    cab = _celulas_da_linha(linhas[0])
+    thead = "<tr>" + "".join(f"<th>{_negrito(_esc(c))}</th>" for c in cab) + "</tr>"
+    corpo_html = []
+    for linha in linhas[2:]:
+        tds = []
+        for c in _celulas_da_linha(linha):
+            classe = ' class="num"' if _celula_numerica(c) else ""
+            tds.append(f"<td{classe}>{_negrito(_esc(c))}</td>")
+        corpo_html.append("<tr>" + "".join(tds) + "</tr>")
+    return f"<table><thead>{thead}</thead><tbody>{''.join(corpo_html)}</tbody></table>"
+
+
+def _lista_html(linhas, tag, extrair):
+    itens = "".join(f"<li>{_negrito(_esc(extrair(l)))}</li>" for l in linhas)
+    return f"<{tag}>{itens}</{tag}>"
+
+
+def _bloco_html(bloco):
+    """Um bloco (já separado por linha em branco) vira uma peça de HTML. A
+    detecção do tipo olha o texto CRU (marcadores como `### `, `- `, `|` não são
+    caracteres especiais de HTML, então isso não abre brecha nenhuma); só o
+    CONTEÚDO de cada trecho passa por `_esc` antes de virar tag."""
+    linhas = bloco.split("\n")
+    primeira = linhas[0]
+
+    if primeira.startswith("### "):
+        return f"<h2>{_negrito(_esc(primeira[4:].strip()))}</h2>"
+
+    if (len(linhas) >= 2 and all(_linha_de_tabela(l) for l in linhas)
+            and _linha_separadora(linhas[1])):
+        return _tabela_html(linhas)
+
+    if primeira.startswith("- "):
+        itens = [l for l in linhas if l.startswith("- ")]
+        return _lista_html(itens, "ul", lambda l: l[2:].strip())
+
+    if _ITEM_NUMERADO_RE.match(primeira):
+        itens = [l for l in linhas if _ITEM_NUMERADO_RE.match(l)]
+        return _lista_html(itens, "ol", lambda l: _ITEM_NUMERADO_RE.sub("", l).strip())
+
+    return f"<p>{_negrito(_esc(bloco))}</p>"
+
+
 def _paragrafos(texto):
-    """Blocos separados por linha em branco viram <p>. Sem markdown: o conteúdo é
-    nosso e escrito à mão, não vale carregar um parser pra isso."""
+    """Blocos separados por linha em branco viram <p>, com um subconjunto pequeno
+    e deliberado de marcação: `### subtítulo`, listas `- ` / `1. `, tabela de cano
+    `| a | b |` (2ª linha separadora) e `**negrito**` em qualquer um dos contextos
+    acima. Não é markdown genérico -- só o que as peças da trilha usam. Segurança
+    não muda: cada trecho de texto passa por `_esc` antes de qualquer marcador
+    virar tag (ver `_bloco_html`, `_tabela_html`, `_lista_html`)."""
     blocos = [b.strip() for b in (texto or "").replace("\r\n", "\n").split("\n\n")]
-    return "".join(f"<p>{_esc(b)}</p>" for b in blocos if b)
+    return "".join(_bloco_html(b) for b in blocos if b)
 
 
 def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
