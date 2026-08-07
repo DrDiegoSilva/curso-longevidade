@@ -162,7 +162,11 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
         # link morto na peça 1 é o pior lugar pra isso acontecer (todo assinante
         # pagante recebe a peça 1 primeiro).
         if peca.get("ferramenta_slug") and caminho_ferramenta(peca["ferramenta_slug"]):
-            link = f"{config.PUBLIC_URL}/ferramentas/{peca['ferramenta_slug']}"
+            # ARTIGOS_URL, não PUBLIC_URL: este app serve DOIS hosts. `curso.`
+            # (PUBLIC_URL) é o ebook e faz fallback pra ele em rota desconhecida —
+            # um link de ferramenta ali devolveria o ebook, com HTTP 200, sem erro
+            # nenhum aparecendo. `/ferramentas/` só existe no portal do assinante.
+            link = f"{config.ARTIGOS_URL}/ferramentas/{peca['ferramenta_slug']}"
         html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
                                            abertura=abertura(sub_id, numero), link_ferramenta=link)
         out = os.path.join(tempfile.gettempdir(), f"trilha-{numero}-{sub_id}.pdf")

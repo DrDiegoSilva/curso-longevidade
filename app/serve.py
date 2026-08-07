@@ -398,7 +398,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # (app/trilha.py, enviar_para): a prévia não pode divergir do que sai no
             # WhatsApp, e mostrar aqui um botão que dá 404 seria exatamente isso.
             slug = peca.get("ferramenta_slug")
-            link = (f"{config.PUBLIC_URL}/ferramentas/{slug}"
+            # ARTIGOS_URL, igual ao envio real (ver comentário em trilha.enviar_para):
+            # /ferramentas/ só existe no portal do assinante; no host do ebook a rota
+            # cai no fallback e devolve o ebook com 200.
+            link = (f"{config.ARTIGOS_URL}/ferramentas/{slug}"
                     if slug and _trilha_mod.caminho_ferramenta(slug) else "")
             # mesma função que gera o PDF: a prévia não pode divergir do que é enviado
             return self._html(pdf_trilha.montar_html(

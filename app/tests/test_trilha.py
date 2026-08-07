@@ -542,6 +542,27 @@ class TestEnvio(unittest.TestCase):
         self.assertEqual(len(self.enviados), 1, "só UMA peça no sábado, apesar da troca de slot")
         self.assertEqual(self.db.trilha_posicao(sub["id"]), 2, "posição não pode pular pra 3")
 
+    def test_link_da_ferramenta_aponta_pro_portal_do_assinante(self):
+        """Bug pego em producao: o link saia com config.PUBLIC_URL, que e o host do
+        EBOOK. La /ferramentas/<slug> cai no fallback e devolve o ebook com HTTP 200 --
+        o medico clicaria em "Baixar a ferramenta" e receberia o ebook, sem erro
+        nenhum aparecendo. /ferramentas/ so existe no portal (ARTIGOS_URL)."""
+        capturado = {}
+
+        def espiao(whatsapp, pdf_path, caption=""):
+            with open(pdf_path, encoding="utf-8") as f:
+                capturado["html"] = f.read()
+
+        def render_html(html, out_path):
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            return out_path
+
+        sub = self._sub()
+        self.assertTrue(self.t.enviar_para(sub, enviar_fn=espiao, render_fn=render_html))
+        html = capturado["html"]
+        self.assertIn(f"{self.cfg.ARTIGOS_URL}/ferramentas/", html)
+        self.assertNotIn(f"{self.cfg.PUBLIC_URL}/ferramentas/", html)
 
 class TestLinkFerramentaNoEnvio(unittest.TestCase):
     """Important 4 da revisão: o PDF só pode oferecer o link de download da
