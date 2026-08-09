@@ -7,23 +7,48 @@ import re
 
 SYS_GANCHO = (
     "Você prepara o material de redes sociais de um médico a partir de UM estudo. "
-    "Ele produz SÓ REELS (vídeo curto). "
+    "Ele trata obesidade, menopausa e reposição hormonal, e produz SÓ REELS (vídeo curto). "
     "Responda SÓ JSON, sem cercas de código, neste formato:\n"
-    '{"frase":"...","reels":[{"angulo":"...","apoio":"..."}]}\n'
-    "- `frase`: o ACHADO PRINCIPAL em linguagem de paciente, uma frase, sem jargão. "
-    "É o texto que vai virar imagem de post: precisa se sustentar sozinho.\n"
-    "- `reels`: de 1 a 3 PAUTAS de vídeo. Cada `angulo` é a frase que o médico fala; "
-    "cada `apoio` é o dado do estudo que sustenta aquele ângulo (uma linha).\n"
-    "REGRAS DAS PAUTAS:\n"
-    "1. De 1 a 3. PREFIRA MENOS. Se o estudo só rende uma pauta boa, devolva UMA. "
-    "NUNCA invente pauta para fechar número — pauta fraca faz o médico parar de ler o bloco.\n"
-    "2. Cada pauta sai de uma PARTE DIFERENTE do estudo (ex.: o grupo comparador, a duração, "
-    "o desenho do protocolo). Três jeitos de dizer o mesmo achado é um Reels só, repetido.\n"
-    "3. Nada de conselho de produção (formato, horário, hashtag, iluminação) — só ASSUNTO.\n"
+    '{"frase":"...","paciente":"...","limites":["..."],'
+    '"reels":[{"titulo":"...","gancho":"...","roteiro":["...","..."],"apoio":"..."}]}\n'
+    "\n"
+    "REGRA CENTRAL DAS PAUTAS — o público é o PACIENTE do médico, não o médico. O paciente "
+    "não lê estudo e não se interessa por desenho de pesquisa. Cada pauta ABRE numa dor que "
+    "ele reconhece em si mesmo e TERMINA apontando para algo que se resolve com acompanhamento "
+    "médico. O estudo é a prova que sustenta, nunca a manchete. É PROIBIDO fazer pauta sobre "
+    "metodologia, grupo comparador, tamanho de amostra ou tempo de seguimento — isso é conversa "
+    "de médico para médico e faz o paciente rolar o feed.\n"
+    "\n"
+    "- `frase`: o achado em linguagem de paciente, UMA frase que se sustenta sozinha como "
+    "imagem de post.\n"
+    "- `paciente`: como o MÉDICO explica esse achado ao paciente no consultório — 2 a 4 frases, "
+    "linguagem de conversa, incluindo a ressalva honesta que mantém a confiança. É para o médico "
+    "ler antes da consulta, não para postar.\n"
+    "- `limites`: 3 a 5 itens do que NÃO pode ser dito sobre ESTE estudo — específicos dele, "
+    "nunca regras genéricas. Puxe do próprio texto: amostra pequena, uso fora de bula, desfecho "
+    "que é questionário e não exame, limitação que os autores declararam. Somado ao que o CFM "
+    "veda: promessa de resultado, antes/depois, promoção de medicamento de receita a leigo, "
+    "convocação para consulta.\n"
+    "- `reels`: de 1 a 3 pautas. PREFIRA MENOS — se o estudo só sustenta uma dor de verdade, "
+    "devolva UMA. Pauta inventada para fechar número faz o médico parar de ler o bloco. Cada "
+    "pauta sai de uma DOR DIFERENTE, nunca do mesmo assunto com outras palavras.\n"
+    "  - `titulo`: 3 a 6 palavras nomeando o assunto da pauta, para o médico achar de relance.\n"
+    "  - `gancho`: a frase EXATA dos 3 primeiros segundos do vídeo. Fala com o paciente na "
+    "segunda pessoa, nomeia a dor dele, e NÃO cita o estudo.\n"
+    "  - `roteiro`: 3 a 5 passos NA ORDEM DE GRAVAÇÃO, cada um uma linha do que o médico diz. "
+    "Um dos passos, sempre, é a ressalva honesta. O último fecha na dor ou aponta o caminho. "
+    "Quem lê tem que conseguir gravar sem saber nada de medicina. "
+    "ESCREVA CADA PASSO EM PORTUGUÊS SIMPLES, como quem instrui uma pessoa: 'Comece contando "
+    "que...', 'Explique que...', 'Diga a ressalva:...', 'Termine assim:...'. É PROIBIDO jargão "
+    "de marketing — não escreva 'nomeia a cena', 'vira a chave', 'prova por baixo', 'quebra de "
+    "padrão' nem 'CTA'; quem lê é médico ou social media, não publicitário.\n"
+    "  - `apoio`: o dado do estudo que sustenta aquela pauta, em uma linha. É para o médico "
+    "conferir, não para ser dito no vídeo.\n"
+    "\n"
     "ÉTICA (CFM, inegociável): não prometa milagre/cura, não garanta resultado, "
     "NÃO promova remédio de receita para leigo (fale do CONCEITO, não do 'use tal remédio'), "
     "sem sensacionalismo, sem chamada para ação ('agende sua consulta'). "
-    "Tudo em português do Brasil.")
+    "Nunca invente número que não esteja na fonte. Tudo em português do Brasil.")
 
 
 def _prompt_titulo(artigo):
@@ -119,6 +144,8 @@ def _braco(b):
 
 
 MAX_REELS = 3
+MAX_PASSOS = 6      # passos do roteiro de um Reels
+MAX_LIMITES = 6     # itens do bloco "o que nao da pra afirmar"
 
 
 def _txt(v):
@@ -126,35 +153,76 @@ def _txt(v):
     return str(v).strip() if v is not None else ""
 
 
-def parse_gancho(bruto):
-    """Normaliza o campo `gancho` para {"frase": str, "reels": [{"angulo","apoio"}]}.
+def _lista(v, limite):
+    """Lista de strings limpas a partir do que a IA devolver. Nao levanta se vier
+    string, None ou dict no lugar da lista. Item que nao e string (dict, numero...)
+    e descartado -- senao o repr do Python (ex.: {'item': 'x'}) vaza pro PDF."""
+    if not isinstance(v, list):
+        return []
+    saida = [_txt(x) for x in v if isinstance(x, str)]
+    return [s for s in saida if s][:limite]
 
-    Aceita tres formatos, porque os tres existem no banco:
-      1. JSON novo  -> {"frase": ..., "reels": [...]}
-      2. texto puro -> formato LEGADO (reserva/classicos/digests antigos); vira um reel
-      3. lixo/vazio -> estrutura vazia, sem levantar
+
+def _kit_vazio():
+    return {"frase": "", "paciente": "", "limites": [], "reels": []}
+
+
+def parse_gancho(bruto):
+    """Normaliza o campo `gancho` para
+    {"frase", "paciente", "limites", "reels": [{"titulo","gancho","roteiro","apoio"}]}.
+
+    Aceita QUATRO formatos, porque os quatro existem no banco:
+      1. JSON novo   -> gancho/roteiro/titulo por pauta + paciente + limites
+      2. JSON atual  -> `angulo` vira `gancho`, sem roteiro (o estoque de
+         reserva_resumos esta cheio destes; quebrar aqui esvazia o kit de todo
+         estudo ja na fila)
+      3. texto puro  -> formato legado (classicos/digests antigos); vira uma pauta
+      4. lixo/vazio  -> estrutura vazia
 
     Nunca levanta e nunca devolve None em campo nenhum: isto roda no caminho do PDF
     do assinante, onde uma excecao custa o envio do dia.
     """
     texto = _txt(bruto)
     if not texto:
-        return {"frase": "", "reels": []}
-    try:
-        dados = json.loads(texto)
-    except Exception:
-        dados = None
+        return _kit_vazio()
+    if texto.strip().lower().startswith("null"):
+        return _kit_vazio()
+    # A IA as vezes responde com cerca de codigo (```json ... ```) ou preambulo
+    # ("Segue o JSON pedido:") antes do objeto -- o mesmo problema que _parse_grafico
+    # ja resolve com jsonx.primeiro_objeto. Sem isto, json.loads(texto) falhava e o
+    # JSON inteiro (cerca incluida) virava UMA pauta impressa cru no PDF.
+    import jsonx
+    bruto_json = jsonx.primeiro_objeto(texto)
+    dados = None
+    if bruto_json:
+        try:
+            dados = json.loads(bruto_json)
+        except Exception:
+            dados = None
     if not isinstance(dados, dict):
-        return {"frase": "", "reels": [{"angulo": texto, "apoio": ""}]}
+        # JSON que nao fechou (IA estourou o teto de tokens) NAO pode virar pauta:
+        # o PDF imprimiria {"frase":... na cara do assinante. Melhor faltar o kit.
+        if texto.lstrip()[:1] in ("{", "["):
+            return _kit_vazio()
+        return {"frase": "", "paciente": "", "limites": [],
+                "reels": [{"titulo": "", "gancho": texto, "roteiro": [], "apoio": ""}]}
     reels = []
-    for item in (dados.get("reels") or []):
+    reels_bruto = dados.get("reels")
+    for item in (reels_bruto if isinstance(reels_bruto, list) else []):
         if not isinstance(item, dict):
             continue
-        angulo = _txt(item.get("angulo"))
-        if not angulo:
-            continue                      # item sem angulo nao rende video nenhum
-        reels.append({"angulo": angulo, "apoio": _txt(item.get("apoio"))})
-    return {"frase": _txt(dados.get("frase")), "reels": reels[:MAX_REELS]}
+        # `angulo` e o nome antigo de `gancho` -- compatibilidade com o estoque
+        gancho = _txt(item.get("gancho")) or _txt(item.get("angulo"))
+        if not gancho:
+            continue                      # item sem abertura nao rende video nenhum
+        reels.append({"titulo": _txt(item.get("titulo")),
+                      "gancho": gancho,
+                      "roteiro": _lista(item.get("roteiro"), MAX_PASSOS),
+                      "apoio": _txt(item.get("apoio"))})
+    return {"frase": _txt(dados.get("frase")),
+            "paciente": _txt(dados.get("paciente")),
+            "limites": _lista(dados.get("limites"), MAX_LIMITES),
+            "reels": reels[:MAX_REELS]}
 
 
 def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=None, gerar_titulo=None):
@@ -163,7 +231,9 @@ def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_j
         from resumo_diario import gerar_texto_do_artigo as gerar_resumo
     if gerar_gancho is None:
         from resumo_diario import claude, SONNET
-        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=900)
+        # 2500, nao 900: a saida real medida (frase + paciente + limites + 2 pautas com
+        # roteiro) deu 934 tokens. Com o teto antigo o JSON chega cortado e o kit some.
+        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=2500)
     if gerar_grafico_json is None:
         from resumo_diario import claude, HAIKU
         gerar_grafico_json = lambda a: claude(HAIKU, _prompt_grafico(a), max_tokens=300)

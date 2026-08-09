@@ -219,13 +219,30 @@ def _bracos_html(grafico):
     return f'<div class="bracos">{"".join(cards)}</div>'
 
 
+def _paciente_html(gancho_bruto):
+    """Bloco clinico: a fala que o medico usa no consultorio pra explicar o achado.
+
+    Fica ANTES do kit de marketing de proposito -- o clinico junto do clinico. O
+    medico le e para no fim do grafico; quem vai produzir post pula pro final.
+    """
+    import content
+    dados = content.parse_gancho(gancho_bruto)
+    if not dados["paciente"]:
+        return ""
+    return ('<div class="paciente"><div class="pac-rot">Como explicar pro paciente</div>'
+            f'<p>{_html.escape(dados["paciente"])}</p></div>')
+
+
 def _kit_html(gancho_bruto, artigo):
-    """Kit de post no rodape: recorte do paper + a frase + as pautas de Reels.
+    """Kit de post no rodape: recorte do paper + a frase + as pautas de Reels + os
+    limites do CFM.
 
     Os dois primeiros blocos sao pensados para PRINT RECORTADO -- o medico ja fazia
     isso na mao, printando o PDF do artigo. Por isso nao levam a marca do Diego: quem
-    posta e o assinante. O terceiro e briefing, e por isso e visualmente diferente:
-    se parecesse com os outros, alguem recortaria a instrucao junto e postaria.
+    posta e o assinante. O terceiro e briefing pra equipe de marketing, e por isso e
+    visualmente diferente: se parecesse com os outros, alguem recortaria a instrucao
+    junto e postaria. O quarto sao os limites daquele estudo -- fica por ESTUDO e nao
+    por pauta, porque a evidencia e a mesma pras tres.
     """
     import content
     esc = _html.escape
@@ -251,14 +268,29 @@ def _kit_html(gancho_bruto, artigo):
             f'<div class="frase-box"><p>{esc(dados["frase"])}</p></div></div>')
 
     if dados["reels"]:
-        itens = []
+        cards = []
         for i, r in enumerate(dados["reels"], 1):
-            apoio = f' <span class="reel-apoio">{esc(r["apoio"])}</span>' if r["apoio"] else ""
-            itens.append(f'<li class="reel"><span class="reel-n">{i}</span>'
-                         f'<span><b>{esc(r["angulo"])}</b>{apoio}</span></li>')
+            rotulo = f'<span class="reel-tit">{esc(r["titulo"])}</span>' if r["titulo"] else ""
+            passos = "".join(f"<li>{esc(p)}</li>" for p in r["roteiro"])
+            roteiro = (f'<p class="reel-mini">O que falar, nesta ordem</p>'
+                       f'<ol class="reel-roteiro">{passos}</ol>') if passos else ""
+            apoio = (f'<p class="reel-apoio"><b>Dado do estudo:</b> {esc(r["apoio"])}</p>'
+                     if r["apoio"] else "")
+            cards.append(
+                f'<div class="reel-card">'
+                f'<div class="reel-top"><span class="reel-n">{i}</span>{rotulo}</div>'
+                f'<p class="reel-mini">Primeiros 3 segundos</p>'
+                f'<p class="reel-gancho">{esc(r["gancho"])}</p>'
+                f'{roteiro}{apoio}</div>')
         blocos.append(
-            f'<div class="kit-brief"><div class="kit-rot">Reels que saem deste estudo</div>'
-            f'<ul class="reels">{"".join(itens)}</ul></div>')
+            f'<div class="kit-brief"><div class="kit-rot">3 &middot; Reels que saem deste estudo</div>'
+            f'<div class="reel-cards">{"".join(cards)}</div></div>')
+
+    if dados["limites"]:
+        itens = "".join(f"<li>{esc(x)}</li>" for x in dados["limites"])
+        blocos.append(
+            f'<div class="kit-limites"><div class="kit-rot">4 &middot; O que n&atilde;o d&aacute; pra afirmar</div>'
+            f'<ul>{itens}</ul></div>')
 
     if not blocos:
         return ""
@@ -282,6 +314,7 @@ def montar_html(artigo, conteudo, tema_meta):
     resumo_html = _resumo_html(conteudo.get("resumo", ""))
     bracos_html = _bracos_html(conteudo.get("grafico"))
     grafico_html = _grafico_html(conteudo.get("grafico"))
+    paciente_html = _paciente_html(conteudo.get("gancho", ""))
     kit_html = _kit_html(conteudo.get("gancho", ""), artigo)
     url = (artigo.get("url") or "").strip()
     # Link de verdade: o Chromium (--print-to-pdf, `gerar_pdf`) preserva hyperlink como
@@ -357,17 +390,35 @@ def montar_html(artigo, conteudo, tema_meta):
   .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:22px 24px;
            background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
   .frase-box p {{ margin:0; font-size:21px; line-height:1.4; color:#3a2f10; }}
-  .kit-brief {{ break-inside:avoid; }}
   .kit-brief .kit-rot {{ color:#6f7d78; }}
-  .reels {{ list-style:none; margin:0; padding:15px 18px; border-left:3px solid #c8cfca;
-           background:#f6f8f6; border-radius:0 8px 8px 0; }}
-  .reel {{ display:flex; gap:10px; align-items:flex-start; margin-bottom:9px;
-           font-family:system-ui,sans-serif; font-size:14px; line-height:1.55; color:#4d5a54; }}
-  .reel:last-child {{ margin-bottom:0; }}
-  .reel b {{ color:#33403a; }}
-  .reel-n {{ flex:0 0 20px; height:20px; display:inline-flex; align-items:center;
-           justify-content:center; border:1px solid #c3ccc6; border-radius:50%;
-           font-size:11.5px; font-weight:700; color:#6f7d78; }}
+  .paciente {{ border:1px solid #d8ddd7; border-left:4px solid {cor}; background:#f7faf8;
+           padding:17px 20px; margin:26px 0 0; border-radius:0 8px 8px 0; break-inside:avoid; }}
+  .pac-rot {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em;
+           text-transform:uppercase; color:{cor}; font-weight:700; margin-bottom:9px; }}
+  .paciente p {{ margin:0; font-size:18px; line-height:1.62; }}
+  .reel-cards {{ display:flex; flex-direction:column; gap:14px; }}
+  .reel-card {{ border:1px solid #d8ddd7; border-radius:8px; background:#f8faf9;
+           padding:16px 18px; break-inside:avoid; }}
+  .reel-top {{ display:flex; align-items:center; gap:9px; margin-bottom:11px; }}
+  .reel-n {{ flex:0 0 22px; height:22px; border-radius:50%; background:{cor}; color:#fff;
+           font-family:system-ui,sans-serif; font-size:12px; font-weight:700;
+           display:inline-flex; align-items:center; justify-content:center; }}
+  .reel-tit {{ font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.11em;
+           text-transform:uppercase; color:#6f7d78; font-weight:700; }}
+  .reel-mini {{ font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.1em;
+           text-transform:uppercase; color:#6f7d78; font-weight:700; margin:0 0 6px; }}
+  .reel-gancho {{ font-size:19px; line-height:1.36; color:#16211c; margin:0 0 13px;
+           padding-left:11px; border-left:3px solid #c9a227; }}
+  .reel-roteiro {{ margin:0 0 13px; padding-left:20px; }}
+  .reel-roteiro li {{ font-size:16.5px; line-height:1.55; margin-bottom:5px; color:#2c3a34; }}
+  .reel-apoio {{ background:#eef3f0; border-radius:6px; padding:9px 12px; font-size:15px;
+           line-height:1.5; color:#46544e; font-family:system-ui,sans-serif; margin:0; }}
+  .reel-apoio b {{ color:#24332c; }}
+  .kit-limites {{ border:1px solid #e6d6d2; border-left:4px solid #9c3226; background:#fdf7f6;
+           padding:16px 19px; border-radius:0 8px 8px 0; break-inside:avoid; }}
+  .kit-limites .kit-rot {{ color:#9c3226; }}
+  .kit-limites ul {{ margin:0; padding-left:20px; }}
+  .kit-limites li {{ font-size:16px; line-height:1.55; margin-bottom:7px; color:#4a3a37; }}
   .foot {{ margin-top:22px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
            break-inside:avoid; font-family:system-ui,sans-serif; font-size:13px; color:#6f7d78; }}
   .foot a {{ color:#1b6b4f; }}
@@ -383,6 +434,7 @@ def montar_html(artigo, conteudo, tema_meta):
     <div class="corpo">{resumo_html}</div>
     {bracos_html}
     {grafico_html}
+    {paciente_html}
     {kit_html}
     <div class="foot">
       <span>{ref_html}</span>

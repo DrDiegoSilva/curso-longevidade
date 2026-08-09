@@ -1,4 +1,5 @@
 """Parser e render do kit de redes (rodape do PDF). Standalone."""
+import json
 import os
 import sys
 import unittest
@@ -11,21 +12,24 @@ class TestParseGancho(unittest.TestCase):
         import content
         self.c = content
 
-    def test_json_novo_completo(self):
+    def test_json_formato_antigo_com_angulo_vira_gancho(self):
+        """O estoque de reserva/classicos esta cheio deste formato: `angulo` sem
+        roteiro. Se parar de funcionar, todo estudo ja na fila sai com o kit vazio."""
         bruto = ('{"frase": "Perdeu 20,9% do peso.",'
                  ' "reels": [{"angulo": "Nao e forca de vontade.", "apoio": "O comparador perdeu 3,1%."}]}')
         r = self.c.parse_gancho(bruto)
         self.assertEqual(r["frase"], "Perdeu 20,9% do peso.")
         self.assertEqual(len(r["reels"]), 1)
-        self.assertEqual(r["reels"][0]["angulo"], "Nao e forca de vontade.")
+        self.assertEqual(r["reels"][0]["gancho"], "Nao e forca de vontade.")
         self.assertEqual(r["reels"][0]["apoio"], "O comparador perdeu 3,1%.")
+        self.assertEqual(r["reels"][0]["roteiro"], [])
 
     def test_texto_puro_antigo_vira_um_reel(self):
         """Formato legado: o banco de reserva/classicos esta cheio deles."""
         r = self.c.parse_gancho("Fale sobre obesidade como doenca cronica.")
         self.assertEqual(r["frase"], "")
         self.assertEqual(len(r["reels"]), 1)
-        self.assertEqual(r["reels"][0]["angulo"], "Fale sobre obesidade como doenca cronica.")
+        self.assertEqual(r["reels"][0]["gancho"], "Fale sobre obesidade como doenca cronica.")
         self.assertEqual(r["reels"][0]["apoio"], "")
 
     def test_vazio_nao_quebra(self):
@@ -40,24 +44,137 @@ class TestParseGancho(unittest.TestCase):
         self.assertEqual(r["reels"], [])
 
     def test_item_sem_apoio(self):
-        r = self.c.parse_gancho('{"reels": [{"angulo": "So o angulo."}]}')
+        r = self.c.parse_gancho('{"reels": [{"gancho": "So o gancho."}]}')
         self.assertEqual(r["reels"][0]["apoio"], "")
 
     def test_corta_em_tres(self):
         """A IA vai extrapolar alguma hora; nao pode virar bloco gigante no PDF."""
-        itens = ",".join('{"angulo": "a%d"}' % i for i in range(5))
+        itens = ",".join('{"gancho": "a%d"}' % i for i in range(5))
         r = self.c.parse_gancho('{"reels": [%s]}' % itens)
         self.assertEqual(len(r["reels"]), 3)
 
     def test_item_sem_angulo_e_descartado(self):
         r = self.c.parse_gancho('{"reels": [{"apoio": "orfao"}, {"angulo": "bom"}]}')
         self.assertEqual(len(r["reels"]), 1)
-        self.assertEqual(r["reels"][0]["angulo"], "bom")
+        self.assertEqual(r["reels"][0]["gancho"], "bom")
 
     def test_nunca_imprime_none(self):
         r = self.c.parse_gancho('{"frase": null, "reels": [{"angulo": "x", "apoio": null}]}')
         self.assertEqual(r["frase"], "")
         self.assertEqual(r["reels"][0]["apoio"], "")
+
+    def test_json_novo_completo(self):
+        bruto = ('{"frase": "A frase do post.",'
+                 ' "paciente": "Como eu explico na consulta.",'
+                 ' "limites": ["Nao prometa resultado.", "Nao cite marca."],'
+                 ' "reels": [{"titulo": "Quando dizem que e psicologico",'
+                 '            "gancho": "Se te disseram que era da sua cabeca, escuta isso.",'
+                 '            "roteiro": ["Comece contando a situacao.", "Explique o que muda."],'
+                 '            "apoio": "47 mulheres na pos-menopausa."}]}')
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase do post.")
+        self.assertEqual(r["paciente"], "Como eu explico na consulta.")
+        self.assertEqual(r["limites"], ["Nao prometa resultado.", "Nao cite marca."])
+        self.assertEqual(len(r["reels"]), 1)
+        p = r["reels"][0]
+        self.assertEqual(p["titulo"], "Quando dizem que e psicologico")
+        self.assertEqual(p["gancho"], "Se te disseram que era da sua cabeca, escuta isso.")
+        self.assertEqual(p["roteiro"], ["Comece contando a situacao.", "Explique o que muda."])
+        self.assertEqual(p["apoio"], "47 mulheres na pos-menopausa.")
+
+    def test_campos_novos_ausentes_viram_vazio(self):
+        """Formato antigo nao tem paciente/limites/titulo/roteiro -- nao pode virar None."""
+        r = self.c.parse_gancho('{"reels": [{"angulo": "so o angulo"}]}')
+        self.assertEqual(r["paciente"], "")
+        self.assertEqual(r["limites"], [])
+        self.assertEqual(r["reels"][0]["titulo"], "")
+        self.assertEqual(r["reels"][0]["roteiro"], [])
+
+    def test_roteiro_com_lixo_dentro_e_limpo(self):
+        r = self.c.parse_gancho(
+            '{"reels": [{"gancho": "g", "roteiro": ["passo bom", "", null, "outro"]}]}')
+        self.assertEqual(r["reels"][0]["roteiro"], ["passo bom", "outro"])
+
+    def test_roteiro_que_nao_e_lista_nao_quebra(self):
+        r = self.c.parse_gancho('{"reels": [{"gancho": "g", "roteiro": "virou string"}]}')
+        self.assertEqual(r["reels"][0]["roteiro"], [])
+
+    def test_limites_corta_no_teto(self):
+        itens = ",".join('"limite %d"' % i for i in range(9))
+        r = self.c.parse_gancho('{"limites": [%s]}' % itens)
+        self.assertEqual(len(r["limites"]), self.c.MAX_LIMITES)
+
+    def test_roteiro_corta_no_teto(self):
+        passos = ",".join('"passo %d"' % i for i in range(9))
+        r = self.c.parse_gancho('{"reels": [{"gancho": "g", "roteiro": [%s]}]}' % passos)
+        self.assertEqual(len(r["reels"][0]["roteiro"]), self.c.MAX_PASSOS)
+
+    def test_json_cortado_nao_vira_pauta(self):
+        """O defeito que mais dói: com a IA estourando o limite de tokens, o JSON
+        chega pela metade, o json.loads falha e o texto bruto virava UMA pauta --
+        o PDF imprimia {"frase":... na cara do assinante pagante."""
+        cortado = '{"frase": "A frase do post.", "reels": [{"gancho": "Se te disser'
+        r = self.c.parse_gancho(cortado)
+        self.assertEqual(r["reels"], [], "JSON cortado nao pode virar pauta")
+        self.assertEqual(r["frase"], "")
+
+    def test_lista_json_tambem_nao_vira_pauta(self):
+        r = self.c.parse_gancho('[{"gancho": "veio lista em vez de objeto"}')
+        self.assertEqual(r["reels"], [])
+
+    def test_texto_que_so_comeca_com_chave_no_meio_ainda_vira_pauta(self):
+        """Texto legado de verdade nao comeca com { -- so o JSON cortado comeca."""
+        r = self.c.parse_gancho("Fale que {isto} nao e JSON.")
+        self.assertEqual(len(r["reels"]), 1)
+
+    def test_cerca_de_codigo_e_recuperada_nao_suprimida(self):
+        """Saida real medida pelo revisor: a IA cerca o JSON com ```json ... ```.
+        O guard antigo (`texto[:1] in ("{","[")`) suprimia o kit inteiro porque o
+        texto comeca com a cerca, nao com a chave -- agora o conteudo e RECUPERADO."""
+        bruto = ('```json\n{"frase": "A frase.", '
+                 '"reels": [{"gancho": "O gancho.", "apoio": "Apoio."}]}\n```')
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase.")
+        self.assertEqual(len(r["reels"]), 1)
+        self.assertEqual(r["reels"][0]["gancho"], "O gancho.")
+        self.assertEqual(r["reels"][0]["apoio"], "Apoio.")
+
+    def test_preambulo_antes_do_json_e_recuperado(self):
+        """Mesmo efeito sem cerca de codigo: preambulo em prosa antes da chave."""
+        bruto = 'Segue o JSON pedido:\n{"frase": "A frase.", "reels": [{"gancho": "O gancho."}]}'
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase.")
+        self.assertEqual(r["reels"][0]["gancho"], "O gancho.")
+
+    def test_preambulo_e_cerca_juntos_sao_recuperados(self):
+        bruto = ('Segue o JSON pedido:\n```json\n'
+                 '{"frase": "A frase.", "reels": [{"gancho": "O gancho."}]}\n```')
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase.")
+        self.assertEqual(r["reels"][0]["gancho"], "O gancho.")
+
+    def test_null_literal_nao_vira_pauta(self):
+        """O _parse_grafico ja tem esse guard; parse_gancho tambem precisa dele --
+        senao a string "null" (a IA respondendo fora do formato) vira uma pauta."""
+        for entrada in ("null", "Null", "NULL  "):
+            r = self.c.parse_gancho(entrada)
+            self.assertEqual(r["reels"], [], f"entrada={entrada!r}")
+            self.assertEqual(r["frase"], "")
+
+    def test_lista_descarta_item_que_nao_e_string(self):
+        """{"limites":[{"item":"x"}]} nao pode imprimir o repr do Python
+        (\"{'item': 'x'}\") como se fosse um limite de verdade."""
+        r = self.c.parse_gancho('{"limites": [{"item": "x"}, "Limite valido."]}')
+        self.assertEqual(r["limites"], ["Limite valido."])
+
+    def test_reels_com_tipo_errado_nao_levanta(self):
+        """Se `reels` vier como numero, booleano, string ou dict em vez de lista,
+        deve devolver reels: [] sem levantar TypeError. Esta protecao e critica
+        porque a funcao roda no caminho do PDF diario, sem try/except em volta."""
+        for reels_invalido in (5, True, False, 3.14, "uma string", {"dict": "orfao"}):
+            r = self.c.parse_gancho('{"reels": %s}' % json.dumps(reels_invalido))
+            self.assertEqual(r["reels"], [],
+                           "reels: %s nao pode levantar, deve devolver []" % type(reels_invalido).__name__)
 
 
 class TestKitHtml(unittest.TestCase):
@@ -90,9 +207,12 @@ class TestKitHtml(unittest.TestCase):
         self.assertIn("O comparador perdeu 3,1%.", html)
 
     def test_um_reel_so_renderiza_igual_bem(self):
-        """Caso ESPERADO agora (o prompt prefere menos): nao pode sobrar item vazio."""
+        """Caso ESPERADO agora (o prompt prefere menos): nao pode sobrar item vazio.
+
+        A pauta virou cartao (`reel-card`), nao mais `<li class="reel">` -- atualizado
+        junto da Task 3 (cards com roteiro numerado)."""
         html = self.pdf._kit_html('{"reels": [{"angulo": "Unico."}]}', self.artigo)
-        self.assertEqual(html.count('class="reel"'), 1)
+        self.assertEqual(html.count('class="reel-card"'), 1)
         self.assertNotIn("None", html)
 
     def test_texto_legado_nao_quebra(self):
@@ -112,6 +232,60 @@ class TestKitHtml(unittest.TestCase):
         art = dict(self.artigo, titulo_original="A <script>alert(1)</script> B")
         html = self.pdf._kit_html("", art)
         self.assertNotIn("<script>", html)
+
+    def test_pauta_vira_card_com_roteiro_numerado(self):
+        bruto = ('{"reels": [{"titulo": "O assunto", "gancho": "A abertura.",'
+                 ' "roteiro": ["Comece contando.", "Termine assim."], "apoio": "47 mulheres."}]}')
+        h = self.pdf._kit_html(bruto, {"titulo": "T"})
+        self.assertIn("reel-card", h)
+        self.assertIn("A abertura.", h)
+        self.assertIn("<ol", h)
+        self.assertIn("Comece contando.", h)
+        self.assertIn("Termine assim.", h)
+        self.assertIn("47 mulheres.", h)
+        self.assertIn("O assunto", h)
+
+    def test_pauta_sem_roteiro_nao_deixa_lista_vazia(self):
+        """Formato antigo do estoque: so `angulo`, sem roteiro."""
+        h = self.pdf._kit_html('{"reels": [{"angulo": "so a abertura"}]}', {"titulo": "T"})
+        self.assertIn("so a abertura", h)
+        self.assertNotIn("<ol", h)
+
+    def test_limites_viram_bloco_proprio(self):
+        h = self.pdf._kit_html('{"limites": ["Nao prometa.", "Nao cite marca."]}', {"titulo": "T"})
+        self.assertIn("kit-limites", h)
+        self.assertIn("Nao prometa.", h)
+        self.assertIn("Nao cite marca.", h)
+
+    def test_sem_limites_nao_deixa_bloco_orfao(self):
+        h = self.pdf._kit_html('{"reels": [{"gancho": "g"}]}', {"titulo": "T"})
+        self.assertNotIn("kit-limites", h)
+
+    def test_escapa_script_no_roteiro_e_nos_limites(self):
+        bruto = ('{"limites": ["<script>alert(1)</script>"],'
+                 ' "reels": [{"gancho": "g", "roteiro": ["<script>alert(2)</script>"]}]}')
+        h = self.pdf._kit_html(bruto, {"titulo": "T"})
+        self.assertNotIn("<script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
+    def test_paciente_vira_bloco_proprio(self):
+        h = self.pdf._paciente_html('{"paciente": "Eu explico assim na consulta."}')
+        self.assertIn("Eu explico assim na consulta.", h)
+        self.assertIn("paciente", h)
+
+    def test_sem_paciente_devolve_vazio(self):
+        self.assertEqual(self.pdf._paciente_html('{"frase": "so a frase"}'), "")
+        self.assertEqual(self.pdf._paciente_html(""), "")
+
+    def test_paciente_escapa_html(self):
+        h = self.pdf._paciente_html('{"paciente": "<script>alert(1)</script>"}')
+        self.assertNotIn("<script>", h)
+
+    def test_json_cortado_nao_imprime_chave_no_html(self):
+        """A regressao que mais dói: JSON cortado virando texto cru no PDF."""
+        h = self.pdf._kit_html('{"frase": "x", "reels": [{"gancho": "corta', {"titulo": "T"})
+        self.assertNotIn('{"frase"', h)
+        self.assertNotIn("reel-card", h)
 
 
 class TestMontarHtmlKit(unittest.TestCase):
@@ -141,6 +315,38 @@ class TestMontarHtmlKit(unittest.TestCase):
         html = self.pdf.montar_html(art, self.conteudo, self.tema)
         self.assertNotIn('<a href=""', html)
 
+    def test_bloco_do_paciente_entra_no_pdf_antes_do_kit(self):
+        conteudo = dict(self.conteudo,
+                        gancho='{"paciente": "Explico assim.", "reels": [{"gancho": "g"}]}')
+        h = self.pdf.montar_html(self.artigo, conteudo, self.tema)
+        self.assertIn("Explico assim.", h)
+        self.assertLess(h.index("Explico assim."), h.index('class="kit"'),
+                        "o bloco clinico fica ANTES do kit de marketing")
+
+    def test_kit_brief_sem_break_inside_avoid_no_grupo(self):
+        """`.kit-brief {{ break-inside:avoid; }}` era do tempo em que o bloco 3 era
+        uma lista compacta de 14px. Hoje o grupo tem ate 3 cartoes com gancho 19px
+        e ate 6 passos -- ~1200px contra ~1010px de area util de uma A4. Break-inside
+        no GRUPO faz o Chromium empurrar tudo e abrir pagina em branco. Os cartoes ja
+        tem break-inside:avoid individual (`.reel-card`) -- a regra no grupo e so mal."""
+        import re
+        html = self.pdf.montar_html(self.artigo, self.conteudo, self.tema)
+        self.assertNotRegex(html, r"\.kit-brief\s*\{[^}]*break-inside",
+                             "regra redundante de break-inside no .kit-brief voltou")
+        self.assertIn(".kit-brief .kit-rot", html)   # o rotulo continua estilizado
+
+    def test_classes_novas_existem_no_css_do_pdf_e_do_site(self):
+        """O site tem copia PROPRIA do CSS e renderiza o mesmo HTML via pdf._kit_html
+        (site_web.py:1976). Classe que so existe num dos dois sai sem estilo la."""
+        import site_web
+        h = self.pdf.montar_html(self.artigo, dict(self.conteudo,
+            gancho='{"paciente":"p","limites":["l"],"reels":[{"gancho":"g","roteiro":["r"]}]}'),
+            self.tema)
+        for classe in ("reel-card", "reel-gancho", "reel-roteiro", "reel-apoio",
+                       "reel-mini", "kit-limites", "paciente"):
+            self.assertIn(f".{classe}", h, f"{classe} sem regra no CSS do PDF")
+            self.assertIn(f".{classe}", site_web._CSS, f"{classe} sem regra no CSS do site")
+
 
 class TestPromptGancho(unittest.TestCase):
     def setUp(self):
@@ -151,7 +357,7 @@ class TestPromptGancho(unittest.TestCase):
         s = self.c.SYS_GANCHO
         self.assertIn("frase", s)
         self.assertIn("reels", s)
-        self.assertIn("angulo", s)
+        self.assertIn("gancho", s)
 
     def test_prompt_proibe_completar_cota(self):
         """Modelo de IA preenche ate o numero pedido; o 3o sai inventado."""
@@ -159,10 +365,35 @@ class TestPromptGancho(unittest.TestCase):
         self.assertIn("1 a 3", s)
         self.assertTrue("nunca invente" in s or "nao invente" in s)
 
+    def test_prompt_descreve_o_schema_novo(self):
+        for chave in ('"paciente"', '"limites"', '"gancho"', '"roteiro"', '"titulo"'):
+            self.assertIn(chave, self.c.SYS_GANCHO, f"schema sem {chave}")
+
+    def test_prompt_manda_falar_com_o_paciente_e_proibe_metodologia(self):
+        s = self.c.SYS_GANCHO.lower()
+        self.assertIn("paciente", s)
+        self.assertIn("metodologia", s)
+        self.assertIn("comparador", s)
+
+    def test_prompt_proibe_jargao_de_marketing(self):
+        """O texto gerado ia com 'nomeia a cena'/'vira a chave' -- quem le e medico
+        ou social media, nao publicitario."""
+        s = self.c.SYS_GANCHO.lower()
+        for termo in ("nomeia a cena", "vira a chave", "prova por baixo"):
+            self.assertIn(termo, s, f"o prompt precisa PROIBIR '{termo}' pelo nome")
+
     def test_prompt_mantem_as_travas_do_cfm(self):
         s = self.c.SYS_GANCHO.lower()
-        self.assertIn("cfm", s)
-        self.assertIn("receita", s)          # nao promover medicamento de receita p/ leigo
+        for termo in ("cfm", "receita", "resultado"):
+            self.assertIn(termo, s)
+
+    def test_teto_de_tokens_cabe_na_saida_real(self):
+        """Saida real medida: 934 tokens. Com 900 o JSON chega cortado."""
+        import inspect
+        fonte = inspect.getsource(self.c.gerar_conteudo)
+        self.assertIn("SYS_GANCHO", fonte)
+        self.assertNotIn("max_tokens=900", fonte)
+        self.assertIn("max_tokens=2500", fonte)
 
     def test_gerar_conteudo_devolve_gancho_parseavel(self):
         falso = '{"frase": "F", "reels": [{"angulo": "A", "apoio": "B"}]}'
@@ -187,13 +418,16 @@ class TestKitNoSite(unittest.TestCase):
         self.assertIn("Tirzepatide Once Weekly", html)
 
     def test_site_tem_o_css_do_kit(self):
-        """O site tem copia PROPRIA do CSS do PDF: sem estas classes o kit sai sem estilo."""
+        """O site tem copia PROPRIA do CSS do PDF: sem estas classes o kit sai sem estilo.
+
+        `.reels`/`.reel` (lista) viraram `.reel-cards`/`.reel-card` (cards com roteiro
+        numerado) na Task 3 -- atualizado junto."""
         import site_web
         d = {"titulo_pt": "T", "titulo_original": "T EN", "fonte": "NEJM", "data": "2026-08-04",
              "doi": "x", "url": "https://x", "resumo": "r", "grafico": None,
              "gancho": '{"frase": "F", "reels": [{"angulo": "A"}]}'}
         html = site_web.pagina_digest({"rotulo": "Obesidade", "emoji": "", "slug": "obesidade", "cor": "#14332a"}, d)
-        for classe in (".paper-box{", ".frase-box{", ".reels{", ".reel-n{"):
+        for classe in (".paper-box{", ".frase-box{", ".reel-cards{", ".reel-card{", ".reel-n{"):
             self.assertIn(classe, html, classe)
 
 
