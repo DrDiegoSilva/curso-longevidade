@@ -127,6 +127,46 @@ class TestParseGancho(unittest.TestCase):
         r = self.c.parse_gancho("Fale que {isto} nao e JSON.")
         self.assertEqual(len(r["reels"]), 1)
 
+    def test_cerca_de_codigo_e_recuperada_nao_suprimida(self):
+        """Saida real medida pelo revisor: a IA cerca o JSON com ```json ... ```.
+        O guard antigo (`texto[:1] in ("{","[")`) suprimia o kit inteiro porque o
+        texto comeca com a cerca, nao com a chave -- agora o conteudo e RECUPERADO."""
+        bruto = ('```json\n{"frase": "A frase.", '
+                 '"reels": [{"gancho": "O gancho.", "apoio": "Apoio."}]}\n```')
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase.")
+        self.assertEqual(len(r["reels"]), 1)
+        self.assertEqual(r["reels"][0]["gancho"], "O gancho.")
+        self.assertEqual(r["reels"][0]["apoio"], "Apoio.")
+
+    def test_preambulo_antes_do_json_e_recuperado(self):
+        """Mesmo efeito sem cerca de codigo: preambulo em prosa antes da chave."""
+        bruto = 'Segue o JSON pedido:\n{"frase": "A frase.", "reels": [{"gancho": "O gancho."}]}'
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase.")
+        self.assertEqual(r["reels"][0]["gancho"], "O gancho.")
+
+    def test_preambulo_e_cerca_juntos_sao_recuperados(self):
+        bruto = ('Segue o JSON pedido:\n```json\n'
+                 '{"frase": "A frase.", "reels": [{"gancho": "O gancho."}]}\n```')
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase.")
+        self.assertEqual(r["reels"][0]["gancho"], "O gancho.")
+
+    def test_null_literal_nao_vira_pauta(self):
+        """O _parse_grafico ja tem esse guard; parse_gancho tambem precisa dele --
+        senao a string "null" (a IA respondendo fora do formato) vira uma pauta."""
+        for entrada in ("null", "Null", "NULL  "):
+            r = self.c.parse_gancho(entrada)
+            self.assertEqual(r["reels"], [], f"entrada={entrada!r}")
+            self.assertEqual(r["frase"], "")
+
+    def test_lista_descarta_item_que_nao_e_string(self):
+        """{"limites":[{"item":"x"}]} nao pode imprimir o repr do Python
+        (\"{'item': 'x'}\") como se fosse um limite de verdade."""
+        r = self.c.parse_gancho('{"limites": [{"item": "x"}, "Limite valido."]}')
+        self.assertEqual(r["limites"], ["Limite valido."])
+
     def test_reels_com_tipo_errado_nao_levanta(self):
         """Se `reels` vier como numero, booleano, string ou dict em vez de lista,
         deve devolver reels: [] sem levantar TypeError. Esta protecao e critica
@@ -282,6 +322,18 @@ class TestMontarHtmlKit(unittest.TestCase):
         self.assertIn("Explico assim.", h)
         self.assertLess(h.index("Explico assim."), h.index('class="kit"'),
                         "o bloco clinico fica ANTES do kit de marketing")
+
+    def test_kit_brief_sem_break_inside_avoid_no_grupo(self):
+        """`.kit-brief {{ break-inside:avoid; }}` era do tempo em que o bloco 3 era
+        uma lista compacta de 14px. Hoje o grupo tem ate 3 cartoes com gancho 19px
+        e ate 6 passos -- ~1200px contra ~1010px de area util de uma A4. Break-inside
+        no GRUPO faz o Chromium empurrar tudo e abrir pagina em branco. Os cartoes ja
+        tem break-inside:avoid individual (`.reel-card`) -- a regra no grupo e so mal."""
+        import re
+        html = self.pdf.montar_html(self.artigo, self.conteudo, self.tema)
+        self.assertNotRegex(html, r"\.kit-brief\s*\{[^}]*break-inside",
+                             "regra redundante de break-inside no .kit-brief voltou")
+        self.assertIn(".kit-brief .kit-rot", html)   # o rotulo continua estilizado
 
     def test_classes_novas_existem_no_css_do_pdf_e_do_site(self):
         """O site tem copia PROPRIA do CSS e renderiza o mesmo HTML via pdf._kit_html

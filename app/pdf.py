@@ -390,7 +390,6 @@ def montar_html(artigo, conteudo, tema_meta):
   .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:22px 24px;
            background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
   .frase-box p {{ margin:0; font-size:21px; line-height:1.4; color:#3a2f10; }}
-  .kit-brief {{ break-inside:avoid; }}
   .kit-brief .kit-rot {{ color:#6f7d78; }}
   .paciente {{ border:1px solid #d8ddd7; border-left:4px solid {cor}; background:#f7faf8;
            padding:17px 20px; margin:26px 0 0; border-radius:0 8px 8px 0; break-inside:avoid; }}

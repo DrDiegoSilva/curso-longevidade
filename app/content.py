@@ -155,10 +155,11 @@ def _txt(v):
 
 def _lista(v, limite):
     """Lista de strings limpas a partir do que a IA devolver. Nao levanta se vier
-    string, None ou dict no lugar da lista."""
+    string, None ou dict no lugar da lista. Item que nao e string (dict, numero...)
+    e descartado -- senao o repr do Python (ex.: {'item': 'x'}) vaza pro PDF."""
     if not isinstance(v, list):
         return []
-    saida = [_txt(x) for x in v]
+    saida = [_txt(x) for x in v if isinstance(x, str)]
     return [s for s in saida if s][:limite]
 
 
@@ -184,10 +185,20 @@ def parse_gancho(bruto):
     texto = _txt(bruto)
     if not texto:
         return _kit_vazio()
-    try:
-        dados = json.loads(texto)
-    except Exception:
-        dados = None
+    if texto.strip().lower().startswith("null"):
+        return _kit_vazio()
+    # A IA as vezes responde com cerca de codigo (```json ... ```) ou preambulo
+    # ("Segue o JSON pedido:") antes do objeto -- o mesmo problema que _parse_grafico
+    # ja resolve com jsonx.primeiro_objeto. Sem isto, json.loads(texto) falhava e o
+    # JSON inteiro (cerca incluida) virava UMA pauta impressa cru no PDF.
+    import jsonx
+    bruto_json = jsonx.primeiro_objeto(texto)
+    dados = None
+    if bruto_json:
+        try:
+            dados = json.loads(bruto_json)
+        except Exception:
+            dados = None
     if not isinstance(dados, dict):
         # JSON que nao fechou (IA estourou o teto de tokens) NAO pode virar pauta:
         # o PDF imprimiria {"frase":... na cara do assinante. Melhor faltar o kit.
