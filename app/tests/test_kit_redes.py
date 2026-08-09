@@ -167,9 +167,12 @@ class TestKitHtml(unittest.TestCase):
         self.assertIn("O comparador perdeu 3,1%.", html)
 
     def test_um_reel_so_renderiza_igual_bem(self):
-        """Caso ESPERADO agora (o prompt prefere menos): nao pode sobrar item vazio."""
+        """Caso ESPERADO agora (o prompt prefere menos): nao pode sobrar item vazio.
+
+        A pauta virou cartao (`reel-card`), nao mais `<li class="reel">` -- atualizado
+        junto da Task 3 (cards com roteiro numerado)."""
         html = self.pdf._kit_html('{"reels": [{"angulo": "Unico."}]}', self.artigo)
-        self.assertEqual(html.count('class="reel"'), 1)
+        self.assertEqual(html.count('class="reel-card"'), 1)
         self.assertNotIn("None", html)
 
     def test_texto_legado_nao_quebra(self):
@@ -189,6 +192,60 @@ class TestKitHtml(unittest.TestCase):
         art = dict(self.artigo, titulo_original="A <script>alert(1)</script> B")
         html = self.pdf._kit_html("", art)
         self.assertNotIn("<script>", html)
+
+    def test_pauta_vira_card_com_roteiro_numerado(self):
+        bruto = ('{"reels": [{"titulo": "O assunto", "gancho": "A abertura.",'
+                 ' "roteiro": ["Comece contando.", "Termine assim."], "apoio": "47 mulheres."}]}')
+        h = self.pdf._kit_html(bruto, {"titulo": "T"})
+        self.assertIn("reel-card", h)
+        self.assertIn("A abertura.", h)
+        self.assertIn("<ol", h)
+        self.assertIn("Comece contando.", h)
+        self.assertIn("Termine assim.", h)
+        self.assertIn("47 mulheres.", h)
+        self.assertIn("O assunto", h)
+
+    def test_pauta_sem_roteiro_nao_deixa_lista_vazia(self):
+        """Formato antigo do estoque: so `angulo`, sem roteiro."""
+        h = self.pdf._kit_html('{"reels": [{"angulo": "so a abertura"}]}', {"titulo": "T"})
+        self.assertIn("so a abertura", h)
+        self.assertNotIn("<ol", h)
+
+    def test_limites_viram_bloco_proprio(self):
+        h = self.pdf._kit_html('{"limites": ["Nao prometa.", "Nao cite marca."]}', {"titulo": "T"})
+        self.assertIn("kit-limites", h)
+        self.assertIn("Nao prometa.", h)
+        self.assertIn("Nao cite marca.", h)
+
+    def test_sem_limites_nao_deixa_bloco_orfao(self):
+        h = self.pdf._kit_html('{"reels": [{"gancho": "g"}]}', {"titulo": "T"})
+        self.assertNotIn("kit-limites", h)
+
+    def test_escapa_script_no_roteiro_e_nos_limites(self):
+        bruto = ('{"limites": ["<script>alert(1)</script>"],'
+                 ' "reels": [{"gancho": "g", "roteiro": ["<script>alert(2)</script>"]}]}')
+        h = self.pdf._kit_html(bruto, {"titulo": "T"})
+        self.assertNotIn("<script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
+    def test_paciente_vira_bloco_proprio(self):
+        h = self.pdf._paciente_html('{"paciente": "Eu explico assim na consulta."}')
+        self.assertIn("Eu explico assim na consulta.", h)
+        self.assertIn("paciente", h)
+
+    def test_sem_paciente_devolve_vazio(self):
+        self.assertEqual(self.pdf._paciente_html('{"frase": "so a frase"}'), "")
+        self.assertEqual(self.pdf._paciente_html(""), "")
+
+    def test_paciente_escapa_html(self):
+        h = self.pdf._paciente_html('{"paciente": "<script>alert(1)</script>"}')
+        self.assertNotIn("<script>", h)
+
+    def test_json_cortado_nao_imprime_chave_no_html(self):
+        """A regressao que mais dói: JSON cortado virando texto cru no PDF."""
+        h = self.pdf._kit_html('{"frase": "x", "reels": [{"gancho": "corta', {"titulo": "T"})
+        self.assertNotIn('{"frase"', h)
+        self.assertNotIn("reel-card", h)
 
 
 class TestMontarHtmlKit(unittest.TestCase):
@@ -217,6 +274,26 @@ class TestMontarHtmlKit(unittest.TestCase):
         art = dict(self.artigo, url="")
         html = self.pdf.montar_html(art, self.conteudo, self.tema)
         self.assertNotIn('<a href=""', html)
+
+    def test_bloco_do_paciente_entra_no_pdf_antes_do_kit(self):
+        conteudo = dict(self.conteudo,
+                        gancho='{"paciente": "Explico assim.", "reels": [{"gancho": "g"}]}')
+        h = self.pdf.montar_html(self.artigo, conteudo, self.tema)
+        self.assertIn("Explico assim.", h)
+        self.assertLess(h.index("Explico assim."), h.index('class="kit"'),
+                        "o bloco clinico fica ANTES do kit de marketing")
+
+    def test_classes_novas_existem_no_css_do_pdf_e_do_site(self):
+        """O site tem copia PROPRIA do CSS e renderiza o mesmo HTML via pdf._kit_html
+        (site_web.py:1976). Classe que so existe num dos dois sai sem estilo la."""
+        import site_web
+        h = self.pdf.montar_html(self.artigo, dict(self.conteudo,
+            gancho='{"paciente":"p","limites":["l"],"reels":[{"gancho":"g","roteiro":["r"]}]}'),
+            self.tema)
+        for classe in ("reel-card", "reel-gancho", "reel-roteiro", "reel-apoio",
+                       "reel-mini", "kit-limites", "paciente"):
+            self.assertIn(f".{classe}", h, f"{classe} sem regra no CSS do PDF")
+            self.assertIn(f".{classe}", site_web._CSS, f"{classe} sem regra no CSS do site")
 
 
 class TestPromptGancho(unittest.TestCase):
@@ -289,13 +366,16 @@ class TestKitNoSite(unittest.TestCase):
         self.assertIn("Tirzepatide Once Weekly", html)
 
     def test_site_tem_o_css_do_kit(self):
-        """O site tem copia PROPRIA do CSS do PDF: sem estas classes o kit sai sem estilo."""
+        """O site tem copia PROPRIA do CSS do PDF: sem estas classes o kit sai sem estilo.
+
+        `.reels`/`.reel` (lista) viraram `.reel-cards`/`.reel-card` (cards com roteiro
+        numerado) na Task 3 -- atualizado junto."""
         import site_web
         d = {"titulo_pt": "T", "titulo_original": "T EN", "fonte": "NEJM", "data": "2026-08-04",
              "doi": "x", "url": "https://x", "resumo": "r", "grafico": None,
              "gancho": '{"frase": "F", "reels": [{"angulo": "A"}]}'}
         html = site_web.pagina_digest({"rotulo": "Obesidade", "emoji": "", "slug": "obesidade", "cor": "#14332a"}, d)
-        for classe in (".paper-box{", ".frase-box{", ".reels{", ".reel-n{"):
+        for classe in (".paper-box{", ".frase-box{", ".reel-cards{", ".reel-card{", ".reel-n{"):
             self.assertIn(classe, html, classe)
 
 
