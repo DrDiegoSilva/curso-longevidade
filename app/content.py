@@ -7,23 +7,48 @@ import re
 
 SYS_GANCHO = (
     "Você prepara o material de redes sociais de um médico a partir de UM estudo. "
-    "Ele produz SÓ REELS (vídeo curto). "
+    "Ele trata obesidade, menopausa e reposição hormonal, e produz SÓ REELS (vídeo curto). "
     "Responda SÓ JSON, sem cercas de código, neste formato:\n"
-    '{"frase":"...","reels":[{"angulo":"...","apoio":"..."}]}\n'
-    "- `frase`: o ACHADO PRINCIPAL em linguagem de paciente, uma frase, sem jargão. "
-    "É o texto que vai virar imagem de post: precisa se sustentar sozinho.\n"
-    "- `reels`: de 1 a 3 PAUTAS de vídeo. Cada `angulo` é a frase que o médico fala; "
-    "cada `apoio` é o dado do estudo que sustenta aquele ângulo (uma linha).\n"
-    "REGRAS DAS PAUTAS:\n"
-    "1. De 1 a 3. PREFIRA MENOS. Se o estudo só rende uma pauta boa, devolva UMA. "
-    "NUNCA invente pauta para fechar número — pauta fraca faz o médico parar de ler o bloco.\n"
-    "2. Cada pauta sai de uma PARTE DIFERENTE do estudo (ex.: o grupo comparador, a duração, "
-    "o desenho do protocolo). Três jeitos de dizer o mesmo achado é um Reels só, repetido.\n"
-    "3. Nada de conselho de produção (formato, horário, hashtag, iluminação) — só ASSUNTO.\n"
+    '{"frase":"...","paciente":"...","limites":["..."],'
+    '"reels":[{"titulo":"...","gancho":"...","roteiro":["...","..."],"apoio":"..."}]}\n'
+    "\n"
+    "REGRA CENTRAL DAS PAUTAS — o público é o PACIENTE do médico, não o médico. O paciente "
+    "não lê estudo e não se interessa por desenho de pesquisa. Cada pauta ABRE numa dor que "
+    "ele reconhece em si mesmo e TERMINA apontando para algo que se resolve com acompanhamento "
+    "médico. O estudo é a prova que sustenta, nunca a manchete. É PROIBIDO fazer pauta sobre "
+    "metodologia, grupo comparador, tamanho de amostra ou tempo de seguimento — isso é conversa "
+    "de médico para médico e faz o paciente rolar o feed.\n"
+    "\n"
+    "- `frase`: o achado em linguagem de paciente, UMA frase que se sustenta sozinha como "
+    "imagem de post.\n"
+    "- `paciente`: como o MÉDICO explica esse achado ao paciente no consultório — 2 a 4 frases, "
+    "linguagem de conversa, incluindo a ressalva honesta que mantém a confiança. É para o médico "
+    "ler antes da consulta, não para postar.\n"
+    "- `limites`: 3 a 5 itens do que NÃO pode ser dito sobre ESTE estudo — específicos dele, "
+    "nunca regras genéricas. Puxe do próprio texto: amostra pequena, uso fora de bula, desfecho "
+    "que é questionário e não exame, limitação que os autores declararam. Somado ao que o CFM "
+    "veda: promessa de resultado, antes/depois, promoção de medicamento de receita a leigo, "
+    "convocação para consulta.\n"
+    "- `reels`: de 1 a 3 pautas. PREFIRA MENOS — se o estudo só sustenta uma dor de verdade, "
+    "devolva UMA. Pauta inventada para fechar número faz o médico parar de ler o bloco. Cada "
+    "pauta sai de uma DOR DIFERENTE, nunca do mesmo assunto com outras palavras.\n"
+    "  - `titulo`: 3 a 6 palavras nomeando o assunto da pauta, para o médico achar de relance.\n"
+    "  - `gancho`: a frase EXATA dos 3 primeiros segundos do vídeo. Fala com o paciente na "
+    "segunda pessoa, nomeia a dor dele, e NÃO cita o estudo.\n"
+    "  - `roteiro`: 3 a 5 passos NA ORDEM DE GRAVAÇÃO, cada um uma linha do que o médico diz. "
+    "Um dos passos, sempre, é a ressalva honesta. O último fecha na dor ou aponta o caminho. "
+    "Quem lê tem que conseguir gravar sem saber nada de medicina. "
+    "ESCREVA CADA PASSO EM PORTUGUÊS SIMPLES, como quem instrui uma pessoa: 'Comece contando "
+    "que...', 'Explique que...', 'Diga a ressalva:...', 'Termine assim:...'. É PROIBIDO jargão "
+    "de marketing — não escreva 'nomeia a cena', 'vira a chave', 'prova por baixo', 'quebra de "
+    "padrão' nem 'CTA'; quem lê é médico ou social media, não publicitário.\n"
+    "  - `apoio`: o dado do estudo que sustenta aquela pauta, em uma linha. É para o médico "
+    "conferir, não para ser dito no vídeo.\n"
+    "\n"
     "ÉTICA (CFM, inegociável): não prometa milagre/cura, não garanta resultado, "
     "NÃO promova remédio de receita para leigo (fale do CONCEITO, não do 'use tal remédio'), "
     "sem sensacionalismo, sem chamada para ação ('agende sua consulta'). "
-    "Tudo em português do Brasil.")
+    "Nunca invente número que não esteja na fonte. Tudo em português do Brasil.")
 
 
 def _prompt_titulo(artigo):
@@ -195,7 +220,9 @@ def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_j
         from resumo_diario import gerar_texto_do_artigo as gerar_resumo
     if gerar_gancho is None:
         from resumo_diario import claude, SONNET
-        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=900)
+        # 2500, nao 900: a saida real medida (frase + paciente + limites + 2 pautas com
+        # roteiro) deu 934 tokens. Com o teto antigo o JSON chega cortado e o kit some.
+        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=2500)
     if gerar_grafico_json is None:
         from resumo_diario import claude, HAIKU
         gerar_grafico_json = lambda a: claude(HAIKU, _prompt_grafico(a), max_tokens=300)

@@ -228,7 +228,7 @@ class TestPromptGancho(unittest.TestCase):
         s = self.c.SYS_GANCHO
         self.assertIn("frase", s)
         self.assertIn("reels", s)
-        self.assertIn("angulo", s)
+        self.assertIn("gancho", s)
 
     def test_prompt_proibe_completar_cota(self):
         """Modelo de IA preenche ate o numero pedido; o 3o sai inventado."""
@@ -236,10 +236,35 @@ class TestPromptGancho(unittest.TestCase):
         self.assertIn("1 a 3", s)
         self.assertTrue("nunca invente" in s or "nao invente" in s)
 
+    def test_prompt_descreve_o_schema_novo(self):
+        for chave in ('"paciente"', '"limites"', '"gancho"', '"roteiro"', '"titulo"'):
+            self.assertIn(chave, self.c.SYS_GANCHO, f"schema sem {chave}")
+
+    def test_prompt_manda_falar_com_o_paciente_e_proibe_metodologia(self):
+        s = self.c.SYS_GANCHO.lower()
+        self.assertIn("paciente", s)
+        self.assertIn("metodologia", s)
+        self.assertIn("comparador", s)
+
+    def test_prompt_proibe_jargao_de_marketing(self):
+        """O texto gerado ia com 'nomeia a cena'/'vira a chave' -- quem le e medico
+        ou social media, nao publicitario."""
+        s = self.c.SYS_GANCHO.lower()
+        for termo in ("nomeia a cena", "vira a chave", "prova por baixo"):
+            self.assertIn(termo, s, f"o prompt precisa PROIBIR '{termo}' pelo nome")
+
     def test_prompt_mantem_as_travas_do_cfm(self):
         s = self.c.SYS_GANCHO.lower()
-        self.assertIn("cfm", s)
-        self.assertIn("receita", s)          # nao promover medicamento de receita p/ leigo
+        for termo in ("cfm", "receita", "resultado"):
+            self.assertIn(termo, s)
+
+    def test_teto_de_tokens_cabe_na_saida_real(self):
+        """Saida real medida: 934 tokens. Com 900 o JSON chega cortado."""
+        import inspect
+        fonte = inspect.getsource(self.c.gerar_conteudo)
+        self.assertIn("SYS_GANCHO", fonte)
+        self.assertNotIn("max_tokens=900", fonte)
+        self.assertIn("max_tokens=2500", fonte)
 
     def test_gerar_conteudo_devolve_gancho_parseavel(self):
         falso = '{"frase": "F", "reels": [{"angulo": "A", "apoio": "B"}]}'
