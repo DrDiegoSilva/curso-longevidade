@@ -119,6 +119,8 @@ def _braco(b):
 
 
 MAX_REELS = 3
+MAX_PASSOS = 6      # passos do roteiro de um Reels
+MAX_LIMITES = 6     # itens do bloco "o que nao da pra afirmar"
 
 
 def _txt(v):
@@ -126,35 +128,64 @@ def _txt(v):
     return str(v).strip() if v is not None else ""
 
 
-def parse_gancho(bruto):
-    """Normaliza o campo `gancho` para {"frase": str, "reels": [{"angulo","apoio"}]}.
+def _lista(v, limite):
+    """Lista de strings limpas a partir do que a IA devolver. Nao levanta se vier
+    string, None ou dict no lugar da lista."""
+    if not isinstance(v, list):
+        return []
+    saida = [_txt(x) for x in v]
+    return [s for s in saida if s][:limite]
 
-    Aceita tres formatos, porque os tres existem no banco:
-      1. JSON novo  -> {"frase": ..., "reels": [...]}
-      2. texto puro -> formato LEGADO (reserva/classicos/digests antigos); vira um reel
-      3. lixo/vazio -> estrutura vazia, sem levantar
+
+def _kit_vazio():
+    return {"frase": "", "paciente": "", "limites": [], "reels": []}
+
+
+def parse_gancho(bruto):
+    """Normaliza o campo `gancho` para
+    {"frase", "paciente", "limites", "reels": [{"titulo","gancho","roteiro","apoio"}]}.
+
+    Aceita QUATRO formatos, porque os quatro existem no banco:
+      1. JSON novo   -> gancho/roteiro/titulo por pauta + paciente + limites
+      2. JSON atual  -> `angulo` vira `gancho`, sem roteiro (o estoque de
+         reserva_resumos esta cheio destes; quebrar aqui esvazia o kit de todo
+         estudo ja na fila)
+      3. texto puro  -> formato legado (classicos/digests antigos); vira uma pauta
+      4. lixo/vazio  -> estrutura vazia
 
     Nunca levanta e nunca devolve None em campo nenhum: isto roda no caminho do PDF
     do assinante, onde uma excecao custa o envio do dia.
     """
     texto = _txt(bruto)
     if not texto:
-        return {"frase": "", "reels": []}
+        return _kit_vazio()
     try:
         dados = json.loads(texto)
     except Exception:
         dados = None
     if not isinstance(dados, dict):
-        return {"frase": "", "reels": [{"angulo": texto, "apoio": ""}]}
+        # JSON que nao fechou (IA estourou o teto de tokens) NAO pode virar pauta:
+        # o PDF imprimiria {"frase":... na cara do assinante. Melhor faltar o kit.
+        if texto.lstrip()[:1] in ("{", "["):
+            return _kit_vazio()
+        return {"frase": "", "paciente": "", "limites": [],
+                "reels": [{"titulo": "", "gancho": texto, "roteiro": [], "apoio": ""}]}
     reels = []
     for item in (dados.get("reels") or []):
         if not isinstance(item, dict):
             continue
-        angulo = _txt(item.get("angulo"))
-        if not angulo:
-            continue                      # item sem angulo nao rende video nenhum
-        reels.append({"angulo": angulo, "apoio": _txt(item.get("apoio"))})
-    return {"frase": _txt(dados.get("frase")), "reels": reels[:MAX_REELS]}
+        # `angulo` e o nome antigo de `gancho` -- compatibilidade com o estoque
+        gancho = _txt(item.get("gancho")) or _txt(item.get("angulo"))
+        if not gancho:
+            continue                      # item sem abertura nao rende video nenhum
+        reels.append({"titulo": _txt(item.get("titulo")),
+                      "gancho": gancho,
+                      "roteiro": _lista(item.get("roteiro"), MAX_PASSOS),
+                      "apoio": _txt(item.get("apoio"))})
+    return {"frase": _txt(dados.get("frase")),
+            "paciente": _txt(dados.get("paciente")),
+            "limites": _lista(dados.get("limites"), MAX_LIMITES),
+            "reels": reels[:MAX_REELS]}
 
 
 def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_json=None, gerar_titulo=None):

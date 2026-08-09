@@ -11,21 +11,24 @@ class TestParseGancho(unittest.TestCase):
         import content
         self.c = content
 
-    def test_json_novo_completo(self):
+    def test_json_formato_antigo_com_angulo_vira_gancho(self):
+        """O estoque de reserva/classicos esta cheio deste formato: `angulo` sem
+        roteiro. Se parar de funcionar, todo estudo ja na fila sai com o kit vazio."""
         bruto = ('{"frase": "Perdeu 20,9% do peso.",'
                  ' "reels": [{"angulo": "Nao e forca de vontade.", "apoio": "O comparador perdeu 3,1%."}]}')
         r = self.c.parse_gancho(bruto)
         self.assertEqual(r["frase"], "Perdeu 20,9% do peso.")
         self.assertEqual(len(r["reels"]), 1)
-        self.assertEqual(r["reels"][0]["angulo"], "Nao e forca de vontade.")
+        self.assertEqual(r["reels"][0]["gancho"], "Nao e forca de vontade.")
         self.assertEqual(r["reels"][0]["apoio"], "O comparador perdeu 3,1%.")
+        self.assertEqual(r["reels"][0]["roteiro"], [])
 
     def test_texto_puro_antigo_vira_um_reel(self):
         """Formato legado: o banco de reserva/classicos esta cheio deles."""
         r = self.c.parse_gancho("Fale sobre obesidade como doenca cronica.")
         self.assertEqual(r["frase"], "")
         self.assertEqual(len(r["reels"]), 1)
-        self.assertEqual(r["reels"][0]["angulo"], "Fale sobre obesidade como doenca cronica.")
+        self.assertEqual(r["reels"][0]["gancho"], "Fale sobre obesidade como doenca cronica.")
         self.assertEqual(r["reels"][0]["apoio"], "")
 
     def test_vazio_nao_quebra(self):
@@ -40,24 +43,88 @@ class TestParseGancho(unittest.TestCase):
         self.assertEqual(r["reels"], [])
 
     def test_item_sem_apoio(self):
-        r = self.c.parse_gancho('{"reels": [{"angulo": "So o angulo."}]}')
+        r = self.c.parse_gancho('{"reels": [{"gancho": "So o gancho."}]}')
         self.assertEqual(r["reels"][0]["apoio"], "")
 
     def test_corta_em_tres(self):
         """A IA vai extrapolar alguma hora; nao pode virar bloco gigante no PDF."""
-        itens = ",".join('{"angulo": "a%d"}' % i for i in range(5))
+        itens = ",".join('{"gancho": "a%d"}' % i for i in range(5))
         r = self.c.parse_gancho('{"reels": [%s]}' % itens)
         self.assertEqual(len(r["reels"]), 3)
 
     def test_item_sem_angulo_e_descartado(self):
         r = self.c.parse_gancho('{"reels": [{"apoio": "orfao"}, {"angulo": "bom"}]}')
         self.assertEqual(len(r["reels"]), 1)
-        self.assertEqual(r["reels"][0]["angulo"], "bom")
+        self.assertEqual(r["reels"][0]["gancho"], "bom")
 
     def test_nunca_imprime_none(self):
         r = self.c.parse_gancho('{"frase": null, "reels": [{"angulo": "x", "apoio": null}]}')
         self.assertEqual(r["frase"], "")
         self.assertEqual(r["reels"][0]["apoio"], "")
+
+    def test_json_novo_completo(self):
+        bruto = ('{"frase": "A frase do post.",'
+                 ' "paciente": "Como eu explico na consulta.",'
+                 ' "limites": ["Nao prometa resultado.", "Nao cite marca."],'
+                 ' "reels": [{"titulo": "Quando dizem que e psicologico",'
+                 '            "gancho": "Se te disseram que era da sua cabeca, escuta isso.",'
+                 '            "roteiro": ["Comece contando a situacao.", "Explique o que muda."],'
+                 '            "apoio": "47 mulheres na pos-menopausa."}]}')
+        r = self.c.parse_gancho(bruto)
+        self.assertEqual(r["frase"], "A frase do post.")
+        self.assertEqual(r["paciente"], "Como eu explico na consulta.")
+        self.assertEqual(r["limites"], ["Nao prometa resultado.", "Nao cite marca."])
+        self.assertEqual(len(r["reels"]), 1)
+        p = r["reels"][0]
+        self.assertEqual(p["titulo"], "Quando dizem que e psicologico")
+        self.assertEqual(p["gancho"], "Se te disseram que era da sua cabeca, escuta isso.")
+        self.assertEqual(p["roteiro"], ["Comece contando a situacao.", "Explique o que muda."])
+        self.assertEqual(p["apoio"], "47 mulheres na pos-menopausa.")
+
+    def test_campos_novos_ausentes_viram_vazio(self):
+        """Formato antigo nao tem paciente/limites/titulo/roteiro -- nao pode virar None."""
+        r = self.c.parse_gancho('{"reels": [{"angulo": "so o angulo"}]}')
+        self.assertEqual(r["paciente"], "")
+        self.assertEqual(r["limites"], [])
+        self.assertEqual(r["reels"][0]["titulo"], "")
+        self.assertEqual(r["reels"][0]["roteiro"], [])
+
+    def test_roteiro_com_lixo_dentro_e_limpo(self):
+        r = self.c.parse_gancho(
+            '{"reels": [{"gancho": "g", "roteiro": ["passo bom", "", null, "outro"]}]}')
+        self.assertEqual(r["reels"][0]["roteiro"], ["passo bom", "outro"])
+
+    def test_roteiro_que_nao_e_lista_nao_quebra(self):
+        r = self.c.parse_gancho('{"reels": [{"gancho": "g", "roteiro": "virou string"}]}')
+        self.assertEqual(r["reels"][0]["roteiro"], [])
+
+    def test_limites_corta_no_teto(self):
+        itens = ",".join('"limite %d"' % i for i in range(9))
+        r = self.c.parse_gancho('{"limites": [%s]}' % itens)
+        self.assertEqual(len(r["limites"]), self.c.MAX_LIMITES)
+
+    def test_roteiro_corta_no_teto(self):
+        passos = ",".join('"passo %d"' % i for i in range(9))
+        r = self.c.parse_gancho('{"reels": [{"gancho": "g", "roteiro": [%s]}]}' % passos)
+        self.assertEqual(len(r["reels"][0]["roteiro"]), self.c.MAX_PASSOS)
+
+    def test_json_cortado_nao_vira_pauta(self):
+        """O defeito que mais dói: com a IA estourando o limite de tokens, o JSON
+        chega pela metade, o json.loads falha e o texto bruto virava UMA pauta --
+        o PDF imprimia {"frase":... na cara do assinante pagante."""
+        cortado = '{"frase": "A frase do post.", "reels": [{"gancho": "Se te disser'
+        r = self.c.parse_gancho(cortado)
+        self.assertEqual(r["reels"], [], "JSON cortado nao pode virar pauta")
+        self.assertEqual(r["frase"], "")
+
+    def test_lista_json_tambem_nao_vira_pauta(self):
+        r = self.c.parse_gancho('[{"gancho": "veio lista em vez de objeto"}')
+        self.assertEqual(r["reels"], [])
+
+    def test_texto_que_so_comeca_com_chave_no_meio_ainda_vira_pauta(self):
+        """Texto legado de verdade nao comeca com { -- so o JSON cortado comeca."""
+        r = self.c.parse_gancho("Fale que {isto} nao e JSON.")
+        self.assertEqual(len(r["reels"]), 1)
 
 
 class TestKitHtml(unittest.TestCase):
