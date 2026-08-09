@@ -171,7 +171,8 @@ def parse_gancho(bruto):
         return {"frase": "", "paciente": "", "limites": [],
                 "reels": [{"titulo": "", "gancho": texto, "roteiro": [], "apoio": ""}]}
     reels = []
-    for item in (dados.get("reels") or []):
+    reels_bruto = dados.get("reels")
+    for item in (reels_bruto if isinstance(reels_bruto, list) else []):
         if not isinstance(item, dict):
             continue
         # `angulo` e o nome antigo de `gancho` -- compatibilidade com o estoque

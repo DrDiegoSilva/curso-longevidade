@@ -1,4 +1,5 @@
 """Parser e render do kit de redes (rodape do PDF). Standalone."""
+import json
 import os
 import sys
 import unittest
@@ -125,6 +126,15 @@ class TestParseGancho(unittest.TestCase):
         """Texto legado de verdade nao comeca com { -- so o JSON cortado comeca."""
         r = self.c.parse_gancho("Fale que {isto} nao e JSON.")
         self.assertEqual(len(r["reels"]), 1)
+
+    def test_reels_com_tipo_errado_nao_levanta(self):
+        """Se `reels` vier como numero, booleano, string ou dict em vez de lista,
+        deve devolver reels: [] sem levantar TypeError. Esta protecao e critica
+        porque a funcao roda no caminho do PDF diario, sem try/except em volta."""
+        for reels_invalido in (5, True, False, 3.14, "uma string", {"dict": "orfao"}):
+            r = self.c.parse_gancho('{"reels": %s}' % json.dumps(reels_invalido))
+            self.assertEqual(r["reels"], [],
+                           "reels: %s nao pode levantar, deve devolver []" % type(reels_invalido).__name__)
 
 
 class TestKitHtml(unittest.TestCase):
