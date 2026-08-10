@@ -44,15 +44,21 @@ def pode_enviar(status):
     return status not in ("SKIPPED", "SENT")
 
 
-def aplicar(data_iso, acao, texto=None):
+def aplicar(data_iso, acao, texto=None, area=None):
+    """Aplica a decisão do curador. `area` viaja junto com aprovar/editar (o <select>
+    da tela de revisão fica dentro do mesmo form dos botões) — vetar o dia não é hora
+    de mexer na área."""
+    import area_estudo
     r = carregar(data_iso)
     if not r:
         raise ValueError("rascunho não encontrado")
     if acao == "aprovar":
         r["status"] = "APPROVED"
+        area_estudo.aplicar_no_rascunho(r, area)
     elif acao == "editar":
         r["status"] = "EDITED"
         r["resumo"] = texto or r["resumo"]
+        area_estudo.aplicar_no_rascunho(r, area)
     elif acao == "nao_enviar":
         r["status"] = "SKIPPED"
     else:

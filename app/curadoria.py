@@ -236,12 +236,9 @@ def doi_do_texto(texto):
 
 def _areas_config():
     """As chaves de área do `temas_config.json` — as mesmas que dão rótulo, emoji e
-    cor à capa do PDF."""
-    import json
-    import os
-    caminho = os.path.join(os.path.dirname(__file__), "temas_config.json")
-    with open(caminho, encoding="utf-8") as f:
-        return list(json.load(f).get("temas", {}).keys())
+    cor à capa do PDF. Mora no `area_estudo`, que é quem manda em área de estudo."""
+    import area_estudo
+    return area_estudo.areas()
 
 
 def _metadados_do_estudo(titulo, corpo, extrair_fn):

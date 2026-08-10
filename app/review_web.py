@@ -2,10 +2,32 @@
 import html as _html
 
 
-def pagina_revisao(r, aviso="", audio_on=False):
+def _select_area(tema_atual, areas):
+    """<select> da área do estudo — o que vira a capa do PDF, o badge do WhatsApp e a
+    seção no portal.
+
+    O tema atual entra como opção mesmo quando NÃO está na lista (upload manual cai em
+    "Meus estudos", e estudo antigo pode estar vazio). Sem isso, abrir a tela e apertar
+    Aprovar sem tocar em nada trocaria a área silenciosamente pro primeiro item.
+    """
+    esc = _html.escape
+    opcoes = list(areas)
+    if tema_atual not in opcoes:
+        opcoes.insert(0, tema_atual)
+    itens = "".join(
+        f'<option value="{esc(o)}"{" selected" if o == tema_atual else ""}>'
+        f'{esc(o) if o else "— sem área —"}</option>'
+        for o in opcoes)
+    return ('<p style="margin:12px 0"><label style="font-size:14px;color:#6b7a76">Área do estudo '
+            '<select name="area" style="font-size:15px;padding:6px;margin-left:6px">'
+            f'{itens}</select></label></p>')
+
+
+def pagina_revisao(r, aviso="", audio_on=False, areas=()):
     esc = _html.escape
     a = r.get("artigo", {})
     tok = esc(r.get("review_token", ""))
+    sel_area = _select_area(a.get("tema", ""), areas)
     banner = (f'<div style="background:#e7f5ee;border:1px solid #0f4c3a;color:#0f4c3a;'
               f'padding:10px 12px;border-radius:8px;margin:12px 0">{esc(aviso)}</div>') if aviso else ""
     dica = ('<p style="color:#6b7a76;font-size:13px;margin:4px 0 12px">'
@@ -23,6 +45,7 @@ def pagina_revisao(r, aviso="", audio_on=False):
 {banner}
 {dica}
 <form method="post" action="/revisar/{tok}">
+{sel_area}
   <textarea name="texto" rows="16" style="width:100%;font-size:15px">{esc(r.get('resumo',''))}</textarea>
   <p><a href="/pdf/{esc(r.get('data',''))}" target="_blank">📄 Ver PDF</a></p>
   <button name="acao" value="aprovar">✅ Aprovar</button>
