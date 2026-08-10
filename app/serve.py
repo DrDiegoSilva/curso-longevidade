@@ -296,6 +296,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         os.makedirs(config.drafts_dir(), exist_ok=True)
                         pdfmod.gerar_pdf(pdfmod.montar_html(art, conteudo,
                                          daily._tema_meta(art.get("tema", ""))), fpath)
+                        # Grava o caminho: sem isto o rascunho fica "sempre inválido" e cada
+                        # clique em "Ver PDF" paga um Chromium. Vira o estado normal de todo
+                        # rascunho com a área corrigida (`area_estudo` zera o pdf_path).
+                        r["pdf_path"] = fpath
+                        draft_store.salvar(r)
                     except Exception as e:
                         print(f"[pdf] regen preview falhou: {e}", flush=True)
             if fpath and os.path.exists(fpath):
@@ -725,6 +730,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 threading.Thread(target=daily.trocar_estudo_amanha,
                                  args=(tok, tipo, cid), daemon=True).start()
                 return self._html(review_web.pagina_trocando())
+            if area_estudo.correcao_bloqueada(r, g("area")):
+                # "Feito ✅" numa correção que não corrige é a armadilha que criou o item 36.
+                return self._html(review_web.pagina_revisao(
+                    r, aviso="Esse estudo já foi enviado — a área não muda mais por aqui.",
+                    audio_on=config.audio_ligado(), areas=areas))
             draft_store.aplicar(r["data"], g("acao"), g("texto"), area=g("area"))
             return self._html("<h3>Feito ✅ Pode fechar.</h3>")
         if path == "/admin/whatsapp":

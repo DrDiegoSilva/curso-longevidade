@@ -275,6 +275,70 @@ class TestDbAtualizarReservaTema(unittest.TestCase):
         self.assertEqual((res["titulo_pt"], res["resumo"], res["tema"]), ("T2", "r2", "Obesidade"))
 
 
+class TestJaEnviadoNaoCorrige(unittest.TestCase):
+    """Depois das 08h a correção de área é um NO-OP silencioso — e silencioso é o pior
+    jeito de falhar aqui, porque o item 36 nasceu exatamente de "corrigi e não mudou".
+
+    Por que não muda: `_pdf_master` cacheia `{hoje}-master.pdf` no 1º slot, então um slot
+    posterior reusa o PDF com a capa velha; só o badge do WhatsApp mudaria, e o estudo
+    sairia inconsistente. O arquivo do portal (`digests`) já foi escrito em `_finalizar_dia`.
+    Corrigir estudo já enviado é a fatia 2 do item 36.
+    """
+
+    def setUp(self):
+        import area_estudo
+        importlib.reload(area_estudo)
+        self.ae = area_estudo
+
+    def test_rascunho_enviado_nao_aceita_area_nova(self):
+        r = _rascunho(tema="Meus estudos")
+        r["status"] = "SENT"
+        with mock.patch("db.atualizar_reserva") as m_upd:
+            mudou = self.ae.aplicar_no_rascunho(r, "Obesidade")
+        self.assertFalse(mudou)
+        self.assertEqual(r["artigo"]["tema"], "Meus estudos")
+        self.assertEqual(r["pdf_path"], "/data/drafts/2026-08-11-preview.pdf")
+        m_upd.assert_not_called()
+
+    def test_pode_corrigir_diz_nao_pro_enviado(self):
+        self.assertFalse(self.ae.pode_corrigir({"status": "SENT"}))
+        self.assertTrue(self.ae.pode_corrigir({"status": "DRAFT"}))
+        self.assertTrue(self.ae.pode_corrigir({"status": "APPROVED"}))
+        self.assertTrue(self.ae.pode_corrigir({}))
+
+    def test_draft_store_tambem_barra(self):
+        import draft_store
+        importlib.reload(draft_store)
+        r = _rascunho(tema="Meus estudos")
+        r["status"] = "SENT"
+        with mock.patch.object(draft_store, "carregar", return_value=r), \
+             mock.patch.object(draft_store, "salvar"), \
+             mock.patch("db.atualizar_reserva"):
+            out = draft_store.aplicar("2026-08-11", "aprovar", area="Obesidade")
+        self.assertEqual(out["artigo"]["tema"], "Meus estudos")
+
+
+class TestConfigQuebradaNaoDerrubaAprovar(unittest.TestCase):
+    """Aprovar/editar agora PASSA pelo temas_config em toda chamada (antes só o envio
+    das 18h/08h lia esse arquivo). Config ilegível não pode impedir o curador de aprovar
+    o estudo de amanhã."""
+
+    def setUp(self):
+        import area_estudo
+        importlib.reload(area_estudo)
+        self.ae = area_estudo
+
+    def test_config_ilegivel_devolve_lista_vazia(self):
+        with mock.patch("builtins.open", side_effect=OSError("sumiu")):
+            self.assertEqual(self.ae.areas(), [])
+
+    def test_config_ilegivel_nao_derruba_a_aprovacao(self):
+        r = _rascunho(tema="Obesidade")
+        with mock.patch("builtins.open", side_effect=OSError("sumiu")):
+            self.assertFalse(self.ae.aplicar_no_rascunho(r, "Hormonal"))
+        self.assertEqual(r["artigo"]["tema"], "Obesidade")   # sem lista, ninguém muda nada
+
+
 class _RotaStub:
     """Stub mínimo pro `self` de do_GET/do_POST — a rota /revisar vive INLINE no
     do_POST, não é método próprio. Mesmo padrão do `_RouteStub` de test_admin_precos."""
@@ -283,11 +347,55 @@ class _RotaStub:
         import io
         self.path = path
         self.rfile = io.BytesIO(body)
+        self.wfile = io.BytesIO()
         self.headers = {"Content-Length": str(len(body)),
                         "Content-Type": "application/x-www-form-urlencoded"}
 
     def _html(self, s, code=200):
         return {"code": code, "body": s}
+
+    def send_response(self, code):
+        self.code = code
+
+    def send_header(self, *a):
+        pass
+
+    def end_headers(self):
+        pass
+
+
+class TestPdfPreviewNaoRegeneraSempre(unittest.TestCase):
+    """Zerar o `pdf_path` invalida o preview velho — mas o /pdf tem que GRAVAR o caminho
+    regenerado, senão o rascunho fica "sempre inválido" e cada clique em "📄 Ver PDF"
+    paga um Chromium (até 3 tentativas x 120s). Era raro antes; a correção de área
+    tornaria isso o estado normal de todo rascunho corrigido."""
+
+    def setUp(self):
+        import serve
+        self.serve = serve
+        self.tmp = tempfile.mkdtemp()
+
+    def _get_pdf(self, r):
+        import config
+        with mock.patch.object(config, "drafts_dir", return_value=self.tmp), \
+             mock.patch("draft_store.carregar", return_value=r), \
+             mock.patch("draft_store.salvar") as m_salvar, \
+             mock.patch("pdf.gerar_pdf", side_effect=lambda h, out: open(out, "wb").write(b"%PDF")) as m_gen:
+            self.serve.Handler.do_GET(_RotaStub("/pdf/2026-08-11"))
+        return m_gen, m_salvar
+
+    def test_regenera_e_grava_o_caminho_no_rascunho(self):
+        r = _rascunho(tema="Obesidade", pdf_path="")
+        m_gen, m_salvar = self._get_pdf(r)
+        self.assertEqual(m_gen.call_count, 1)
+        self.assertTrue(r["pdf_path"].endswith("2026-08-11-preview.pdf"))
+        m_salvar.assert_called_once()
+
+    def test_segundo_clique_reusa_o_pdf_em_vez_de_chamar_chromium(self):
+        r = _rascunho(tema="Obesidade", pdf_path="")
+        self._get_pdf(r)                       # 1º clique: regenera e grava
+        m_gen, _ = self._get_pdf(r)            # 2º clique: arquivo existe e pdf_path está gravado
+        self.assertEqual(m_gen.call_count, 0)
 
 
 class TestFiacaoDaRota(unittest.TestCase):
@@ -309,6 +417,28 @@ class TestFiacaoDaRota(unittest.TestCase):
              mock.patch("draft_store.aplicar") as m_aplicar:
             self._post({"acao": "aprovar", "texto": "t", "area": "Obesidade"})
         self.assertEqual(m_aplicar.call_args.kwargs.get("area"), "Obesidade")
+
+    def test_estudo_ja_enviado_avisa_em_vez_de_dizer_feito(self):
+        """"Feito ✅" numa correção que não corrige é a armadilha que criou o item 36."""
+        r = _rascunho(tema="Meus estudos")
+        r["status"] = "SENT"
+        with mock.patch("draft_store.por_token", return_value=r), \
+             mock.patch("draft_store.aplicar", return_value=r):
+            out = self._post({"acao": "aprovar", "texto": "t", "area": "Obesidade"})
+        self.assertNotIn("Feito", out["body"])
+        self.assertIn("já foi enviado", out["body"])
+
+    def test_nao_enviar_continua_valendo_depois_do_1o_slot(self):
+        """Freio de emergência: o estudo saiu no slot das 08h e o Diego quer barrar os
+        slots seguintes (`enviar_slot` só respeita SKIPPED). Barrar o POST inteiro num
+        rascunho SENT tiraria isso dele."""
+        r = _rascunho(tema="Obesidade")
+        r["status"] = "SENT"
+        with mock.patch("draft_store.por_token", return_value=r), \
+             mock.patch("draft_store.aplicar") as m_aplicar:
+            out = self._post({"acao": "nao_enviar"})
+        m_aplicar.assert_called_once()
+        self.assertIn("Feito", out["body"])
 
     def test_get_manda_as_areas_pra_pagina(self):
         r = _rascunho(tema="Meus estudos")

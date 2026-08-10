@@ -52,13 +52,15 @@ def aplicar(data_iso, acao, texto=None, area=None):
     r = carregar(data_iso)
     if not r:
         raise ValueError("rascunho não encontrado")
+    # A área ANTES do status: a guarda de "já enviado" mora em `area_estudo.pode_corrigir`
+    # e lê `r["status"]` — sobrescrever o status primeiro apagaria o SENT que ela procura.
     if acao == "aprovar":
-        r["status"] = "APPROVED"
         area_estudo.aplicar_no_rascunho(r, area)
+        r["status"] = "APPROVED"
     elif acao == "editar":
+        area_estudo.aplicar_no_rascunho(r, area)
         r["status"] = "EDITED"
         r["resumo"] = texto or r["resumo"]
-        area_estudo.aplicar_no_rascunho(r, area)
     elif acao == "nao_enviar":
         r["status"] = "SKIPPED"
     else:

@@ -19,9 +19,37 @@ _CFG_PATH = os.path.join(os.path.dirname(__file__), "temas_config.json")
 
 def areas():
     """As chaves de área do `temas_config.json` — as mesmas que dão rótulo, emoji e cor
-    à capa do PDF (`daily._tema_meta`)."""
-    with open(_CFG_PATH, encoding="utf-8") as f:
-        return list(json.load(f).get("temas", {}).keys())
+    à capa do PDF (`daily._tema_meta`).
+
+    Lista vazia se o arquivo não abrir: aprovar/editar agora passa por aqui em TODA
+    chamada (antes só o preparo das 18h e o envio das 08h liam esta config), e config
+    ilegível não pode impedir o curador de aprovar o estudo de amanhã. Sem lista,
+    `valida` não deixa nada passar — falha fechada, do lado seguro.
+    """
+    try:
+        with open(_CFG_PATH, encoding="utf-8") as f:
+            return list(json.load(f).get("temas", {}).keys())
+    except Exception as e:
+        print(f"[area] não consegui ler as áreas do temas_config: {e}", flush=True)
+        return []
+
+
+def pode_corrigir(r):
+    """False para rascunho já enviado. Depois do 1º slot a correção não chega no PDF:
+    `daily._pdf_master` cacheia `{hoje}-master.pdf`, então um slot posterior reusa a capa
+    velha e só o badge do WhatsApp mudaria — o estudo sairia inconsistente. E o arquivo
+    do portal (`digests`) já foi escrito em `_finalizar_dia`. Corrigir estudo já enviado
+    é a fatia 2 do item 36."""
+    return r.get("status") != "SENT"
+
+
+def correcao_bloqueada(r, area):
+    """True só quando o curador PEDIU área nova e o estudo já saiu — o único caso em que
+    vale parar e avisar em vez de responder "Feito ✅". Aprovar sem mexer na área num dia
+    já enviado (o form manda o campo sempre) não vira aviso à toa."""
+    art = r.get("artigo") or {}
+    atual = art.get("tema", "")
+    return valida(area, atual) != atual and not pode_corrigir(r)
 
 
 def valida(area, atual):
@@ -46,7 +74,7 @@ def aplicar_no_rascunho(r, area):
     dicionário e o persiste logo em seguida.
     """
     art = r.get("artigo")
-    if not isinstance(art, dict):
+    if not isinstance(art, dict) or not pode_corrigir(r):
         return False
     atual = art.get("tema", "")
     nova = valida(area, atual)
