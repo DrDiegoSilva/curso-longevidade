@@ -105,36 +105,43 @@ def taggear(artigos, llm=None):
             if isinstance(c, dict) and isinstance(c.get("i"), int)}
 
 
-def _prompt_tema(titulo, texto, temas):
-    return ("Classifique o estudo abaixo em UMA das áreas listadas.\n"
-            f"Áreas: {', '.join(temas)}\n\n"
+def _prompt_metadados(titulo, texto, temas):
+    return ("Extraia os metadados do estudo abaixo.\n"
+            f"Áreas possíveis: {', '.join(temas)}\n\n"
             f"Título: {titulo}\n"
             f"Texto: {(texto or '')[:3000]}\n\n"
-            "Responda SÓ com o nome exato da área, sem explicar. "
-            "Se não couber em nenhuma com clareza, responda NENHUM.")
+            'Responda SÓ JSON: {"area":"<uma das áreas, ou vazio se nenhuma couber>",'
+            '"fonte":"<nome da revista>","data":"<AAAA-MM ou AAAA>"}\n'
+            "Deixe vazio o campo que o texto não disser. Não invente.")
 
 
-def classificar_tema(titulo, texto, temas, llm=None):
-    """Área do estudo entre `temas` (as chaves do `temas_config.json`), ou "" quando
-    o modelo não se decide. Serve o UPLOAD manual: sem isto a capa saía sempre com o
-    chip genérico "Meus estudos".
+def extrair_metadados(titulo, texto, temas, llm=None):
+    """Área + revista + data numa chamada só (antes a área ia numa chamada e o
+    resto em outra, sobre o MESMO texto).
 
-    Nunca levanta: classificar é enfeite de capa, e o upload do estudo do Diego não
-    pode morrer porque a IA teve um soluço. Também não aceita área inventada — só
-    devolve chave que estava na lista."""
-    if not temas:
-        return ""
+    O DOI NÃO vem daqui de propósito: ele tem formato fixo e sai por regex em
+    `curadoria.doi_do_texto` -- identificador é justamente o campo onde uma
+    alucinação passa despercebida e vira link quebrado no PDF do assinante.
+
+    Nunca levanta e nunca inventa área: só devolve chave que estava na lista. O
+    upload do estudo não pode morrer porque a IA teve um soluço."""
+    vazio = {"area": "", "fonte": "", "data": ""}
     if llm is None:
         from resumo_diario import claude, HAIKU
-        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=20)
+        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=200)
     try:
-        resp = (llm(_prompt_tema(titulo, texto, temas)) or "").strip().lower()
+        import jsonx
+        bruto = jsonx.primeiro_objeto(llm(_prompt_metadados(titulo, texto, temas)) or "")
+        d = json.loads(bruto) if bruto else {}
     except Exception as e:
-        print(f"[triage] classificar tema falhou: {e}", flush=True)
-        return ""
-    # Casa a chave mais longa primeiro: evita que "Hormonal" ganhe de uma área
-    # futura chamada "Hormonal feminino" só por vir antes na lista.
-    for t in sorted(temas, key=len, reverse=True):
-        if t.lower() in resp:
-            return t
-    return ""
+        print(f"[triage] extrair metadados falhou: {e}", flush=True)
+        return vazio
+    if not isinstance(d, dict):
+        return vazio
+    area = str(d.get("area") or "").strip().lower()
+    # Casa a chave mais longa primeiro: evita que "Hormonal" ganhe de uma area
+    # futura "Hormonal feminino" so por vir antes na lista.
+    escolhida = next((t for t in sorted(temas, key=len, reverse=True) if t.lower() in area), "")
+    return {"area": escolhida,
+            "fonte": str(d.get("fonte") or "").strip(),
+            "data": str(d.get("data") or "").strip()}

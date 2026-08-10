@@ -127,7 +127,7 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
     def test_entra_na_fila_com_prioridade(self):
         rid, tit = self.cur.adicionar_meu_estudo(
             "texto integral do estudo em PDF...", titulo="Meu PDF", fonte="NEJM", doi="10.1/meu",
-            triar_fn=lambda arts, tema: [], classificar_fn=lambda *a: "",
+            triar_fn=lambda arts, tema: [], extrair_fn=lambda *a: {},
             gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
             gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT do meu estudo")
         self.assertEqual(tit, "Título PT do meu estudo")
@@ -140,7 +140,7 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
     def test_abstract_do_texto_vai_pro_gerador(self):
         visto = {}
         self.cur.adicionar_meu_estudo(
-            "CONTEUDO-DO-PDF", titulo="X", triar_fn=lambda arts, tema: [], classificar_fn=lambda *a: "",
+            "CONTEUDO-DO-PDF", titulo="X", triar_fn=lambda arts, tema: [], extrair_fn=lambda *a: {},
             gerar_resumo=lambda a: visto.setdefault("r", a.get("resumo")) or "ok",
             gerar_gancho=lambda a: "g", gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "t")
         self.assertEqual(visto["r"], "CONTEUDO-DO-PDF")
@@ -150,7 +150,7 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
         # fila por qualidade, não só furando por prioridade cega.
         _, tit = self.cur.adicionar_meu_estudo(
             "texto integral do estudo em PDF...", titulo="Meu PDF", fonte="NEJM", doi="10.1/meu",
-            triar_fn=lambda arts, tema: [{"score": 9}], classificar_fn=lambda *a: "",
+            triar_fn=lambda arts, tema: [{"score": 9}], extrair_fn=lambda *a: {},
             gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
             gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT")
         self.assertEqual(tit, "Título PT")
@@ -162,7 +162,7 @@ class TestAdicionarMeuEstudo(unittest.TestCase):
         # escolheu 7 como piso padrão pra ele ainda competir na fila.
         self.cur.adicionar_meu_estudo(
             "texto integral do estudo em PDF...", titulo="Meu PDF",
-            triar_fn=lambda arts, tema: [], classificar_fn=lambda *a: "",
+            triar_fn=lambda arts, tema: [], extrair_fn=lambda *a: {},
             gerar_resumo=lambda a: "resumo clínico", gerar_gancho=lambda a: "gancho",
             gerar_grafico_json=lambda a: "null", gerar_titulo=lambda a: "Título PT")
         fila = self.db.listar_reserva(status="pronto")

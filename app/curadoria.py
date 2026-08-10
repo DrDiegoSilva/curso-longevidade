@@ -222,6 +222,18 @@ def extrair_texto_pdf(pdf_bytes):
             pass
 
 
+_DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+")
+
+
+def doi_do_texto(texto):
+    """1º DOI do texto extraído do PDF -- que é o do PRÓPRIO paper: ele aparece na
+    abertura, e os das referências vêm depois. Sem IA de propósito (ver
+    `triage.extrair_metadados`). Apara pontuação de fim de frase, que o regex
+    engole junto (`...jama.2026.1234.` / `(doi 10.x/y)`)."""
+    m = _DOI_RE.search(texto or "")
+    return m.group(0).rstrip(".,;)]>") if m else ""
+
+
 def _areas_config():
     """As chaves de área do `temas_config.json` — as mesmas que dão rótulo, emoji e
     cor à capa do PDF."""
@@ -232,24 +244,26 @@ def _areas_config():
         return list(json.load(f).get("temas", {}).keys())
 
 
-def _area_do_estudo(titulo, corpo, classificar_fn):
-    """Área detectada pela IA, ou "Meus estudos" quando ela não se decide/falha.
+def _metadados_do_estudo(titulo, corpo, extrair_fn):
+    """Área, revista e data lidas do texto do PDF. Falha da IA devolve tudo vazio
+    em vez de derrubar o upload -- metadado é acabamento, o estudo do Diego não.
 
-    O tema NÃO filtra a agenda (`agenda_plan` usa como preferência de rotação e
+    A área NÃO filtra a agenda (`agenda_plan` usa como preferência de rotação e
     `prioridade DESC` continua mandando), então carimbar a área de verdade não
-    atrasa o estudo que o Diego subiu — só corrige o chip da capa."""
-    if classificar_fn is None:
+    atrasa o estudo subido à mão."""
+    if extrair_fn is None:
         import triage
-        classificar_fn = triage.classificar_tema
+        extrair_fn = triage.extrair_metadados
     try:
-        return classificar_fn(titulo, corpo, _areas_config()) or "Meus estudos"
+        d = extrair_fn(titulo, corpo, _areas_config()) or {}
+        return {k: str(d.get(k) or "").strip() for k in ("area", "fonte", "data")}
     except Exception as e:
-        print(f"[curadoria] classificar area falhou: {e}", flush=True)
-        return "Meus estudos"
+        print(f"[curadoria] extrair metadados falhou: {e}", flush=True)
+        return {"area": "", "fonte": "", "data": ""}
 
 
 def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet",
-                         triar_fn=None, classificar_fn=None, **geradores):
+                         triar_fn=None, extrair_fn=None, **geradores):
     """Gera o resumo de um estudo do Diego (texto do PDF ou colado) e coloca na fila
     COM PRIORIDADE (fura a fila). A nota (score) vem da MESMA triagem por IA usada na
     varredura, pra o manual competir na fila por qualidade (não só furar por prioridade).
@@ -261,6 +275,14 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
     if len(corpo) < 200 and not (titulo or "").strip():
         raise ValueError("Não consegui ler texto suficiente do PDF (parece escaneado/imagem). "
                          "Envie um PDF com texto selecionável ou cole o resumo do estudo.")
+    # Metadado que o Diego digitou GANHA do extraído -- ele corrige, a IA não
+    # sobrescreve. `url` sai do DOI: era isso que deixava "Referência: —" no rodapé
+    # do PDF de todo estudo subido à mão.
+    meta = _metadados_do_estudo(titulo, corpo, extrair_fn)
+    doi = (doi or "").strip() or doi_do_texto(corpo)
+    fonte = (fonte or "").strip() or meta["fonte"]
+    data = (data or "").strip() or meta["data"]
+    url = (url or "").strip() or (f"https://doi.org/{doi}" if doi else "")
     cand = {"titulo": titulo, "fonte": fonte, "doi": doi, "url": url, "data": data,
             "abstract": corpo[:14000]}              # corta p/ caber no prompt
     if triar_fn is None:
@@ -278,7 +300,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
         geradores["gerar_titulo"] = lambda a: claude(HAIKU, content._prompt_titulo_do_texto(a), max_tokens=80)
     r = gerar_resumo(cand, modelo=modelo, **geradores)
     rid = db.salvar_reserva({
-        "tema": _area_do_estudo(titulo, corpo, classificar_fn), "titulo_pt": r["titulo_pt"],
+        "tema": meta["area"] or "Meus estudos", "titulo_pt": r["titulo_pt"],
         "titulo_original": cand.get("titulo", ""), "resumo": r["resumo"],
         "gancho": r.get("gancho", ""),
         "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
