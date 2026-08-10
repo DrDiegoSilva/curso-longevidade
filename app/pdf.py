@@ -366,7 +366,7 @@ def montar_html(artigo, conteudo, tema_meta):
      Sem isto, o texto que vira para a página 2 nasce colado no corte do papel. */
   @page :first {{ margin-top: 0; }}
   *{{box-sizing:border-box}}
-  body {{ font-family: Georgia, "Times New Roman", serif; color:#20302b; margin:0; font-size:20px; line-height:1.7; }}
+  body {{ font-family: Georgia, "Times New Roman", serif; color:#20302b; margin:0; font-size:16px; line-height:1.62; }}
   h1, h2 {{ break-after:avoid; }}
   .cover {{ position:relative; height:185px; background:linear-gradient(120deg,#0e211a,{cor} 60%,#20543f); }}
   .cover svg {{ position:absolute; inset:0; width:100%; height:100%; }}
@@ -377,18 +377,18 @@ def montar_html(artigo, conteudo, tema_meta):
   .tag {{ position:absolute; right:34px; top:28px; z-index:2; background:#c9a227; color:#1a1300; font-family:system-ui,sans-serif;
           font-size:12px; letter-spacing:.12em; text-transform:uppercase; font-weight:700; padding:7px 15px; border-radius:100px; }}
   .body {{ padding:34px 48px 26px; }}
-  .title {{ font-size:28px; line-height:1.22; color:{cor}; margin:0 0 14px; }}
-  .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:15px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
+  .title {{ font-size:25px; line-height:1.2; color:{cor}; margin:0 0 14px; }}
+  .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:12.5px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
   /* Estudo subido na mão não tem fonte/data/DOI (são campos opcionais do upload):
      sobra só a régua dourada separando o título do corpo, sem o "· · DOI —". */
   .meta:empty {{ padding-bottom:0; }}
-  .corpo p {{ margin:.7em 0; font-size:16.5px; color:#2b3a35; orphans:3; widows:3; }}
+  .corpo p {{ margin:.62em 0; font-size:14.5px; color:#2b3a35; orphans:3; widows:3; }}
   /* Invólucro do par título+1º parágrafo: o par não pode ser partido, então o
      título nunca fica sozinho no pé da página. É deliberadamente PEQUENO — grupo
      maior que a página faria o Chromium empurrar tudo e abrir página em branco. */
   .corpo .keep {{ break-inside:avoid; }}
   .corpo strong {{ color:{cor}; }}
-  .corpo .h {{ font-size:17.5px; font-weight:700; color:{cor}; margin:22px 0 4px; line-height:1.3; break-after:avoid; break-inside:avoid; }}
+  .corpo .h {{ font-size:15px; font-weight:700; color:{cor}; margin:22px 0 4px; line-height:1.3; break-after:avoid; break-inside:avoid; }}
   /* Tabela do resumo. `table-layout:fixed` + quebra de palavra garantem que ela
      NUNCA estoure a largura da página, qualquer que seja o nº de colunas que o
      modelo emitir. De propósito SEM break-inside:avoid na tabela: uma tabela mais
@@ -396,7 +396,7 @@ def montar_html(artigo, conteudo, tema_meta):
      os cards do kit já tiveram). Quem não pode partir é a linha; e o thead vira
      table-header-group para o cabeçalho repetir na página seguinte. */
   .corpo table {{ width:100%; table-layout:fixed; border-collapse:collapse; margin:16px 0 20px;
-           font-family:system-ui,sans-serif; font-size:14px; line-height:1.45; }}
+           font-family:system-ui,sans-serif; font-size:12.8px; line-height:1.42; }}
   .corpo thead {{ display:table-header-group; }}
   .corpo tr {{ break-inside:avoid; }}
   .corpo th, .corpo td {{ padding:9px 11px; text-align:left; vertical-align:top;
@@ -407,15 +407,15 @@ def montar_html(artigo, conteudo, tema_meta):
   .corpo td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
   .corpo hr.rule {{ border:none; border-top:1px solid #e2ddcb; margin:16px 0 14px; break-after:avoid; }}
   .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; break-inside:avoid; }}
-  .chart .ct {{ font-family:system-ui,sans-serif; font-size:14px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
+  .chart .ct {{ font-family:system-ui,sans-serif; font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
   .bar-row {{ display:flex; align-items:center; gap:14px; margin:12px 0; }}
-  .bar-lab {{ width:132px; font-family:system-ui,sans-serif; font-size:14.5px; color:#2b3a35; flex:none; }}
+  .bar-lab {{ width:124px; font-family:system-ui,sans-serif; font-size:13px; color:#2b3a35; flex:none; }}
   .bar-track {{ flex:1; background:#e7e2d3; border-radius:100px; height:26px; overflow:hidden; }}
   .bar-fill {{ height:100%; border-radius:100px; }}
-  .bar-val {{ font-family:ui-monospace,monospace; font-size:14.5px; font-weight:700; width:78px; text-align:right; flex:none; }}
+  .bar-val {{ font-family:ui-monospace,monospace; font-size:13px; font-weight:700; width:78px; text-align:right; flex:none; }}
   .bar-lab i {{ display:block; font-style:normal; font-size:13px; color:#8a948e; }}
   .chart .chamada {{ margin-top:15px; padding-top:13px; border-top:1px solid #e7e2d6;
-           font-family:system-ui,sans-serif; font-size:16px; line-height:1.5; color:#3a2f10; }}
+           font-family:system-ui,sans-serif; font-size:14px; line-height:1.48; color:#3a2f10; }}
   .chart .chamada strong {{ color:#8a6a06; }}
   .chart .leg {{ display:flex; flex-wrap:wrap; gap:16px; margin-top:11px; font-family:system-ui,sans-serif; font-size:13px; color:#6f7d78; }}
   .chart .leg i {{ display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:6px; vertical-align:-2px; }}
@@ -432,30 +432,31 @@ def montar_html(artigo, conteudo, tema_meta):
      se for longo, quebra entre páginas em vez de gerar página em branco). */
   .corpo .limites {{ margin:26px 0 8px; border:1px solid #e0d9c4; border-left:4px solid #b9a24a;
            border-radius:10px; background:#fdfaf0; padding:18px 20px; }}
-  .corpo .limites .lab {{ font-family:system-ui,sans-serif; font-size:14.5px; letter-spacing:.08em; text-transform:uppercase;
+  .corpo .limites .lab {{ font-family:system-ui,sans-serif; font-size:12.5px; letter-spacing:.08em; text-transform:uppercase;
            color:#8a6a06; font-weight:700; margin-bottom:9px; }}
-  .corpo .limites p {{ margin:.4em 0; font-size:15.5px; line-height:1.6; color:#4a4634; orphans:3; widows:3; }}
-  .kit {{ margin:28px 0 8px; display:flex; flex-direction:column; gap:22px; }}
+  .corpo .limites p {{ margin:.38em 0; font-size:13.8px; line-height:1.58; color:#4a4634; orphans:3; widows:3; }}
+  .kit {{ margin:22px 0 6px; display:flex; flex-direction:column; gap:15px; }}
   .kit-rot {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em;
-           text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:9px; }}
+           text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:7px;
+           break-after:avoid; }}
   .paper-box {{ border:1px solid #d8ddd7; border-top:3px solid #14332a; background:#fcfdfc;
-           padding:18px 20px; break-inside:avoid; }}
+           padding:14px 17px; break-inside:avoid; }}
   .paper-rev {{ font-family:system-ui,sans-serif; font-size:11.5px; letter-spacing:.13em;
            text-transform:uppercase; color:#14332a; font-weight:700; margin-bottom:9px; }}
-  .paper-tit {{ margin:0 0 11px; font-size:20px; line-height:1.28; color:#16211c; }}
+  .paper-tit {{ margin:0 0 9px; font-size:17px; line-height:1.28; color:#16211c; }}
   .paper-doi {{ font-family:ui-monospace,Menlo,monospace; font-size:13px; color:#6f7d78; }}
-  .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:22px 24px;
+  .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:17px 20px;
            background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
-  .frase-box p {{ margin:0; font-size:21px; line-height:1.4; color:#3a2f10; }}
+  .frase-box p {{ margin:0; font-size:18.5px; line-height:1.4; color:#3a2f10; }}
   .kit-brief .kit-rot {{ color:#6f7d78; }}
   .paciente {{ border:1px solid #d8ddd7; border-left:4px solid {cor}; background:#f7faf8;
-           padding:17px 20px; margin:26px 0 0; border-radius:0 8px 8px 0; break-inside:avoid; }}
+           padding:14px 17px; margin:22px 0 0; border-radius:0 8px 8px 0; break-inside:avoid; }}
   .pac-rot {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em;
            text-transform:uppercase; color:{cor}; font-weight:700; margin-bottom:9px; }}
-  .paciente p {{ margin:0; font-size:18px; line-height:1.62; }}
-  .reel-cards {{ display:flex; flex-direction:column; gap:14px; }}
+  .paciente p {{ margin:0; font-size:15.5px; line-height:1.6; }}
+  .reel-cards {{ display:flex; flex-direction:column; gap:9px; }}
   .reel-card {{ border:1px solid #d8ddd7; border-radius:8px; background:#f8faf9;
-           padding:16px 18px; break-inside:avoid; }}
+           padding:13px 15px; break-inside:avoid; }}
   .reel-top {{ display:flex; align-items:center; gap:9px; margin-bottom:11px; }}
   .reel-n {{ flex:0 0 22px; height:22px; border-radius:50%; background:{cor}; color:#fff;
            font-family:system-ui,sans-serif; font-size:12px; font-weight:700;
@@ -464,18 +465,18 @@ def montar_html(artigo, conteudo, tema_meta):
            text-transform:uppercase; color:#6f7d78; font-weight:700; }}
   .reel-mini {{ font-family:system-ui,sans-serif; font-size:11px; letter-spacing:.1em;
            text-transform:uppercase; color:#6f7d78; font-weight:700; margin:0 0 6px; }}
-  .reel-gancho {{ font-size:19px; line-height:1.36; color:#16211c; margin:0 0 13px;
+  .reel-gancho {{ font-size:16.5px; line-height:1.34; color:#16211c; margin:0 0 13px;
            padding-left:11px; border-left:3px solid #c9a227; }}
   .reel-roteiro {{ margin:0 0 13px; padding-left:20px; }}
-  .reel-roteiro li {{ font-size:16.5px; line-height:1.55; margin-bottom:5px; color:#2c3a34; }}
-  .reel-apoio {{ background:#eef3f0; border-radius:6px; padding:9px 12px; font-size:15px;
+  .reel-roteiro li {{ font-size:14.2px; line-height:1.5; margin-bottom:5px; color:#2c3a34; }}
+  .reel-apoio {{ background:#eef3f0; border-radius:6px; padding:8px 11px; font-size:13.2px;
            line-height:1.5; color:#46544e; font-family:system-ui,sans-serif; margin:0; }}
   .reel-apoio b {{ color:#24332c; }}
   .kit-limites {{ border:1px solid #e6d6d2; border-left:4px solid #9c3226; background:#fdf7f6;
            padding:16px 19px; border-radius:0 8px 8px 0; break-inside:avoid; }}
   .kit-limites .kit-rot {{ color:#9c3226; }}
   .kit-limites ul {{ margin:0; padding-left:20px; }}
-  .kit-limites li {{ font-size:16px; line-height:1.55; margin-bottom:7px; color:#4a3a37; }}
+  .kit-limites li {{ font-size:14px; line-height:1.5; margin-bottom:7px; color:#4a3a37; }}
   .foot {{ margin-top:22px; border-top:1px solid #e7e2d6; padding-top:14px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
            break-inside:avoid; font-family:system-ui,sans-serif; font-size:13px; color:#6f7d78; }}
   .foot a {{ color:#1b6b4f; }}

@@ -182,7 +182,11 @@ class TestPreservacaoDoQueJaFunciona(unittest.TestCase):
                        # texto puro o medico tinha que copiar o DOI na mao.
                        'Refer&ecirc;ncia: <a href="https://ex.com/a">https://ex.com/a</a>',
                        "@page", "size: A4; margin: 15mm 0 13mm",
-                       "font-size:20px", "Georgia", "NEJM", "DOI 10.x",
+                       # O corpo era 20px e DEIXOU de ser (2026-08-09): o Diego viu o 1o PDF
+                       # real e pediu letra menor -- "a escrita ta muito grande, acho que
+                       # podemos deixar o PDF mais premium". O invariante aqui e a FAMILIA
+                       # serifada e o tamanho ser deliberado, nao o 20px em si.
+                       "font-size:16px", "Georgia", "NEJM", "DOI 10.x",
                        "border-bottom:2px solid #c9a227", "<svg viewBox"):
             self.assertIn(pedaco, h, pedaco)
         self.assertIn("conteúdo exclusivo para assinantes", h)
