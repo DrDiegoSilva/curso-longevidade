@@ -1539,7 +1539,7 @@ def _curadoria_ferramentas(token):
           <p class="hint" style="margin-bottom:14px">Sobe o PDF (ou cola o texto). Gero o resumo
             e ele entra na <strong>fila, na frente</strong> — vai pros assinantes no próximo dia
             útil (com seu review das 18h).</p>
-          <form method="post" action="/curadoria" enctype="multipart/form-data">
+          <form method="post" action="/curadoria" enctype="multipart/form-data" id="up-curadoria">
             <input type="hidden" name="token" value="{tok}">
             <label>PDF do estudo</label>
             <input type="file" name="pdf" accept="application/pdf"
@@ -1556,6 +1556,7 @@ def _curadoria_ferramentas(token):
             <button class="actbtn" type="submit" style="margin-top:14px">
               Gerar resumo e adicionar à fila</button>
           </form>
+          {ui.progresso_upload("up-curadoria")}
         </div>
       </details>"""
 
@@ -1876,6 +1877,7 @@ def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg="", confirmar_
 
             # adicionar meu estudo (upload) — multipart, mesmo campo do /curadoria
             meu = (f'<form method="post" action="/series" enctype="multipart/form-data" '
+                   f'id="up-serie" '
                    f'style="margin:12px 0;padding:10px;border:1px solid #333;border-radius:8px">'
                    f'<b>➕ Adicionar meu estudo</b><br>'
                    f'<input type="hidden" name="acao" value="add_meu_estudo">'
@@ -1885,7 +1887,8 @@ def pagina_series(ctx, token, serie_aberta_id="", dia_min="", msg="", confirmar_
                    f'<input type="file" name="pdf" accept="application/pdf"><br>'
                    f'<textarea name="texto" placeholder="…ou cole o resumo" '
                    f'style="width:100%;height:70px"></textarea>'
-                   f'<button type="submit">Enviar</button></form>')
+                   f'<button type="submit">Enviar</button></form>'
+                   f'{ui.progresso_upload("up-serie")}')
 
             ativar = (f'<form method="post" action="/series" style="margin:12px 0">'
                       f'<input type="hidden" name="acao" value="ativar">'
