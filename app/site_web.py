@@ -226,8 +226,23 @@ button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:non
 .doc{background:var(--creme);color:#20302b;border-radius:16px;padding:40px 44px;margin:8px auto 26px;max-width:860px;box-shadow:0 20px 60px -20px rgba(0,0,0,.6)}
 .doc .title{font-family:"Cormorant Garamond",Georgia,serif;font-size:34px;line-height:1.18;color:#14332a;margin-bottom:12px}
 .doc .meta{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:#6f7d78;border-bottom:2px solid var(--ouro);padding-bottom:12px;margin-bottom:20px}
+/* Estudo subido na mao nao tem fonte/DOI: fica so a regua, sem o "· · DOI —". */
+.doc .meta:empty{padding-bottom:0}
 .doc .corpo p{margin:.8em 0;font-size:17px;color:#2b3a35}
 .doc .corpo strong{color:#14332a}
+/* Tabela do resumo (mesmo `pdf._resumo_html` do PDF) — o site tem copia PROPRIA
+   do CSS, entao sem estas regras a tabela sai default de browser. `table-layout:
+   fixed` + quebra de palavra e o que segura a tabela dentro da tela no celular. */
+.doc .corpo table{width:100%;table-layout:fixed;border-collapse:collapse;margin:16px 0 20px;
+  font-family:system-ui,sans-serif;font-size:14px;line-height:1.45}
+.doc .corpo th,.doc .corpo td{padding:9px 11px;text-align:left;vertical-align:top;
+  overflow-wrap:break-word;border-bottom:1px solid #e7e2d6}
+/* Tarja do cabecalho um tom ABAIXO do card: no PDF o fundo e branco e #f4f1e7 ja
+   destaca, mas aqui o card JA e --creme (#f4f1e7) e a tarja sumiria. */
+.doc .corpo th{font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:#6f7d78;
+  font-weight:700;background:#eae3d1;border-bottom:2px solid var(--ouro)}
+.doc .corpo tbody tr:nth-child(even) td{background:#faf8f2}
+.doc .corpo td.num{text-align:right;font-variant-numeric:tabular-nums}
 .chart{margin:24px 0;background:#f4f1e7;border:1px solid #e7e2d6;border-radius:10px;padding:18px 20px}
 .chart .ct{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#6f7d78;margin-bottom:12px;font-weight:600}
 .bar-row{display:flex;align-items:center;gap:12px;margin:10px 0}
@@ -1984,7 +1999,7 @@ def pagina_digest(meta, d, vizinhos=None):
     corpo_doc = (f'<div class="doc">'
                  f'<span class="rtag">{tag}</span>'
                  f'<h1 class="title">{_esc(d["titulo_pt"])}</h1>'
-                 f'<div class="meta">{_esc(d.get("fonte",""))} · {_esc(_data_br(d["data"]))} · DOI {_esc(d.get("doi","") or "—")}</div>'
+                 f'<div class="meta">{pdf._meta_linha(d.get("fonte"), _data_br(d["data"]), d.get("doi"))}</div>'
                  f'<div class="corpo">{pdf._resumo_html(d.get("resumo",""))}</div>'
                  f'{pdf._grafico_html(grafico)}{pdf._kit_html(d.get("gancho",""), d)}')
     if d.get("url"):

@@ -9,6 +9,7 @@ import html
 import re
 
 import config
+import tabela_pipe
 
 _CSS = """
   @page { size: A4; margin: 18mm 16mm; }
@@ -42,7 +43,6 @@ _CSS = """
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
 _ITEM_NUMERADO_RE = re.compile(r"^\d+\.\s+")
-_SEPARADOR_TABELA_RE = re.compile(r"^:?-{1,}:?$")
 
 
 def _esc(s):
@@ -57,21 +57,9 @@ def _negrito(texto_escapado):
     return _BOLD_RE.sub(r"<strong>\1</strong>", texto_escapado)
 
 
-def _linha_de_tabela(linha):
-    l = linha.strip()
-    return len(l) >= 2 and l.startswith("|") and l.endswith("|")
-
-
-def _linha_separadora(linha):
-    l = linha.strip()
-    if not _linha_de_tabela(l):
-        return False
-    celulas = [c.strip() for c in l[1:-1].split("|")]
-    return bool(celulas) and all(_SEPARADOR_TABELA_RE.match(c) for c in celulas)
-
-
-def _celulas_da_linha(linha):
-    return [c.strip() for c in linha.strip()[1:-1].split("|")]
+def _inline(texto):
+    """Escapa e marca `**negrito**`. É o que o `tabela_pipe` chama por célula."""
+    return _negrito(_esc(texto))
 
 
 def _celula_numerica(celula):
@@ -81,19 +69,6 @@ def _celula_numerica(celula):
     if c.startswith("**") and c.endswith("**") and len(c) > 4:
         c = c[2:-2].strip()
     return c.startswith("R$") or c.endswith("%")
-
-
-def _tabela_html(linhas):
-    cab = _celulas_da_linha(linhas[0])
-    thead = "<tr>" + "".join(f"<th>{_negrito(_esc(c))}</th>" for c in cab) + "</tr>"
-    corpo_html = []
-    for linha in linhas[2:]:
-        tds = []
-        for c in _celulas_da_linha(linha):
-            classe = ' class="num"' if _celula_numerica(c) else ""
-            tds.append(f"<td{classe}>{_negrito(_esc(c))}</td>")
-        corpo_html.append("<tr>" + "".join(tds) + "</tr>")
-    return f"<table><thead>{thead}</thead><tbody>{''.join(corpo_html)}</tbody></table>"
 
 
 def _lista_html(linhas, tag, extrair):
@@ -112,9 +87,8 @@ def _bloco_html(bloco):
     if primeira.startswith("### "):
         return f"<h2>{_negrito(_esc(primeira[4:].strip()))}</h2>"
 
-    if (len(linhas) >= 2 and all(_linha_de_tabela(l) for l in linhas)
-            and _linha_separadora(linhas[1])):
-        return _tabela_html(linhas)
+    if tabela_pipe.eh_tabela(linhas):
+        return tabela_pipe.html(linhas, _inline, num=_celula_numerica)
 
     if primeira.startswith("- "):
         itens = [l for l in linhas if l.startswith("- ")]

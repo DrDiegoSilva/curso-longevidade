@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import html as _html
 
+import tabela_pipe
+
 # Capa ilustrada: rede molecular (nós + conexões) + arco dourado sobre o gradiente.
 _MOTIF = (
     '<svg viewBox="0 0 760 185" preserveAspectRatio="xMidYMid slice">'
@@ -61,13 +63,28 @@ def _inline(texto):
 
 
 def _tokens_resumo(resumo):
-    """Quebra o resumo em tokens ('sep'|'h'|'p', texto_plano, html). Nenhuma linha
-    é descartada — o que não é separador nem título vira parágrafo, como sempre."""
-    toks = []
-    for linha in (resumo or "").split("\n"):
-        linha = linha.strip()
-        if not linha:
-            continue
+    """Quebra o resumo em tokens ('sep'|'h'|'tab'|'p', texto_plano, html). Nenhuma
+    linha é descartada — o que não é separador, título nem tabela vira parágrafo,
+    como sempre.
+
+    O prompt pede formato de WhatsApp, mas o modelo escolhe tabela quando o
+    conteúdo é tabular (e escolheu, num estudo real). Sem o token 'tab' cada linha
+    virava um parágrafo e o assinante recebia `| População | ... |` impresso."""
+    linhas = [l for l in (l.strip() for l in (resumo or "").split("\n")) if l]
+    toks, i = [], 0
+    while i < len(linhas):
+        linha = linhas[i]
+        if tabela_pipe.eh_linha(linha):
+            j = i
+            while j < len(linhas) and tabela_pipe.eh_linha(linhas[j]):
+                j += 1
+            bloco = linhas[i:j]
+            if tabela_pipe.eh_tabela(bloco):
+                toks.append(("tab", "", tabela_pipe.html(bloco, _inline)))
+                i = j
+                continue
+            # Sem linha separadora não é tabela: cada linha segue como parágrafo,
+            # senão uma frase solta entre canos sumiria da página.
         if _SEP_RE.fullmatch(linha):
             toks.append(("sep", "", ""))
         elif _HEADER_RE.fullmatch(linha):                   # ex.: "💡 *Em resumo*"
@@ -75,6 +92,7 @@ def _tokens_resumo(resumo):
             toks.append(("h", plano, _html.escape(plano)))
         else:
             toks.append(("p", linha, _inline(linha)))
+        i += 1
     return toks
 
 
@@ -106,7 +124,7 @@ def _limites_html(titulo_html, paragrafos):
 
 def _resumo_html(resumo):
     """Converte o resumo (estilo WhatsApp: *negrito*, --- separadores, emojis de
-    seção) em HTML. Título de seção viaja colado ao 1º parágrafo (invólucro
+    seção, tabela de cano) em HTML. Título de seção viaja colado ao 1º parágrafo (invólucro
     .keep, break-inside:avoid) para nunca ficar órfão no pé da página; a seção de
     vieses/limitações vira bloco próprio. Se o texto não tiver a forma esperada,
     cai no render plano de sempre — nenhum trecho do resumo se perde."""
@@ -116,6 +134,9 @@ def _resumo_html(resumo):
         tipo, plano, corpo = toks[i]
         if tipo == "sep":
             out.append('<hr class="rule">')
+            i += 1
+        elif tipo == "tab":
+            out.append(corpo)
             i += 1
         elif tipo == "p":
             out.append(f"<p>{corpo}</p>")
@@ -257,8 +278,10 @@ def _kit_html(gancho_bruto, artigo):
         blocos.append(
             f'<div class="kit-paper"><div class="kit-rot">1 &middot; O estudo</div>'
             f'<div class="paper-box">'
-            f'<div class="paper-rev">{esc(revista)}</div>'
-            f'<p class="paper-tit">{esc(titulo)}</p>'
+            # Estudo subido na mao nao tem fonte/data: sem a guarda sobra um div
+            # vazio so com o margin, abrindo um vao acima do titulo do paper.
+            + (f'<div class="paper-rev">{esc(revista)}</div>' if revista else "")
+            + f'<p class="paper-tit">{esc(titulo)}</p>'
             + (f'<div class="paper-doi">DOI {esc(doi)}</div>' if doi else "")
             + '</div></div>')
 
@@ -305,6 +328,20 @@ def _rodape_direitos():
             f"CRM-PR 54310 — conteúdo exclusivo para assinantes")
 
 
+def _meta_linha(fonte, data, doi):
+    """`fonte · data · DOI x`, mas só com o que existe. Estudo subido na mão não
+    traz nenhum dos três (são campos OPCIONAIS do formulário de upload, e o paper
+    não veio do Europe PMC), e a linha saía como `· · DOI —` órfã embaixo do
+    título. String vazia é resposta válida: o CSS (`.meta:empty`) deixa só a régua
+    dourada. Usada também pelo portal, que tem cópia própria do CSS do PDF."""
+    esc = _html.escape
+    partes = [esc(x) for x in ((fonte or "").strip(), (data or "").strip()) if x]
+    doi = (doi or "").strip()
+    if doi:
+        partes.append(f"DOI {esc(doi)}")
+    return " &middot; ".join(partes)
+
+
 def montar_html(artigo, conteudo, tema_meta):
     esc = _html.escape
     cor = tema_meta.get("cor", "#14332a")
@@ -321,6 +358,7 @@ def montar_html(artigo, conteudo, tema_meta):
     # anotacao no PDF. Como texto puro, o medico tinha que copiar o DOI na mao.
     ref_html = (f'Refer&ecirc;ncia: <a href="{esc(url)}">{esc(url)}</a>' if url
                 else 'Refer&ecirc;ncia: &mdash;')
+    meta_html = _meta_linha(artigo.get("fonte"), artigo.get("data"), artigo.get("doi"))
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <style>
   @page {{ size: A4; margin: 15mm 0 13mm; }}
@@ -341,6 +379,9 @@ def montar_html(artigo, conteudo, tema_meta):
   .body {{ padding:34px 48px 26px; }}
   .title {{ font-size:28px; line-height:1.22; color:{cor}; margin:0 0 14px; }}
   .meta {{ font-family:ui-monospace,Menlo,monospace; font-size:15px; color:#6f7d78; border-bottom:2px solid #c9a227; padding-bottom:13px; margin-bottom:22px; }}
+  /* Estudo subido na mão não tem fonte/data/DOI (são campos opcionais do upload):
+     sobra só a régua dourada separando o título do corpo, sem o "· · DOI —". */
+  .meta:empty {{ padding-bottom:0; }}
   .corpo p {{ margin:.7em 0; font-size:16.5px; color:#2b3a35; orphans:3; widows:3; }}
   /* Invólucro do par título+1º parágrafo: o par não pode ser partido, então o
      título nunca fica sozinho no pé da página. É deliberadamente PEQUENO — grupo
@@ -348,6 +389,22 @@ def montar_html(artigo, conteudo, tema_meta):
   .corpo .keep {{ break-inside:avoid; }}
   .corpo strong {{ color:{cor}; }}
   .corpo .h {{ font-size:17.5px; font-weight:700; color:{cor}; margin:22px 0 4px; line-height:1.3; break-after:avoid; break-inside:avoid; }}
+  /* Tabela do resumo. `table-layout:fixed` + quebra de palavra garantem que ela
+     NUNCA estoure a largura da página, qualquer que seja o nº de colunas que o
+     modelo emitir. De propósito SEM break-inside:avoid na tabela: uma tabela mais
+     alta que a página empurraria tudo e abriria página em branco (é o defeito que
+     os cards do kit já tiveram). Quem não pode partir é a linha; e o thead vira
+     table-header-group para o cabeçalho repetir na página seguinte. */
+  .corpo table {{ width:100%; table-layout:fixed; border-collapse:collapse; margin:16px 0 20px;
+           font-family:system-ui,sans-serif; font-size:14px; line-height:1.45; }}
+  .corpo thead {{ display:table-header-group; }}
+  .corpo tr {{ break-inside:avoid; }}
+  .corpo th, .corpo td {{ padding:9px 11px; text-align:left; vertical-align:top;
+           overflow-wrap:break-word; border-bottom:1px solid #e7e2d6; }}
+  .corpo th {{ font-size:11.5px; letter-spacing:.09em; text-transform:uppercase; color:#6f7d78;
+           font-weight:700; background:#f4f1e7; border-bottom:2px solid #c9a227; }}
+  .corpo tbody tr:nth-child(even) td {{ background:#faf8f2; }}
+  .corpo td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
   .corpo hr.rule {{ border:none; border-top:1px solid #e2ddcb; margin:16px 0 14px; break-after:avoid; }}
   .chart {{ margin:26px 0; background:#f4f1e7; border:1px solid #e7e2d6; border-radius:10px; padding:20px 22px; break-inside:avoid; }}
   .chart .ct {{ font-family:system-ui,sans-serif; font-size:14px; letter-spacing:.08em; text-transform:uppercase; color:#6f7d78; margin-bottom:14px; font-weight:600; }}
@@ -430,7 +487,7 @@ def montar_html(artigo, conteudo, tema_meta):
   </div>
   <div class="body">
     <h1 class="title">{esc(titulo)}</h1>
-    <div class="meta">{esc(artigo.get('fonte',''))} &middot; {esc(artigo.get('data',''))} &middot; DOI {esc(artigo.get('doi','') or '—')}</div>
+    <div class="meta">{meta_html}</div>
     <div class="corpo">{resumo_html}</div>
     {bracos_html}
     {grafico_html}
