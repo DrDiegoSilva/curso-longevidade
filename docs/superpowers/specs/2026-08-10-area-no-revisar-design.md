@@ -108,6 +108,26 @@ Escritos antes do código, cada um falhando primeiro:
 
 Correções mortas por mutação antes de fechar — suíte verde não é evidência.
 
+## Ajustes vindos da revisão de código
+
+Três achados, todos consequência direta do desenho acima:
+
+1. **`/pdf` passou a gravar o caminho regenerado.** Zerar o `pdf_path` invalida o preview
+   velho, mas sem gravar o novo o rascunho fica "sempre inválido" e cada clique em
+   "Ver PDF" paga um Chromium (até 3 × 120 s). Era raro antes; a correção de área tornaria
+   isso o estado normal de todo rascunho corrigido.
+2. **Estudo já enviado avisa em vez de dizer "Feito ✅".** Depois do 1º slot a área não
+   chega no PDF (`_pdf_master` cacheia `{hoje}-master.pdf`) e o `digests` do portal já foi
+   escrito — só o badge do WhatsApp mudaria, e o estudo sairia inconsistente. O aviso só
+   aparece quando uma área NOVA foi pedida de fato, e `nao_enviar` continua valendo (é o
+   freio de emergência dos slots seguintes, que só respeitam `SKIPPED`).
+3. **`areas()` falha fechada.** Aprovar/editar agora lê o `temas_config.json` em toda
+   chamada; config ilegível devolve lista vazia em vez de derrubar a aprovação.
+
+O teste da guarda #2 pegou um bug de ordem: `draft_store.aplicar` sobrescrevia o status
+antes de chamar a guarda, apagando o `SENT` que ela procura. A área passou a ser aplicada
+antes do status.
+
 ## Fora de escopo
 
 - Fatia 2: escrita retroativa no `digests` + entrada pela agenda (conserta 2026-08-10)
