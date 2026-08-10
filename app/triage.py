@@ -103,3 +103,38 @@ def taggear(artigos, llm=None):
         cls = []
     return {c["i"]: _norm_tags(c.get("tags")) for c in cls
             if isinstance(c, dict) and isinstance(c.get("i"), int)}
+
+
+def _prompt_tema(titulo, texto, temas):
+    return ("Classifique o estudo abaixo em UMA das áreas listadas.\n"
+            f"Áreas: {', '.join(temas)}\n\n"
+            f"Título: {titulo}\n"
+            f"Texto: {(texto or '')[:3000]}\n\n"
+            "Responda SÓ com o nome exato da área, sem explicar. "
+            "Se não couber em nenhuma com clareza, responda NENHUM.")
+
+
+def classificar_tema(titulo, texto, temas, llm=None):
+    """Área do estudo entre `temas` (as chaves do `temas_config.json`), ou "" quando
+    o modelo não se decide. Serve o UPLOAD manual: sem isto a capa saía sempre com o
+    chip genérico "Meus estudos".
+
+    Nunca levanta: classificar é enfeite de capa, e o upload do estudo do Diego não
+    pode morrer porque a IA teve um soluço. Também não aceita área inventada — só
+    devolve chave que estava na lista."""
+    if not temas:
+        return ""
+    if llm is None:
+        from resumo_diario import claude, HAIKU
+        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=20)
+    try:
+        resp = (llm(_prompt_tema(titulo, texto, temas)) or "").strip().lower()
+    except Exception as e:
+        print(f"[triage] classificar tema falhou: {e}", flush=True)
+        return ""
+    # Casa a chave mais longa primeiro: evita que "Hormonal" ganhe de uma área
+    # futura chamada "Hormonal feminino" só por vir antes na lista.
+    for t in sorted(temas, key=len, reverse=True):
+        if t.lower() in resp:
+            return t
+    return ""

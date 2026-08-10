@@ -222,8 +222,34 @@ def extrair_texto_pdf(pdf_bytes):
             pass
 
 
+def _areas_config():
+    """As chaves de área do `temas_config.json` — as mesmas que dão rótulo, emoji e
+    cor à capa do PDF."""
+    import json
+    import os
+    caminho = os.path.join(os.path.dirname(__file__), "temas_config.json")
+    with open(caminho, encoding="utf-8") as f:
+        return list(json.load(f).get("temas", {}).keys())
+
+
+def _area_do_estudo(titulo, corpo, classificar_fn):
+    """Área detectada pela IA, ou "Meus estudos" quando ela não se decide/falha.
+
+    O tema NÃO filtra a agenda (`agenda_plan` usa como preferência de rotação e
+    `prioridade DESC` continua mandando), então carimbar a área de verdade não
+    atrasa o estudo que o Diego subiu — só corrige o chip da capa."""
+    if classificar_fn is None:
+        import triage
+        classificar_fn = triage.classificar_tema
+    try:
+        return classificar_fn(titulo, corpo, _areas_config()) or "Meus estudos"
+    except Exception as e:
+        print(f"[curadoria] classificar area falhou: {e}", flush=True)
+        return "Meus estudos"
+
+
 def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", modelo="sonnet",
-                         triar_fn=None, **geradores):
+                         triar_fn=None, classificar_fn=None, **geradores):
     """Gera o resumo de um estudo do Diego (texto do PDF ou colado) e coloca na fila
     COM PRIORIDADE (fura a fila). A nota (score) vem da MESMA triagem por IA usada na
     varredura, pra o manual competir na fila por qualidade (não só furar por prioridade).
@@ -252,7 +278,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
         geradores["gerar_titulo"] = lambda a: claude(HAIKU, content._prompt_titulo_do_texto(a), max_tokens=80)
     r = gerar_resumo(cand, modelo=modelo, **geradores)
     rid = db.salvar_reserva({
-        "tema": "Meus estudos", "titulo_pt": r["titulo_pt"],
+        "tema": _area_do_estudo(titulo, corpo, classificar_fn), "titulo_pt": r["titulo_pt"],
         "titulo_original": cand.get("titulo", ""), "resumo": r["resumo"],
         "gancho": r.get("gancho", ""),
         "grafico": json.dumps(r["grafico"], ensure_ascii=False) if r.get("grafico") else "",
