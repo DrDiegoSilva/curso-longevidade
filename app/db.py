@@ -1530,9 +1530,10 @@ def agenda_payloads_fila():
     return [r["payload"] for r in rows]
 
 
-def atualizar_reserva(rid, titulo_pt=None, resumo=None, tema=None):
-    """Edita título, resumo e/ou tema de um item da reserva (curador ajusta o que a IA
-    gerou). O tema vem da correção de área na tela de revisão (ver `area_estudo`)."""
+def atualizar_reserva(rid, titulo_pt=None, resumo=None, tema=None, gancho=None):
+    """Edita título, resumo, tema e/ou kit de um item da reserva (curador ajusta o que a
+    IA gerou). O tema vem da correção de área na tela de revisão (ver `area_estudo`); o
+    gancho, da regeração do kit (`curadoria.regerar_kits`)."""
     sets, params = [], []
     if titulo_pt is not None:
         sets.append("titulo_pt=?"); params.append(titulo_pt)
@@ -1540,6 +1541,8 @@ def atualizar_reserva(rid, titulo_pt=None, resumo=None, tema=None):
         sets.append("resumo=?"); params.append(resumo)
     if tema is not None:
         sets.append("tema=?"); params.append(tema)
+    if gancho is not None:
+        sets.append("gancho=?"); params.append(gancho)
     if not sets:
         return
     params.append(rid)

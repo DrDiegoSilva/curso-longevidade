@@ -1593,6 +1593,11 @@ def _curadoria_ferramentas(token):
                       "Varrer os últimos 6 meses mês a mês e guardar na MEMÓRIA (não entra "
                       "na triagem). Leva alguns minutos e roda em segundo plano — o aviso "
                       "chega no seu WhatsApp. Apertar de novo enquanto roda não faz nada.")}
+          {_varredura("regerar_kit", "🎬 Refazer os kits antigos",
+                      "Os estudos gerados antes das melhorias do kit saem com as pautas no "
+                      "formato velho (sem roteiro e sem o bloco do paciente). Refazer SÓ o "
+                      "kit deles? O resumo e o título que você curou não mudam. Custa uma "
+                      "chamada de IA por estudo e roda em segundo plano.")}
           {_varredura("limpar_nome", "🪪 Tirar meu nome do estoque",
                       "Os estudos gerados antes do conserto abrem com \\'Mensagem prática para "
                       "Dr. Diego\\' — e isso vai pro assinante. Tirar o endereçamento dos resumos "

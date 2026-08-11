@@ -1014,6 +1014,29 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
                 threading.Thread(target=_encorpar, daemon=True).start()
                 msg = "📚 Encorpando a base em segundo plano — te aviso no WhatsApp quando terminar."
+            elif acao == "regerar_kit":
+                import threading
+
+                def _kits():
+                    try:
+                        r = curadoria.regerar_kits()
+                        if r.get("ja_rodando"):
+                            return
+                        import deliver
+                        deliver.enviar_curador(
+                            f"🎬 Kit refeito em {r['regerados']} estudo(s) da reserva"
+                            + (f" · {r['falhas']} sem sucesso (kit antigo preservado)"
+                               if r["falhas"] else "") + ".")
+                    except Exception as e:
+                        print(f"[kit] regeração explodiu: {e}", flush=True)
+                        try:
+                            import deliver
+                            deliver.enviar_curador("🎬 A regeração dos kits falhou — dá pra tentar de novo.")
+                        except Exception:
+                            pass
+
+                threading.Thread(target=_kits, daemon=True).start()
+                msg = "🎬 Refazendo os kits em segundo plano — te aviso no WhatsApp quando terminar."
             elif acao == "limpar_nome":
                 try:
                     import limpeza

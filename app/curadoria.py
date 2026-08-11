@@ -122,6 +122,78 @@ def _janelas_mensais(meses, ate=None):
 
 
 _LOCK_CORPUS = __import__("threading").Lock()
+_LOCK_KIT = __import__("threading").Lock()
+
+
+def kit_desatualizado(gancho_bruto):
+    """True se o kit guardado é do formato antigo (ou não existe).
+
+    O kit inteiro mora no campo `gancho`, gravado no dia em que o estudo entrou na
+    reserva — estudo velho carrega kit velho pra sempre. O `content.parse_gancho`
+    documenta o formato que enche o estoque: pauta com `angulo` e **sem roteiro**.
+
+    Discriminador: precisa ter bloco do paciente E pelo menos uma pauta com roteiro.
+    Os dois entraram juntos; faltando um, o PDF sai capenga.
+
+    Nunca levanta: roda sobre o estoque inteiro e um registro podre não pode abortar
+    o lote (aí ele conta como desatualizado, que é o certo — vai ser regerado).
+    """
+    try:
+        import content
+        d = content.parse_gancho(gancho_bruto)
+    except Exception:
+        return True
+    if not d.get("paciente"):
+        return True
+    return not any(r.get("roteiro") for r in (d.get("reels") or []))
+
+
+def regerar_kits(limite=None, gerar_fn=None):
+    """Regenera SÓ o kit dos estudos da reserva que estão no formato antigo.
+
+    Preserva `resumo`, `titulo_pt` e `grafico`: o Diego já curou esse texto, e o
+    problema é só o kit. Uma chamada Sonnet por estudo — daí o `limite` e a trava.
+
+    Resposta inútil da IA NÃO sobrescreve o que existia: kit velho é melhor que kit
+    nenhum, e gravar lixo pioraria o PDF do assinante.
+    """
+    if not _LOCK_KIT.acquire(blocking=False):
+        print("[kit] regeração já está rodando — ignorando o disparo novo", flush=True)
+        return {"regerados": 0, "falhas": 0, "ja_rodando": True}
+    try:
+        import db
+        db.init()
+        if gerar_fn is None:
+            import content
+            from resumo_diario import claude, SONNET
+            gerar_fn = lambda a: claude(SONNET, content._prompt_gancho(a),
+                                        system=content.SYS_GANCHO, max_tokens=2500)
+        regerados = falhas = 0
+        for r in db.listar_reserva():
+            if limite is not None and regerados >= limite:
+                break
+            if not kit_desatualizado(r.get("gancho")):
+                continue
+            artigo = {"titulo": r.get("titulo_pt", ""), "titulo_pt": r.get("titulo_pt", ""),
+                      "resumo": r.get("resumo", ""), "fonte": r.get("fonte", ""),
+                      "doi": r.get("doi", ""), "tema": r.get("tema", "")}
+            try:
+                novo = gerar_fn(artigo)
+            except Exception as e:
+                print(f"[kit] {r.get('id')} falhou: {e}", flush=True)
+                falhas += 1
+                continue
+            if kit_desatualizado(novo):        # a IA devolveu lixo — preserva o que havia
+                print(f"[kit] {r.get('id')}: resposta sem roteiro/paciente, mantendo o antigo",
+                      flush=True)
+                falhas += 1
+                continue
+            db.atualizar_reserva(r["id"], gancho=novo)
+            regerados += 1
+        print(f"[kit] regeração: {regerados} refeitos, {falhas} falhas", flush=True)
+        return {"regerados": regerados, "falhas": falhas, "ja_rodando": False}
+    finally:
+        _LOCK_KIT.release()
 
 
 def encorpar_corpus(meses=6, ate=None, varrer_fn=None, salvar_fn=None):
