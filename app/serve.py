@@ -736,7 +736,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     r, aviso="Esse estudo já foi enviado — a área não muda mais por aqui.",
                     audio_on=config.audio_ligado(), areas=areas))
             draft_store.aplicar(r["data"], g("acao"), g("texto"), area=g("area"))
-            return self._html("<h3>Feito ✅ Pode fechar.</h3>")
+            return self._html(review_web.pagina_feito(g("acao"), r.get("data", ""), tok))
         if path == "/admin/whatsapp":
             import config, auth_web, evolution_admin
             sess = self._sessao()

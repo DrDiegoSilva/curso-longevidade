@@ -55,6 +55,39 @@ def pagina_revisao(r, aviso="", audio_on=False, areas=()):
 </form></body>"""
 
 
+_FEITO = {
+    "aprovar":    ("✅ Aprovado", "Sai às 08h para os assinantes."),
+    "editar":     ("✏️ Edição salva", "É esta versão que sai às 08h."),
+    "nao_enviar": ("🚫 Vetado", "Nada será enviado neste dia."),
+}
+
+
+def pagina_feito(acao, data, token):
+    """Confirmação do que foi feito, COM saída.
+
+    Antes isto era `<h3>Feito ✅ Pode fechar.</h3>`: não dizia qual das ações tinha
+    acontecido e, pior, não tinha link nenhum — pra conferir o PDF da edição que acabou
+    de salvar, o curador tinha que voltar no WhatsApp e reabrir o link. O PDF abre em
+    aba nova de propósito: mandar a aba atual pro PDF é recriar o beco sem saída.
+    """
+    esc = _html.escape
+    titulo, sub = _FEITO.get(acao, ("✅ Feito", "Pode fechar esta página."))
+    d, tok = esc(data or ""), esc(token or "")
+    # Vetado não ganha link de PDF: não faz sentido conferir a capa do que não vai sair.
+    ver_pdf = (f'<p style="margin:18px 0 8px"><a href="/pdf/{d}" target="_blank" '
+               f'style="color:#0f4c3a;font-weight:600">📄 Conferir o PDF</a></p>'
+               if acao in ("aprovar", "editar") and d else "")
+    voltar = (f'<p style="margin:0"><a href="/revisar/{tok}" style="color:#6b7a76">'
+              f'← Voltar para a revisão</a></p>') if tok else ""
+    return (f'<!doctype html><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f'<body style="font-family:system-ui;max-width:680px;margin:40px auto;'
+            f'padding:0 16px;color:#1a2b28">'
+            f'<h2 style="margin:0 0 4px">{titulo}</h2>'
+            f'<p style="color:#6b7a76;margin:0">{sub}</p>'
+            f'{ver_pdf}{voltar}</body>')
+
+
 def pagina_admin(assinantes, token=""):
     esc = _html.escape
     tk = esc(token)

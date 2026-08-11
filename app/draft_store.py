@@ -60,7 +60,14 @@ def aplicar(data_iso, acao, texto=None, area=None):
     elif acao == "editar":
         area_estudo.aplicar_no_rascunho(r, area)
         r["status"] = "EDITED"
-        r["resumo"] = texto or r["resumo"]
+        novo = texto or r["resumo"]
+        if novo != r["resumo"]:
+            r["resumo"] = novo
+            # O preview das 18h tem o texto VELHO. Sem zerar, o "📄 Ver PDF" devolve a
+            # versão antiga e a edição parece não ter pegado — e pior, de forma
+            # intermitente (o /data some no deploy e aí regenera certo).
+            # O serve.py regenera sob demanda quando `pdf_path` está vazio.
+            r["pdf_path"] = ""
     elif acao == "nao_enviar":
         r["status"] = "SKIPPED"
     else:
