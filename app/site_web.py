@@ -1421,12 +1421,44 @@ def _curadoria_amanha(amanha):
             f'<div class="am-rod"><span>{_esc(rot)}</span>{botao}</div></div>')
 
 
+def _dossie_html(dossies):
+    """O dossiê é AFIRMAÇÃO + os estudos que a sustentam — nunca prosa. A tela mostra
+    exatamente isso, pra o Diego conseguir julgar se a memória tem lastro (e não só se
+    o texto ficou bonito)."""
+    import json as _json
+    if not dossies:
+        return ('<p class="hint">Nenhum dossiê ainda. Rode <strong>🧠 Construir o dossiê</strong> '
+                'em Ferramentas — ele lê os estudos da base e organiza a memória por tema.</p>')
+    cards = []
+    for d in dossies:
+        try:
+            blocos = (_json.loads(d.get("conteudo") or "{}") or {}).get("blocos") or []
+        except Exception:
+            blocos = []
+        quando = (d.get("atualizado_em") or "")[:10]
+        corpo = "".join(
+            f'<div class="item"><div class="t">{_esc(b.get("afirmacao"))}</div>'
+            f'<div class="d">' + " · ".join(
+                _esc(f'{e.get("titulo","")} ({e.get("fonte","")} {e.get("data","")})')
+                for e in (b.get("estudos") or [])) + '</div></div>'
+            for b in blocos) or '<p class="hint">Dossiê vazio — a IA não devolveu nada útil.</p>'
+        cards.append(
+            f'<details name="dossie-tema" class="temacard">'
+            f'<summary>{_CUR_EMOJI.get(d.get("tema"), "•")} {_esc(d.get("tema"))} '
+            f'<span class="cnt">{len(blocos)}</span></summary>'
+            f'<div class="temacard-corpo">'
+            f'<p class="hint">{d.get("n_estudos", 0)} estudos lidos · atualizado em {_esc(quando)}</p>'
+            f'{corpo}</div></details>')
+    return "".join(cards)
+
+
 def _curadoria_abas(aba, contagens, token, tema=""):
     """Abas de 1º nível (triagem/reserva/classicos) por querystring — sem JS."""
     from urllib.parse import quote
     tk = _esc(token)
     out = []
-    for chave, rotulo in (("triagem", "Triagem"), ("reserva", "Reserva"), ("classicos", "Clássicos")):
+    for chave, rotulo in (("triagem", "Triagem"), ("reserva", "Reserva"),
+                          ("classicos", "Clássicos"), ("dossie", "🧠 Dossiê")):
         on = " on" if chave == aba else ""
         q = f"?token={tk}&aba={chave}"
         if chave == "triagem" and tema:
@@ -1589,6 +1621,11 @@ def _curadoria_ferramentas(token):
           {_varredura("varrer_presos", "🧹 Liberar candidatos presos",
                       "Liberar candidatos travados em agendado sem slot na agenda de volta pro pool? "
                       "Seguro rodar mais de uma vez.")}
+          {_varredura("construir_dossie", "🧠 Construir o dossiê",
+                      "Ler os estudos da base e organizar a memória por tema? É o que a "
+                      "opinião do estudo do dia vai usar, em vez de reler tudo todo dia. "
+                      "Leva alguns minutos, roda em segundo plano e o aviso chega no "
+                      "WhatsApp. Pode rodar de novo pra refazer do zero.")}
           {_varredura("encorpar_corpus", "📚 Encorpar a base",
                       "Varrer os últimos 6 meses mês a mês e guardar na MEMÓRIA (não entra "
                       "na triagem). Leva alguns minutos e roda em segundo plano — o aviso "
@@ -1632,10 +1669,10 @@ def _curadoria_ferramentas(token):
 
 
 def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
-                     aba="triagem", tema="", msg=""):
+                     aba="triagem", tema="", msg="", dossies=None):
     """Bancada de triagem: faixa de estoque + o que sai amanhã + abas
     (Triagem · Reserva · Clássicos) + ferramentas recolhidas."""
-    aba = aba if aba in ("triagem", "reserva", "classicos") else "triagem"
+    aba = aba if aba in ("triagem", "reserva", "classicos", "dossie") else "triagem"
     # defesa: um "classico" nunca aparece na triagem, mesmo que a rota regrida e
     # pare de separar `candidatos` por tipo ao montar a lista (ver curadoria.
     # montar_candidatos_triagem, que já faz esse filtro — isto é só um segundo freio).
@@ -1644,10 +1681,15 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
     resto_reserva = [r for r in reserva if r.get("status") != "pronto"]
     cl_cands = (classicos or {}).get("candidatos", [])
     cl_banco = (classicos or {}).get("banco", [])
-    contagens = {"triagem": len(candidatos), "reserva": len(prontos), "classicos": len(cl_cands)}
+    contagens = {"triagem": len(candidatos), "reserva": len(prontos),
+                 "classicos": len(cl_cands), "dossie": len(dossies or [])}
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
 
-    if aba == "reserva":
+    if aba == "dossie":
+        corpo_aba = ('<p class="hint">A memória destilada do que a base sabe. É daqui que a '
+                     'opinião do estudo do dia vai sair — em vez de reler centenas de estudos '
+                     'todo dia.</p>' + _dossie_html(dossies or []))
+    elif aba == "reserva":
         corpo_aba = (_curadoria_reserva_cards(prontos, resto_reserva, token)
                      if (prontos or resto_reserva) else
                      '<p class="hint">Reserva vazia. Priorize candidatos na '

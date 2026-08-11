@@ -502,7 +502,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_curadoria(
                 estado, amanha, cands, db.listar_reserva(), classicos, config.ADMIN_TOKEN,
                 aba=q.get("aba", ["triagem"])[0], tema=q.get("tema", [""])[0],
-                msg=q.get("msg", [""])[0]), 200)
+                msg=q.get("msg", [""])[0], dossies=db.listar_dossies()), 200)
         if path == "/series":
             import config, series, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -1014,6 +1014,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
                 threading.Thread(target=_encorpar, daemon=True).start()
                 msg = "📚 Encorpando a base em segundo plano — te aviso no WhatsApp quando terminar."
+            elif acao == "construir_dossie":
+                import threading
+
+                def _dossies():
+                    try:
+                        import dossie
+                        r = dossie.reconstruir_todos()
+                        if r.get("ja_rodando"):
+                            return
+                        import deliver
+                        total = sum(v for k, v in r.items() if k != "ja_rodando")
+                        deliver.enviar_curador(
+                            f"🧠 Dossiê refeito em {len(r)} tema(s), a partir de {total} "
+                            f"estudos. Abra a Curadoria › 🧠 Dossiê pra ler.")
+                    except Exception as e:
+                        print(f"[dossie] reconstrução explodiu: {e}", flush=True)
+                        try:
+                            import deliver
+                            deliver.enviar_curador("🧠 A construção do dossiê falhou — dá pra tentar de novo.")
+                        except Exception:
+                            pass
+
+                threading.Thread(target=_dossies, daemon=True).start()
+                msg = "🧠 Construindo o dossiê em segundo plano — te aviso no WhatsApp quando terminar."
             elif acao == "regerar_kit":
                 import threading
 

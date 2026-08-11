@@ -208,6 +208,12 @@ def init():
                 criado_em TEXT,
                 atualizado_em TEXT
             );
+            CREATE TABLE IF NOT EXISTS dossies (
+                tema TEXT PRIMARY KEY,
+                conteudo TEXT,
+                n_estudos INTEGER DEFAULT 0,
+                atualizado_em TEXT
+            );
             CREATE TABLE IF NOT EXISTS agenda (
                 data TEXT PRIMARY KEY,
                 tipo TEXT DEFAULT 'vazio',
@@ -289,7 +295,7 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "curadoria_candidatos", "reserva_resumos", "daily_drafts", "agenda",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
             "automacoes_renovacao", "avisos_renovacao", "classicos",
-            "series", "serie_itens",
+            "series", "serie_itens", "dossies",
             "trilha_pecas", "trilha_progresso", "trilha_envios"]
 
 
@@ -1633,6 +1639,29 @@ def registrar_digest(art, conteudo, tmeta=None, data=None):
              art.get("doi", ""), art.get("fonte", ""), art.get("url", ""),
              datetime.now().isoformat()),
         )
+
+
+def salvar_dossie(tema, conteudo, n_estudos):
+    """Upsert do dossiê de um tema (1 por tema). `conteudo` é o dict do `dossie.py`."""
+    from datetime import datetime
+    with _conn() as c:
+        c.execute("""INSERT INTO dossies (tema,conteudo,n_estudos,atualizado_em)
+                     VALUES (?,?,?,?)
+                     ON CONFLICT(tema) DO UPDATE SET conteudo=excluded.conteudo,
+                       n_estudos=excluded.n_estudos, atualizado_em=excluded.atualizado_em""",
+                  (tema, json.dumps(conteudo, ensure_ascii=False), int(n_estudos or 0),
+                   datetime.now().isoformat()))
+
+
+def obter_dossie(tema):
+    with _conn() as c:
+        r = c.execute("SELECT * FROM dossies WHERE tema=?", (tema,)).fetchone()
+    return dict(r) if r else None
+
+
+def listar_dossies():
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM dossies ORDER BY tema").fetchall()]
 
 
 def listar_digests():
