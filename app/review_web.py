@@ -48,6 +48,8 @@ def pagina_revisao(r, aviso="", audio_on=False, areas=()):
 {sel_area}
   <textarea name="texto" rows="16" style="width:100%;font-size:15px">{esc(r.get('resumo',''))}</textarea>
   <p><a href="/pdf/{esc(r.get('data',''))}" target="_blank">📄 Ver PDF</a></p>
+  <p style="color:#6b7a76;font-size:13px;margin:10px 0 12px">Se você não mexer em nada,
+    este estudo sai <b>automaticamente às 08h</b>. Aprovar salva o texto acima junto.</p>
   <button name="acao" value="aprovar">✅ Aprovar</button>
   <button name="acao" value="editar">✏️ Salvar edição</button>
 {btn_audio}  <button name="acao" value="nao_enviar">🚫 Não enviar hoje</button>
@@ -56,36 +58,25 @@ def pagina_revisao(r, aviso="", audio_on=False, areas=()):
 
 
 _FEITO = {
-    "aprovar":    ("✅ Aprovado", "Sai às 08h para os assinantes."),
-    "editar":     ("✏️ Edição salva", "É esta versão que sai às 08h."),
-    "nao_enviar": ("🚫 Vetado", "Nada será enviado neste dia."),
+    "aprovar":    "✅ Aprovado — é este texto que sai às 08h.",
+    "editar":     "✏️ Edição salva — é este texto que sai às 08h.",
+    "nao_enviar": "🚫 Vetado — nada será enviado neste dia.",
+    "regerar_audio": "",
 }
 
 
-def pagina_feito(acao, data, token):
-    """Confirmação do que foi feito, COM saída.
+def aviso_do_feito(acao, status_anterior=""):
+    """Banner que a tela de revisão mostra depois de salvar.
 
-    Antes isto era `<h3>Feito ✅ Pode fechar.</h3>`: não dizia qual das ações tinha
-    acontecido e, pior, não tinha link nenhum — pra conferir o PDF da edição que acabou
-    de salvar, o curador tinha que voltar no WhatsApp e reabrir o link. O PDF abre em
-    aba nova de propósito: mandar a aba atual pro PDF é recriar o beco sem saída.
+    Fica NA PRÓPRIA tela (decisão do Diego, 2026-08-11): ele vê o texto que ficou salvo,
+    segue editando se quiser e confere o PDF sem reabrir o link do WhatsApp.
+
+    Dia já ENVIADO não pode ganhar a promessa de "sai às 08h" — já saiu, e nada do que
+    for editado agora muda o PDF, o áudio ou a página do portal daquele dia.
     """
-    esc = _html.escape
-    titulo, sub = _FEITO.get(acao, ("✅ Feito", "Pode fechar esta página."))
-    d, tok = esc(data or ""), esc(token or "")
-    # Vetado não ganha link de PDF: não faz sentido conferir a capa do que não vai sair.
-    ver_pdf = (f'<p style="margin:18px 0 8px"><a href="/pdf/{d}" target="_blank" '
-               f'style="color:#0f4c3a;font-weight:600">📄 Conferir o PDF</a></p>'
-               if acao in ("aprovar", "editar") and d else "")
-    voltar = (f'<p style="margin:0"><a href="/revisar/{tok}" style="color:#6b7a76">'
-              f'← Voltar para a revisão</a></p>') if tok else ""
-    return (f'<!doctype html><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f'<body style="font-family:system-ui;max-width:680px;margin:40px auto;'
-            f'padding:0 16px;color:#1a2b28">'
-            f'<h2 style="margin:0 0 4px">{titulo}</h2>'
-            f'<p style="color:#6b7a76;margin:0">{sub}</p>'
-            f'{ver_pdf}{voltar}</body>')
+    if status_anterior == "SENT":
+        return "Este estudo já foi enviado — o que você mexer agora não muda o que saiu."
+    return _FEITO.get(acao, "Feito ✅")
 
 
 def pagina_admin(assinantes, token=""):

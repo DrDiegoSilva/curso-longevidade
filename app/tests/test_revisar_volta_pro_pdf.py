@@ -85,7 +85,12 @@ class _RotaStub:
 
 
 class TestTelaDepoisDeSalvar(unittest.TestCase):
-    """O beco sem saída: depois de salvar tem que dar pra VER o PDF e VOLTAR."""
+    """O beco sem saída: depois de salvar tem que dar pra VER o PDF e continuar.
+
+    ⚠️ Desenho REVISADO em 2026-08-11 por decisão do Diego: em vez de uma página de
+    confirmação separada, a resposta agora é a PRÓPRIA tela de revisão com um banner.
+    A intenção original ("não terminar num beco, poder conferir o PDF, saber o que
+    aconteceu") continua — só que satisfeita pela tela que já tem tudo isso."""
 
     def setUp(self):
         import serve
@@ -97,13 +102,11 @@ class TestTelaDepoisDeSalvar(unittest.TestCase):
             return self.serve.Handler.do_POST(
                 _RotaStub("/revisar/tok", up.urlencode(campos).encode("utf-8")))
 
-    def test_salvar_edicao_oferece_o_pdf_e_a_volta(self):
+    def test_salvar_edicao_devolve_a_tela_com_o_pdf_e_o_texto(self):
         out = self._post({"acao": "editar", "texto": "novo"}, _rascunho())
         self.assertIn("/pdf/2026-08-11", out["body"])
-        self.assertIn("/revisar/tok", out["body"])
-        # URL presente não basta: âncora sem texto é link que ninguém consegue clicar.
-        volta = out["body"].split('href="/revisar/tok"', 1)[1].split("</a>", 1)[0]
-        self.assertIn("Voltar", volta)
+        self.assertIn('name="texto"', out["body"])      # dá pra continuar editando
+        self.assertIn('action="/revisar/tok"', out["body"])
 
     def test_aprovar_tambem_oferece_o_pdf(self):
         """Aprovar é o fim do fluxo, mas conferir a capa depois de aprovar é legítimo."""
@@ -117,10 +120,11 @@ class TestTelaDepoisDeSalvar(unittest.TestCase):
         self.assertNotEqual(editar, aprovar)
         self.assertNotEqual(aprovar, vetar)
 
-    def test_vetar_o_dia_nao_oferece_pdf(self):
-        """Não faz sentido mandar conferir a capa de um estudo que não vai sair."""
+    def test_vetar_o_dia_avisa_que_nada_sai(self):
+        """A tela de revisão sempre teve o link do PDF (é a mesma tela), então o que
+        importa aqui é o AVISO deixar claro que o dia foi vetado."""
         out = self._post({"acao": "nao_enviar"}, _rascunho())
-        self.assertNotIn("/pdf/", out["body"])
+        self.assertIn("Vetado", out["body"])
 
     def test_o_link_do_pdf_abre_em_aba_nova(self):
         """Sem isso, ver o PDF ABANDONA a tela de revisão — o beco sem saída de novo."""

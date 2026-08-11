@@ -735,8 +735,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html(review_web.pagina_revisao(
                     r, aviso="Esse estudo já foi enviado — a área não muda mais por aqui.",
                     audio_on=config.audio_ligado(), areas=areas))
-            draft_store.aplicar(r["data"], g("acao"), g("texto"), area=g("area"))
-            return self._html(review_web.pagina_feito(g("acao"), r.get("data", ""), tok))
+            # Volta pra tela COM o texto (decisão do Diego): ele vê o que ficou salvo,
+            # segue editando se quiser e confere o PDF sem reabrir o link do WhatsApp.
+            r2 = draft_store.aplicar(r["data"], g("acao"), g("texto"), area=g("area"))
+            return self._html(review_web.pagina_revisao(
+                r2, aviso=review_web.aviso_do_feito(g("acao"), r.get("status", "")),
+                audio_on=config.audio_ligado(), areas=areas))
         if path == "/admin/whatsapp":
             import config, auth_web, evolution_admin
             sess = self._sessao()

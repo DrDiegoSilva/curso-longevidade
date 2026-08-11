@@ -44,6 +44,26 @@ def pode_enviar(status):
     return status not in ("SKIPPED", "SENT")
 
 
+def _guardar_texto(r, texto):
+    """Grava o texto editado no rascunho. Vale pra APROVAR **e** editar.
+
+    O `aprovar` não gravava — e a tela tem UMA caixa de texto e dois botões que parecem
+    salvar. Quem editava e clicava no principal perdia a edição em silêncio, e o texto
+    original ia pros assinantes (aconteceu em 2026-08-11: o nome do Diego saiu no PDF
+    apesar de ele ter editado na véspera).
+
+    Texto vazio/ausente é no-op: POST antigo ou forjado não pode zerar o estudo do dia.
+    """
+    novo = texto or r.get("resumo", "")
+    if novo == r.get("resumo", ""):
+        return
+    r["resumo"] = novo
+    # O preview das 18h tem o texto VELHO. Sem zerar, o "📄 Ver PDF" devolve a versão
+    # antiga e a edição parece não ter pegado — e pior, de forma intermitente (o /data
+    # some no deploy e aí regenera certo). O serve.py regenera quando `pdf_path` é vazio.
+    r["pdf_path"] = ""
+
+
 def aplicar(data_iso, acao, texto=None, area=None):
     """Aplica a decisão do curador. `area` viaja junto com aprovar/editar (o <select>
     da tela de revisão fica dentro do mesmo form dos botões) — vetar o dia não é hora
@@ -56,18 +76,12 @@ def aplicar(data_iso, acao, texto=None, area=None):
     # e lê `r["status"]` — sobrescrever o status primeiro apagaria o SENT que ela procura.
     if acao == "aprovar":
         area_estudo.aplicar_no_rascunho(r, area)
+        _guardar_texto(r, texto)
         r["status"] = "APPROVED"
     elif acao == "editar":
         area_estudo.aplicar_no_rascunho(r, area)
+        _guardar_texto(r, texto)
         r["status"] = "EDITED"
-        novo = texto or r["resumo"]
-        if novo != r["resumo"]:
-            r["resumo"] = novo
-            # O preview das 18h tem o texto VELHO. Sem zerar, o "📄 Ver PDF" devolve a
-            # versão antiga e a edição parece não ter pegado — e pior, de forma
-            # intermitente (o /data some no deploy e aí regenera certo).
-            # O serve.py regenera sob demanda quando `pdf_path` está vazio.
-            r["pdf_path"] = ""
     elif acao == "nao_enviar":
         r["status"] = "SKIPPED"
     else:

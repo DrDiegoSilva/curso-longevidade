@@ -437,8 +437,8 @@ class TestFiacaoDaRota(unittest.TestCase):
         with mock.patch("draft_store.por_token", return_value=r), \
              mock.patch("draft_store.aplicar") as m_aplicar:
             out = self._post({"acao": "nao_enviar"})
-        m_aplicar.assert_called_once()
-        self.assertNotIn("já foi enviado", out["body"])   # não caiu na guarda de área
+        m_aplicar.assert_called_once()      # não foi barrado: o veto chegou ao draft_store
+        self.assertNotIn("a área não muda", out["body"])   # não caiu na guarda de área
 
     def test_get_manda_as_areas_pra_pagina(self):
         r = _rascunho(tema="Meus estudos")
