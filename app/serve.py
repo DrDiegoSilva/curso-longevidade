@@ -985,6 +985,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"Candidatos presos: {curadoria.varrer_presos()} liberado(s) de volta ao pool."
                 except Exception as e:
                     print(f"[presos] varredura erro: {e}", flush=True); msg = "Falha ao liberar candidatos presos (ver logs)."
+            elif acao == "encorpar_corpus":
+                # Minutos de trabalho (janelas x temas x IA): numa request síncrona o
+                # navegador desiste antes. Thread + aviso no WhatsApp, como o 🔁 trocar estudo.
+                import threading
+
+                def _encorpar():
+                    try:
+                        r = curadoria.encorpar_corpus(6)
+                        import deliver
+                        deliver.enviar_curador(
+                            f"📚 Base encorpada: {r['novos']} estudos novos na memória "
+                            f"({r['janelas']} meses varridos"
+                            + (f", {r['falhas']} janela(s) falharam" if r["falhas"] else "") + ").")
+                    except Exception as e:
+                        print(f"[corpus] backfill explodiu: {e}", flush=True)
+
+                threading.Thread(target=_encorpar, daemon=True).start()
+                msg = "📚 Encorpando a base em segundo plano — te aviso no WhatsApp quando terminar."
             elif acao == "limpar_nome":
                 try:
                     import limpeza

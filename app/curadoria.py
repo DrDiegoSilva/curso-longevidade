@@ -94,6 +94,71 @@ def varrer(desde, ate, caps=None, buscar_fn=None, triar_fn=None, piso=None, min_
     return out
 
 
+# Caps do BACKFILL do corpus — bem maiores que os da varredura semanal (`CAPS`), porque
+# o trabalho é outro: a semanal alimenta a FILA (1 estudo/dia, e o excesso vira scroll na
+# Triagem); o corpus quer VOLUME pra sustentar uma síntese. Guardar mais do que já foi
+# triado é quase de graça: a triagem por IA roda em tudo que a busca traz, e o cap só
+# decide o que é salvo.
+CAPS_CORPUS = {t: n * 4 for t, n in CAPS.items()}
+
+
+def _janelas_mensais(meses, ate=None):
+    """[(desde, ate)] de `meses` janelas mensais encostadas, da mais nova pra mais velha.
+
+    A busca do Europe PMC devolve as 40 mais RECENTES da janela (`pageSize`, ordenado por
+    data desc). Rodar sempre no mesmo intervalo grande traz sempre os mesmos estudos — é
+    por isso que apertar "Varrer agora" várias vezes não engorda a base. Fatiar em meses
+    é o que alcança o que ficou pra trás.
+    """
+    from datetime import date, timedelta
+    fim = date.fromisoformat(ate) if ate else date.today()   # `range` já cobre meses<=0
+    janelas = []
+    for _ in range(meses):
+        # ~1 mês pra trás sem depender de lib externa (o container é stdlib puro).
+        ini = fim - timedelta(days=30)
+        janelas.append((ini.isoformat(), fim.isoformat()))
+        fim = ini
+    return janelas
+
+
+def encorpar_corpus(meses=6, ate=None, varrer_fn=None, salvar_fn=None):
+    """Backfill da MEMÓRIA: varre janelas mensais pra trás e guarda como `tipo='corpus'`.
+
+    Entra como 'corpus' e não 'varredura' de propósito: a aba Triagem lista só
+    `tipo='varredura'` (`montar_candidatos_triagem`), então o backfill alimenta a base
+    sem entulhar a tela de triagem.
+
+    Não gera a `pergunta` da triagem — ela existe pra aquela tela, por onde o corpus não
+    passa; gerar seria pagar Haiku por texto que ninguém lê.
+
+    Uma janela que falha (rede, API fora) não derruba as outras. Retorna
+    `{janelas, novos, falhas}`; `novos` é o que o BANCO aceitou (o dedup mora no
+    `salvar_candidatos`, com ON CONFLICT DO NOTHING).
+    """
+    if varrer_fn is None:
+        varrer_fn = varrer
+    if salvar_fn is None:
+        import db
+        db.init()
+        salvar_fn = db.salvar_candidatos
+    novos = falhas = 0
+    janelas = _janelas_mensais(meses, ate)
+    for desde, fim in janelas:
+        try:
+            achados = varrer_fn(desde, fim, caps=CAPS_CORPUS)
+        except Exception as e:
+            print(f"[corpus] janela {desde}..{fim} falhou: {e}", flush=True)
+            falhas += 1
+            continue
+        if not achados:
+            continue
+        for a in achados:
+            a["tipo"] = "corpus"
+        novos += salvar_fn(achados) or 0
+    print(f"[corpus] backfill: {len(janelas)} janelas, {novos} novos, {falhas} falhas", flush=True)
+    return {"janelas": len(janelas), "novos": novos, "falhas": falhas}
+
+
 def varrer_classicos(caps=None, buscar_fn=None, triar_fn=None, anos=10):
     """Estudos-marco por tema: busca numa janela ampla (anos) -> triagem (corta LIXO) ->
     top(cap) por CITAÇÕES desc, dedup global. Candidatos marcados tipo='classico'.
