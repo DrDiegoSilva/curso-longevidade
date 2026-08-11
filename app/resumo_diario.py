@@ -118,7 +118,7 @@ def modo_atualizacao(tema):
     # 1) Haiku tria
     lista = "\n".join(f"[{i}] {e['titulo']} | {e['journal']} | {e['abstract'][:500]}" for i, e in enumerate(estudos))
     tri = claude(HAIKU, f"Tema do médico: {tema}. Estudos da semana:\n{lista}\n\n"
-        "Classifique CADA um p/ a prática clínica do Dr. Diego (emagrecimento/GLP-1, TRT, lipedema, performance): "
+        "Classifique CADA um p/ a prática clínica do assinante (emagrecimento/GLP-1, TRT, lipedema, performance): "
         "DESTAQUE (muda conduta, dado clínico forte no tema) / MENCAO (relevante secundário, mas o FOCO é o tema) / "
         "LIXO. É LIXO quando: fora da área; animal/cultura celular; pediatria; cirurgia não relacionada; OU quando o tema "
         "aparece só como comorbidade/fator de risco secundário e NÃO é o objeto central do estudo (ex.: paper de "
@@ -223,7 +223,8 @@ def modo_curso():
     return {"msg": f"🎓 *CURSO LONGEVIDADE — Aula {num}: {titulo}*\n\n" + aula, "commit": commit}
 
 # ─── Prompts de sistema ───────────────────────────────────────
-SYS_APROF = ("Você escreve resumos clínicos para o Dr. Diego (médico). Mantenha TODOS os dados e números, mas em "
+SYS_APROF = ("Você escreve resumos clínicos para médicos assinantes (nunca se dirija ao leitor pelo nome — o mesmo "
+    "texto vai para todos). Mantenha TODOS os dados e números, mas em "
     "LINGUAGEM CLARA: frases curtas, uma ideia por frase; explique cada sigla/termo técnico na PRIMEIRA vez em palavras "
     "simples (ex.: 'HR 0,67 — ou seja, ~33% menos risco'); não empilhe várias estatísticas na mesma frase. "
     "Estruture cada estudo-destaque nesta ordem: "
@@ -237,14 +238,17 @@ SYS_APROF = ("Você escreve resumos clínicos para o Dr. Diego (médico). Manten
     "Sem seção 'para paciente'. WhatsApp: *negrito* com asteriscos, sem títulos markdown. NÃO invente dados fora do abstract.")
 SYS_MENC = ("Menções curtas p/ médico (WhatsApp, *negrito*). Comece CADA uma pela data → `🗓️ mês/ano` + revista; "
     "depois 1–2 linhas em linguagem clara: achado + relevância clínica. Sem inventar.")
-SYS_CURSO = ("Você é professor de medicina de longevidade do Dr. Diego. Aula completa e prática, mas em LINGUAGEM CLARA: "
+SYS_CURSO = ("Você é professor de medicina de longevidade escrevendo para médicos assinantes (o mesmo texto vai para "
+    "todos: nunca se dirija ao leitor pelo nome). Aula completa e prática, mas em LINGUAGEM CLARA: "
     "frases curtas, explique cada termo técnico/sigla na primeira vez. Abra com um parágrafo '💡 Em resumo' do que ele vai "
     "aprender. Traga níveis de evidência (A) RCT/meta humano (B) mecanismo/animal (C) opinião; SEMPRE cite o ANO dos "
     "estudos-chave (ex.: 'Konopka 2019') para ele situar quão atual é; cubra mecanismo, doses, segurança, interações, "
     "conduta e o debate entre pesquisadores com conflito de interesse. WhatsApp: *negrito*. Honesto sobre hype/evidência fraca.")
 
 SYS_ESTUDO = (
-    "Você escreve o resumo de UM estudo científico para o Dr. Diego (médico), pra enviar no WhatsApp. "
+    "Você escreve o resumo de UM estudo científico para MÉDICOS ASSINANTES, pra enviar no WhatsApp. "
+    "O MESMO texto vai para todos eles: NUNCA se dirija ao leitor pelo nome nem invente cabeçalho "
+    "endereçado a uma pessoa (nada de 'Mensagem prática para o doutor tal'). Fale como colega, no impessoal. "
     "O título do estudo JÁ é colocado antes do seu texto por outro trecho — NÃO repita o título; comece pela linha da revista. "
     "REGRAS DE OURO: nunca invente números/dados fora da fonte. Se uma seção não tiver base na fonte, OMITA-A "
     "(exceção — Conflito de interesse: se não houver menção, escreva 'não declarado'). "

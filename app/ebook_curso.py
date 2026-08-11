@@ -217,7 +217,10 @@ def build(standalone=True):
     P.append('<div class="cover">')
     P.append('<div class="kick">Curso destilado · medicina para médico</div>')
     P.append('<h1>Longevidade &amp;<br><em>Medicina de Precisão</em></h1>')
-    P.append('<p class="sub">Aulas destiladas de literatura consolidada — mecanismo, evidência graduada (A/B/C), doses, segurança e conduta. Compilado para o Dr. Diego Silva.</p>')
+    # A capa dizia que o material tinha sido compilado PARA o autor — e quem lê é o
+    # assinante, que via o produto endereçado a outra pessoa. A assinatura dele é a marca
+    # do rodapé; a capa fala com quem está lendo.
+    P.append('<p class="sub">Aulas destiladas de literatura consolidada — mecanismo, evidência graduada (A/B/C), doses, segurança e conduta.</p>')
     P.append('<hr class="rule">')
     P.append(f'<div class="prog"><div class="bar"><div class="fill" style="width:{pct}%"></div></div>'
              f'<div class="lab">{nfeitos} de {total} módulos concluídos · {pct}%</div></div>')

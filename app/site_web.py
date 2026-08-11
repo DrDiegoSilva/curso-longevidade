@@ -1532,6 +1532,10 @@ def _curadoria_ferramentas(token):
           {_varredura("varrer_presos", "🧹 Liberar candidatos presos",
                       "Liberar candidatos travados em agendado sem slot na agenda de volta pro pool? "
                       "Seguro rodar mais de uma vez.")}
+          {_varredura("limpar_nome", "🪪 Tirar meu nome do estoque",
+                      "Os estudos gerados antes do conserto abrem com \\'Mensagem prática para "
+                      "Dr. Diego\\' — e isso vai pro assinante. Tirar o endereçamento dos resumos "
+                      "já na fila? A conduta clínica não muda. Seguro rodar mais de uma vez.")}
         </div>
         <div class="panel" style="max-width:none;margin:0">
           <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;

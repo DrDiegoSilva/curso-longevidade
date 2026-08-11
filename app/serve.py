@@ -985,6 +985,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     msg = f"Candidatos presos: {curadoria.varrer_presos()} liberado(s) de volta ao pool."
                 except Exception as e:
                     print(f"[presos] varredura erro: {e}", flush=True); msg = "Falha ao liberar candidatos presos (ver logs)."
+            elif acao == "limpar_nome":
+                try:
+                    import limpeza
+                    msg = f"Estoque: {limpeza.limpar_estoque()} resumo(s) sem o nome no cabeçalho."
+                except Exception as e:
+                    print(f"[limpeza] erro: {e}", flush=True); msg = "Falha ao limpar o estoque (ver logs)."
             elif acao == "backfill_tags":
                 try:
                     import curadoria
