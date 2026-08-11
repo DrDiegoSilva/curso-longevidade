@@ -101,28 +101,58 @@ def pagina_admin(assinantes, token=""):
 </form></body>"""
 
 
-def pagina_trocar_estudo(alternativas, r, token):
+def _item_troca(a, tok):
     esc = _html.escape
-    tok = esc(token)
-    atual = esc((r.get("artigo") or {}).get("titulo", ""))
-    if not alternativas:
-        corpo = "<p>Sem outros estudos disponíveis para trocar agora.</p>"
-    else:
-        itens = "".join(
-            f'<li style="margin:12px 0">'
+    return (f'<li style="margin:12px 0">'
             f'<form method="post" action="/revisar/{tok}" '
             f'style="display:flex;gap:10px;align-items:center;justify-content:space-between">'
             f'<span><b>{esc(a["titulo"])}</b><br>'
-            f'<small style="color:#6b7a76">{esc(a["tema"])} · {esc(a["fonte"])} · '
+            f'<small style="color:#6b7a76">{esc(a["fonte"])} · '
             f'nota {esc(str(a["score"]))} · {esc(a["tipo"])}</small></span>'
             f'<input type="hidden" name="acao" value="trocar_confirmar">'
             f'<input type="hidden" name="tipo" value="{esc(a["tipo"])}">'
             f'<input type="hidden" name="id" value="{esc(str(a["id"]))}">'
             f'<button type="submit">Usar este amanhã</button>'
-            f'</form></li>'
-            for a in alternativas
-        )
-        corpo = f'<ul style="list-style:none;padding:0">{itens}</ul>'
+            f'</form></li>')
+
+
+def pagina_trocar_estudo(alternativas, r, token, areas=()):
+    """Alternativas agrupadas por tema, igual à aba Reserva da /curadoria.
+
+    Antes era uma lista corrida cortada em 20 — e como a reserva sozinha tem ~50 itens,
+    ela comia as 20 vagas e os candidatos crus NUNCA apareciam. Somado a girar 1 estudo
+    por dia, o topo era o mesmo todo dia: a "lista fixa" que o Diego viu.
+
+    O card do tema de AMANHÃ nasce aberto: é o que ele quer ver primeiro.
+    """
+    import area_estudo
+    esc = _html.escape
+    tok = esc(token)
+    art = r.get("artigo") or {}
+    atual = esc(art.get("titulo", ""))
+    tema_amanha = art.get("tema", "")
+    if not alternativas:
+        corpo = "<p>Sem outros estudos disponíveis para trocar agora.</p>"
+    else:
+        por_tema = {}
+        for a in alternativas:
+            por_tema.setdefault(a.get("tema") or "—", []).append(a)
+        temas = list(areas) + [t for t in por_tema if t not in areas]
+        cards = []
+        for t in temas:
+            itens = por_tema.get(t, [])
+            corpo_card = (f'<ul style="list-style:none;padding:0">'
+                          + "".join(_item_troca(a, tok) for a in itens) + "</ul>"
+                          ) if itens else '<p style="color:#6b7a76">Nada neste tema.</p>'
+            aberto = " open" if t == tema_amanha else ""
+            cards.append(
+                f'<details name="troca-tema"{aberto} style="border:1px solid #d8ddd7;'
+                f'border-radius:10px;margin:8px 0;padding:0 12px">'
+                f'<summary style="cursor:pointer;padding:12px 0;font-weight:600">'
+                f'{area_estudo.emoji(t)} {esc(t)} '
+                f'<span style="color:#6b7a76;font-weight:400">({len(itens)})</span>'
+                f'</summary>{corpo_card}</details>')
+        corpo = "".join(cards)
     return f"""<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <body style="font-family:system-ui;max-width:680px;margin:24px auto;padding:0 16px;color:#1a2b28">
 <div style="color:#0f4c3a;font-weight:600">Trocar o estudo de amanhã</div>

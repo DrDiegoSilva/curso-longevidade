@@ -719,7 +719,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if g("acao") == "trocar":
                 import daily
                 return self._html(review_web.pagina_trocar_estudo(
-                    daily.montar_alternativas(r), r, tok))
+                    daily.montar_alternativas(r), r, tok, areas=areas))
             if g("acao") == "trocar_confirmar":
                 import daily, threading
                 tipo, cid = g("tipo"), g("id")

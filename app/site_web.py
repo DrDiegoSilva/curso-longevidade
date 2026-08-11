@@ -1444,7 +1444,7 @@ def _dossie_html(dossies):
             for b in blocos) or '<p class="hint">Dossiê vazio — a IA não devolveu nada útil.</p>'
         cards.append(
             f'<details name="dossie-tema" class="temacard">'
-            f'<summary>{_CUR_EMOJI.get(d.get("tema"), "•")} {_esc(d.get("tema"))} '
+            f'<summary>{_emoji(d.get("tema"))} {_esc(d.get("tema"))} '
             f'<span class="cnt">{len(blocos)}</span></summary>'
             f'<div class="temacard-corpo">'
             f'<p class="hint">{d.get("n_estudos", 0)} estudos lidos · atualizado em {_esc(quando)}</p>'
@@ -1500,8 +1500,13 @@ def _curadoria_item(c, token, aba="triagem", tema=""):
             f'<span class="cacts">{acoes}</span></span></div>')
 
 
-_CUR_EMOJI = {"Obesidade": "⚖️", "Hormonal": "⚕️", "Lipedema": "🦵",
-              "Performance": "🏃", "Longevidade": "🧬"}
+def _emoji(tema):
+    """Emoji da área. Fonte única: `temas_config.json`, via `area_estudo` — este mapa
+    vivia duplicado aqui, e duplicata é onde os dois divergem sem ninguém ver."""
+    import area_estudo
+    return area_estudo.emoji(tema)
+
+
 _CUR_ORDEM = ["Obesidade", "Hormonal", "Lipedema", "Performance", "Longevidade"]
 
 
@@ -1519,7 +1524,7 @@ def _curadoria_chips(candidatos, token, tema=""):
     for t in temas:
         on = " on" if t == tema else ""
         chips.append(f'<a class="temachip{on}" href="/curadoria?token={tk}&aba=triagem&tema={quote(t)}">'
-                     f'{_CUR_EMOJI.get(t, "•")} {_esc(t)} <b>{n.get(t, 0)}</b></a>')
+                     f'{_emoji(t)} {_esc(t)} <b>{n.get(t, 0)}</b></a>')
     return f'<div class="temachips">{"".join(chips)}</div>'
 
 
@@ -1561,7 +1566,7 @@ def _curadoria_reserva_cards(prontos, resto, token):
             corpo = '<p class="hint">Nada neste tema. Rode a varredura ou priorize na Triagem.</p>'
         cards.append(
             f'<details name="reserva-tema" class="temacard">'
-            f'<summary>{_CUR_EMOJI.get(t, "•")} {_esc(t)} <span class="cnt">{total}</span></summary>'
+            f'<summary>{_emoji(t)} {_esc(t)} <span class="cnt">{total}</span></summary>'
             f'<div class="temacard-corpo">{corpo}</div></details>')
     return "".join(cards)
 

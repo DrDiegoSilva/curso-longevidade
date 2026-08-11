@@ -34,6 +34,18 @@ def areas():
         return []
 
 
+def emoji(tema):
+    """O emoji da área, lido do `temas_config.json` — a MESMA fonte do rótulo e da cor
+    da capa do PDF. Estava duplicado num dicionário do `site_web`, e duplicata é onde os
+    dois divergem sem ninguém ver. Tema desconhecido (ou config ilegível) vira '•'."""
+    try:
+        with open(_CFG_PATH, encoding="utf-8") as f:
+            temas = json.load(f).get("temas", {})
+    except Exception:
+        return "•"
+    return (temas.get(tema) or {}).get("emoji") or "•"
+
+
 def pode_corrigir(r):
     """False para rascunho já enviado. Depois do 1º slot a correção não chega no PDF:
     `daily._pdf_master` cacheia `{hoje}-master.pdf`, então um slot posterior reusa a capa

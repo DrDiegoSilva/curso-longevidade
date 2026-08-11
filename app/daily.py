@@ -429,7 +429,10 @@ def _preparar_de_classico(classico_id):
     return r
 
 
-ALTERNATIVAS_MAX = 20
+# Teto de SEGURANÇA, não decisão de UX: com o picker agrupado por tema, o Diego abre o
+# tema que quer. Em 20, a reserva (~50 itens) comia as vagas todas e os candidatos crus
+# nunca apareciam — a "lista fixa" que ele viu em 2026-08-11.
+ALTERNATIVAS_MAX = 300
 
 
 def montar_alternativas(r):
