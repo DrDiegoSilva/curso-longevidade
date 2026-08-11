@@ -244,3 +244,37 @@ class TestAbaNaTela(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFerramentasVisiveis(unittest.TestCase):
+    """Diego, 2026-08-11: *"o dossiê não apareceu no botão. coloca essa aba de ferramentas
+    lá pra cima"*.
+
+    O botão ESTAVA sendo renderizado — o problema era onde. As Ferramentas ficavam no FIM
+    da página, num `<details>` fechado com resumo de 13px, depois da lista inteira de
+    candidatos. Na prática, invisível.
+    """
+
+    def _html(self):
+        import site_web
+        return site_web.pagina_curadoria(
+            {"pronto": 0, "minimo": 3}, None, [], [], {"candidatos": [], "banco": []}, "tok")
+
+    def test_ferramentas_vem_antes_das_abas(self):
+        h = self._html()
+        self.assertLess(h.find("⚙️ Ferramentas"), h.find('class="tabs"'))
+
+    def test_ferramentas_vem_antes_da_lista_de_estudos(self):
+        """Rolar 50 cards pra achar um botão é o que fazia ele não achar."""
+        h = self._html()
+        self.assertLess(h.find("⚙️ Ferramentas"), h.find("Adicionar meu estudo"))
+
+    def test_o_botao_do_dossie_esta_la(self):
+        self.assertIn("Construir o dossiê", self._html())
+
+    def test_todos_os_botoes_de_ferramenta_continuam(self):
+        """Mover não pode derrubar nenhum — são as ações que só ele executa."""
+        h = self._html()
+        for acao in ("varrer", "varrer_classicos", "backfill_tags", "varrer_presos",
+                     "construir_dossie", "encorpar_corpus", "regerar_kit", "limpar_nome"):
+            self.assertIn(f'value="{acao}"', h)

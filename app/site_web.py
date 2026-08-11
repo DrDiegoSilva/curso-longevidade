@@ -1613,8 +1613,10 @@ def _curadoria_ferramentas(token):
                 f'<input type="hidden" name="acao" value="{acao}">'
                 f'<button class="actbtn ghost" type="submit">{label}</button></form>')
     return f"""
-      <details style="margin-top:26px">
-        <summary style="cursor:pointer;color:var(--ouro2);font-family:var(--ui);font-size:13px">
+      <details style="margin:14px 0 4px;border:1px solid rgba(201,162,39,.32);border-radius:10px;
+                      background:rgba(201,162,39,.06);padding:0 14px">
+        <summary style="cursor:pointer;color:var(--ouro2);font-family:var(--ui);
+                        font-size:14.5px;font-weight:600;padding:12px 0">
           ⚙️ Ferramentas</summary>
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin:14px 0 18px">
           {_varredura("varrer", "🔎 Varrer agora",
@@ -1728,11 +1730,11 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
       {_admin_nav(token, "curadoria")}
       <h2 class="disp" style="font-size:40px;color:var(--creme);margin:6px 0 10px">Curadoria</h2>
       {_curadoria_faixa(estado)}
+      {_curadoria_ferramentas(token)}
       {_curadoria_amanha(amanha)}
       {msg_html}
       {_curadoria_abas(aba, contagens, token, tema)}
       {corpo_aba}
-      {_curadoria_ferramentas(token)}
     </div>"""
     return _pagina("Curadoria", corpo, logado=True,
                    meta_extra='<meta name="robots" content="noindex">')
