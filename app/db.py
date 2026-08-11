@@ -975,11 +975,28 @@ def consumir_token_senha(token):
 
 # ── Curadoria (candidatos) + Reserva (resumos prontos) — banco privado, NÃO publica ──
 def salvar_candidatos(cands):
-    """Insere candidatos novos (dedup por chave). Retorna quantos entraram."""
+    """Insere candidatos novos (dedup por chave). Retorna quantos NOVOS entraram.
+
+    PROMOÇÃO: `tipo='corpus'` é a classificação de menor valor — é só memória, não passou
+    por triagem semanal nem por ranking de citações. Se uma varredura posterior achar o
+    mesmo paper como `varredura` ou `classico`, o registro é promovido (com a pergunta, o
+    score e as citações que só a varredura calcula).
+
+    Sem isso, o backfill do corpus ENGOLIA o paper: o `ON CONFLICT DO NOTHING` mantinha
+    `tipo='corpus'` e ele nunca aparecia na Triagem nem nos Clássicos, que filtram por
+    tipo. O caminho contrário não vale — backfill não rebaixa clássico a memória.
+
+    Promoção não conta como "novo": inflar o número faria a tela dizer que a varredura
+    trouxe mais do que trouxe. E não mexe no `status`, pra não jogar de volta pra fila
+    um candidato que o Diego já triou.
+    """
     import secrets
     from datetime import datetime
-    novos = 0
     with _conn() as c:
+        # Conta pela DIFERENÇA de linhas: com `DO UPDATE` o `rowcount` é 1 tanto no
+        # insert quanto na promoção, e distinguir os dois no SQL não é portável entre
+        # SQLite e Postgres. Duas queries no total, não uma por candidato.
+        antes = c.execute("SELECT COUNT(*) n FROM curadoria_candidatos").fetchone()["n"]
         for x in cands:
             if not x.get("chave"):
                 continue
@@ -987,15 +1004,17 @@ def salvar_candidatos(cands):
                 """INSERT INTO curadoria_candidatos
                    (id,tema,titulo,fonte,data,doi,url,abstract,pergunta,score,chave,citacoes,tipo,tags,status,criado_em)
                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'novo', ?)
-                   ON CONFLICT (chave) DO NOTHING""",
+                   ON CONFLICT (chave) DO UPDATE SET
+                     tipo=excluded.tipo, tema=excluded.tema, pergunta=excluded.pergunta,
+                     score=excluded.score, citacoes=excluded.citacoes, tags=excluded.tags
+                   WHERE curadoria_candidatos.tipo='corpus' AND excluded.tipo<>'corpus'""",
                 (secrets.token_hex(8), x.get("tema", ""), x.get("titulo", ""), x.get("fonte", ""),
                  x.get("data", ""), x.get("doi", ""), x.get("url", ""), x.get("abstract", ""),
                  x.get("pergunta", ""), float(x.get("score", 0) or 0), x.get("chave"),
                  int(x.get("citacoes", 0) or 0), x.get("tipo", "varredura"),
                  json.dumps(x.get("tags") or []), datetime.now().isoformat()))
-            if cur.rowcount and cur.rowcount > 0:
-                novos += 1
-    return novos
+        depois = c.execute("SELECT COUNT(*) n FROM curadoria_candidatos").fetchone()["n"]
+    return depois - antes
 
 
 def listar_candidatos(status=None, tema=None, tipo=None):
