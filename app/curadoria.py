@@ -121,6 +121,9 @@ def _janelas_mensais(meses, ate=None):
     return janelas
 
 
+_LOCK_CORPUS = __import__("threading").Lock()
+
+
 def encorpar_corpus(meses=6, ate=None, varrer_fn=None, salvar_fn=None):
     """Backfill da MEMÓRIA: varre janelas mensais pra trás e guarda como `tipo='corpus'`.
 
@@ -135,28 +138,38 @@ def encorpar_corpus(meses=6, ate=None, varrer_fn=None, salvar_fn=None):
     `{janelas, novos, falhas}`; `novos` é o que o BANCO aceitou (o dedup mora no
     `salvar_candidatos`, com ON CONFLICT DO NOTHING).
     """
-    if varrer_fn is None:
-        varrer_fn = varrer
-    if salvar_fn is None:
-        import db
-        db.init()
-        salvar_fn = db.salvar_candidatos
-    novos = falhas = 0
-    janelas = _janelas_mensais(meses, ate)
-    for desde, fim in janelas:
-        try:
-            achados = varrer_fn(desde, fim, caps=CAPS_CORPUS)
-        except Exception as e:
-            print(f"[corpus] janela {desde}..{fim} falhou: {e}", flush=True)
-            falhas += 1
-            continue
-        if not achados:
-            continue
-        for a in achados:
-            a["tipo"] = "corpus"
-        novos += salvar_fn(achados) or 0
-    print(f"[corpus] backfill: {len(janelas)} janelas, {novos} novos, {falhas} falhas", flush=True)
-    return {"janelas": len(janelas), "novos": novos, "falhas": falhas}
+    # Trava de CONCORRÊNCIA, não do dia: cada disparo refaz busca + triagem (~100-150
+    # chamadas Haiku), e o dedup do banco protege os DADOS, não o custo — dois cliques
+    # gastavam dobrado. De propósito não é uma trava diária: se o container reiniciar no
+    # meio (deploy mata a thread daemon), o Diego tem que conseguir tentar de novo.
+    if not _LOCK_CORPUS.acquire(blocking=False):
+        print("[corpus] backfill já está rodando — ignorando o disparo novo", flush=True)
+        return {"janelas": 0, "novos": 0, "falhas": 0, "ja_rodando": True}
+    try:
+        if varrer_fn is None:
+            varrer_fn = varrer
+        if salvar_fn is None:
+            import db
+            db.init()
+            salvar_fn = db.salvar_candidatos
+        novos = falhas = 0
+        janelas = _janelas_mensais(meses, ate)
+        for desde, fim in janelas:
+            try:
+                achados = varrer_fn(desde, fim, caps=CAPS_CORPUS)
+            except Exception as e:
+                print(f"[corpus] janela {desde}..{fim} falhou: {e}", flush=True)
+                falhas += 1
+                continue
+            if not achados:
+                continue
+            for a in achados:
+                a["tipo"] = "corpus"
+            novos += salvar_fn(achados) or 0
+        print(f"[corpus] backfill: {len(janelas)} janelas, {novos} novos, {falhas} falhas", flush=True)
+        return {"janelas": len(janelas), "novos": novos, "falhas": falhas, "ja_rodando": False}
+    finally:
+        _LOCK_CORPUS.release()          # `finally`: explosão feia não pode deixar travado
 
 
 def varrer_classicos(caps=None, buscar_fn=None, triar_fn=None, anos=10):

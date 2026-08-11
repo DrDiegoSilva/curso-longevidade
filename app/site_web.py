@@ -1592,7 +1592,7 @@ def _curadoria_ferramentas(token):
           {_varredura("encorpar_corpus", "📚 Encorpar a base",
                       "Varrer os últimos 6 meses mês a mês e guardar na MEMÓRIA (não entra "
                       "na triagem). Leva alguns minutos e roda em segundo plano — o aviso "
-                      "chega no seu WhatsApp. Seguro rodar mais de uma vez.")}
+                      "chega no seu WhatsApp. Apertar de novo enquanto roda não faz nada.")}
           {_varredura("limpar_nome", "🪪 Tirar meu nome do estoque",
                       "Os estudos gerados antes do conserto abrem com \\'Mensagem prática para "
                       "Dr. Diego\\' — e isso vai pro assinante. Tirar o endereçamento dos resumos "

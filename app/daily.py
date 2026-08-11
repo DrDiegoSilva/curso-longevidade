@@ -376,7 +376,9 @@ def _preparar_de_artigo(art):
 def _preparar_de_candidato(cand_id):
     """Monta o rascunho de amanhã de um CANDIDATO cru (resumo JIT). Mira _preparar_de_artigo."""
     import db
-    c = next((x for x in db.listar_candidatos() if x["id"] == cand_id), None)
+    # Defesa em profundidade: o portão é `montar_alternativas`/`alternativa_valida`, mas
+    # este caminho gera conteúdo que vai pro assinante — não confia só no chamador.
+    c = next((x for x in db.listar_candidatos(tipo="varredura") if x["id"] == cand_id), None)
     if not c:
         return None
     art = {"titulo": c.get("titulo", ""), "titulo_original": c.get("titulo", ""),
@@ -439,7 +441,12 @@ def montar_alternativas(r):
     tema_amanha = (r.get("artigo") or {}).get("tema", "")
     res_rows = [x for x in db.listar_reserva("pronto") if x["id"] != atual_res]
     res_rows.sort(key=lambda x: (x.get("prioridade", 0) or 0, x.get("score", 0) or 0), reverse=True)
-    cand_rows = [x for x in db.listar_candidatos("novo") if x["id"] != atual_cand]
+    # tipo="varredura" é OBRIGATÓRIO aqui: sem ele, candidatos de backfill do corpus
+    # (`tipo='corpus'`, memória, nunca triados na semana) e clássicos entravam no picker
+    # rotulados como "candidato" — e o escolhido vira o estudo que sai às 08h.
+    # O clássico ainda por cima seria preparado pelo caminho errado (_preparar_de_candidato
+    # regenera da abstract em vez de usar o resumo pronto de _preparar_de_classico).
+    cand_rows = [x for x in db.listar_candidatos("novo", tipo="varredura") if x["id"] != atual_cand]
     cand_rows.sort(key=lambda x: (1 if x.get("tema") == tema_amanha else 0, x.get("score", 0) or 0), reverse=True)
     alts = (
         [{"tipo": "reserva", "id": x["id"], "titulo": x.get("titulo_pt", ""),

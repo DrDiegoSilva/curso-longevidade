@@ -993,6 +993,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 def _encorpar():
                     try:
                         r = curadoria.encorpar_corpus(6)
+                        if r.get("ja_rodando"):
+                            return              # 2º clique: a 1ª rodada é que vai avisar
                         import deliver
                         deliver.enviar_curador(
                             f"📚 Base encorpada: {r['novos']} estudos novos na memória "
@@ -1000,6 +1002,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                             + (f", {r['falhas']} janela(s) falharam" if r["falhas"] else "") + ").")
                     except Exception as e:
                         print(f"[corpus] backfill explodiu: {e}", flush=True)
+                        try:                    # sem isto o Diego fica esperando um aviso que nunca vem
+                            import deliver
+                            deliver.enviar_curador("📚 O backfill da base falhou — dá pra tentar de novo.")
+                        except Exception:
+                            pass
 
                 threading.Thread(target=_encorpar, daemon=True).start()
                 msg = "📚 Encorpando a base em segundo plano — te aviso no WhatsApp quando terminar."
