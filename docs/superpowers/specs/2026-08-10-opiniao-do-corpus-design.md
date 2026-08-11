@@ -159,3 +159,84 @@ não muda o tamanho).
 - **Busca semântica / banco vetorial.** Ver o achado acima: desnecessário nesta escala.
 - **Busca interna** ("o que já vimos sobre creatina?"). Cai fora por ora; a opinião diária
   entrega o mesmo valor sem tela nova.
+
+
+---
+
+# Revisão do desenho — 2026-08-11 (depois do backfill)
+
+O backfill trouxe **617 estudos** num clique. Isso invalida a premissa central da versão
+acima e traz duas decisões do Diego que melhoram o projeto.
+
+## O que quebrou
+
+A spec dizia: *"~30 abstracts × ~400 tokens ≈ 12 mil tokens — cabe folgado numa chamada"*
+e que a recuperação *"só vira problema quando o corpus multiplicar por 5-7"*.
+
+**Multiplicou hoje.** Obesidade sozinha deve ter ~250 estudos. Mandar o tema inteiro por
+dia dá ~100 mil tokens por chamada. Cabe no modelo, mas:
+
+- o custo **cresce para sempre** conforme a base engorda (e ela engorda toda semana);
+- a qualidade cai: um modelo que recebe 250 abstracts de uma vez passa o olho.
+
+## A saída (ideia do Diego)
+
+> *"não tem como já analisar isso e já indexar em um artigo pra ir atrás somente desse
+> artigo do que fica lendo todos estudos toda vez, aí vai só acrescentando nesse documento
+> cada arquivo novo?"*
+
+**Dossiê por tema**, mantido incrementalmente. A opinião do dia lê **um documento**, não o
+corpus inteiro.
+
+| | Por dia | Daqui a 2 anos |
+|---|---|---|
+| Ler tudo sempre | ~100k tokens | **cresce sem parar** |
+| Ler o dossiê | ~6k tokens | **fica igual** |
+
+O argumento não é o preço de hoje — é que um escala e o outro não. De quebra, o dossiê
+**é o item 30** do backlog: motor e produto na mesma peça.
+
+### Trava 1 — telefone sem fio
+
+Reescrever o resumo do resumo todo dia degrada, e ninguém percebe quando começou. Os
+abstracts brutos **continuam no banco** (não há `DELETE`), então o dossiê é
+**reconstruível do zero** a qualquer momento e a reconstrução é barata. Fazer isso
+periodicamente e comparar.
+
+### Trava 2 — rastreabilidade
+
+Dossiê em prosa mata a guarda de ancoragem, que é o que separa "memória" de "modelo
+opinando bonito". O dossiê **não é prosa**: é **afirmação + os estudos que a sustentam**
+(título, revista, data, DOI). Assim a opinião do dia continua podendo dizer "converge com
+o NEJM de março" e continua sendo possível **conferir** que aquele estudo existe.
+
+## Interruptor: global de 3 estados + toggle por estudo
+
+Decisão do Diego: *"e se já colocar nessa tela o toggle de colocar a opinião ou não? na
+tela de aprovação"*. O global vira só o **estado inicial** do toggle do dia.
+
+| Global | Gera? | O toggle da tela nasce |
+|---|---|---|
+| **Desligado** (padrão) | não | — |
+| **🧪 Ensaio** | sim, só pra ele | desmarcado |
+| **No ar** | sim | marcado |
+
+Isso dá o que um interruptor global sozinho não dá: **estrear uma opinião só**. Ele roda
+a semana em ensaio, escolhe a melhor, deixa sair, e só então liga geral — com evidência.
+E o toggle segue útil depois: vai ter dia em que a opinião não acrescenta nada.
+
+Nasce **desligado**, como a trilha (`trilha.ativa`): *"um deploy sozinho nunca é
+suficiente pra começar a enviar"*.
+
+⚠️ **O toggle viaja com Aprovar** — foi exatamente o que quebrou em 2026-08-11 (o texto
+editado era descartado ao clicar em Aprovar). Precisa de mutação provando.
+⚠️ **Dia já enviado não finge que dá pra mudar** — mesma guarda da área.
+
+## Fatiamento revisado
+
+1. ✅ Encorpar o corpus — **feito** (617 estudos, main `154149c`).
+2. **Dossiê**: construir por tema (map-reduce sobre o corpus), guardar, e uma tela pra ele
+   LER e julgar. Sem opinião ainda — ele aprova o material antes.
+3. **Opinião do dia**: dossiê + estudo novo, com citação conferida contra o corpus.
+4. **Interruptor + toggle**, nascendo desligado.
+5. **Áudio** (já destravado — confirmado ligado em 2026-08-11).
