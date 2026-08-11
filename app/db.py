@@ -1572,6 +1572,14 @@ def obter_draft(data):
     return json.loads(r["payload"]) if r and r["payload"] else None
 
 
+def listar_drafts():
+    """Todos os rascunhos (1 por dia). Usado pela limpeza do estoque — o estudo do dia
+    já saiu da reserva e só existe aqui."""
+    with _conn() as c:
+        rows = c.execute("SELECT payload FROM daily_drafts").fetchall()
+    return [json.loads(r["payload"]) for r in rows if r["payload"]]
+
+
 def obter_draft_por_token(token):
     if not token:
         return None
@@ -1603,6 +1611,20 @@ def registrar_digest(art, conteudo, tmeta=None, data=None):
              art.get("doi", ""), art.get("fonte", ""), art.get("url", ""),
              datetime.now().isoformat()),
         )
+
+
+def listar_digests():
+    """Todo o arquivo do portal. Usado pela limpeza (correção retroativa do texto)."""
+    with _conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM digests").fetchall()]
+
+
+def atualizar_digest_resumo(data, tema_slug, resumo):
+    """Reescreve o resumo de UM digest publicado. A chave é (data, tema_slug), a mesma
+    do upsert em `registrar_digest`."""
+    with _conn() as c:
+        c.execute("UPDATE digests SET resumo=? WHERE data=? AND tema_slug=?",
+                  (resumo, data, tema_slug))
 
 
 def digest_do_dia(data):

@@ -1017,7 +1017,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             elif acao == "limpar_nome":
                 try:
                     import limpeza
-                    msg = f"Estoque: {limpeza.limpar_estoque()} resumo(s) sem o nome no cabeçalho."
+                    r = limpeza.limpar_estoque()
+                    msg = (f"Nome removido: {r['reserva']} na reserva, {r['rascunho']} no "
+                           f"rascunho do dia, {r['portal']} no portal.")
                 except Exception as e:
                     print(f"[limpeza] erro: {e}", flush=True); msg = "Falha ao limpar o estoque (ver logs)."
             elif acao == "backfill_tags":

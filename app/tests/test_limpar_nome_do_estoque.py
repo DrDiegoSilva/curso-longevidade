@@ -83,8 +83,8 @@ class TestLimparOEstoque(unittest.TestCase):
         sujo = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "T", "resumo": REAL})
         limpo = self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "T2",
                                         "resumo": "sem endereçamento"})
-        n = self.lp.limpar_estoque()
-        self.assertEqual(n, 1)                                   # só o sujo contou
+        r = self.lp.limpar_estoque()
+        self.assertEqual(r["reserva"], 1)                        # só o sujo contou
         self.assertNotIn("Diego", self.db.obter_reserva(sujo)["resumo"])
         self.assertEqual(self.db.obter_reserva(limpo)["resumo"], "sem endereçamento")
 
@@ -97,11 +97,47 @@ class TestLimparOEstoque(unittest.TestCase):
 
     def test_rodar_de_novo_nao_conta_nada(self):
         self.db.salvar_reserva({"tema": "Obesidade", "titulo_pt": "T", "resumo": REAL})
-        self.assertEqual(self.lp.limpar_estoque(), 1)
-        self.assertEqual(self.lp.limpar_estoque(), 0)             # idempotente
+        self.assertEqual(self.lp.limpar_estoque()["reserva"], 1)
+        self.assertEqual(self.lp.limpar_estoque()["reserva"], 0)   # idempotente
 
     def test_estoque_vazio_nao_explode(self):
-        self.assertEqual(self.lp.limpar_estoque(), 0)
+        self.assertEqual(self.lp.limpar_estoque(),
+                         {"reserva": 0, "rascunho": 0, "portal": 0})
+
+    def test_limpa_o_RASCUNHO_do_dia(self):
+        """O buraco que deixou o nome sair em 2026-08-11: o estudo do dia JÁ tinha saído
+        da reserva e virado rascunho quando o Diego apertou o botão — a limpeza não o via."""
+        self.db.salvar_draft("2026-08-12", "tok", "DRAFT",
+                             {"data": "2026-08-12", "review_token": "tok",
+                              "status": "DRAFT", "resumo": REAL, "artigo": {"tema": "Obesidade"}})
+        r = self.lp.limpar_estoque()
+        self.assertEqual(r["rascunho"], 1)
+        self.assertNotIn("Diego", self.db.obter_draft("2026-08-12")["resumo"])
+
+    def test_limpa_o_PORTAL_retroativamente(self):
+        """O estudo já enviado fica no arquivo do portal com o nome. O PDF que foi pro
+        WhatsApp não muda, mas a página, sim."""
+        self.db.registrar_digest({"tema": "Obesidade", "titulo": "orig", "doi": "10.1/x",
+                                  "fonte": "NEJM", "url": ""},
+                                 {"titulo_pt": "T", "resumo": REAL, "gancho": "", "grafico": None},
+                                 None, data="2026-08-11")
+        r = self.lp.limpar_estoque()
+        self.assertEqual(r["portal"], 1)
+        self.assertNotIn("Diego", self.db.obter("obesidade", "2026-08-11")["resumo"])
+
+    def test_rascunho_sem_resumo_nao_explode(self):
+        self.db.salvar_draft("2026-08-13", "t2", "DRAFT", {"data": "2026-08-13"})
+        self.assertEqual(self.lp.limpar_estoque()["rascunho"], 0)
+
+    def test_o_rascunho_limpo_mantem_token_e_status(self):
+        """Reescrever o payload não pode quebrar o link /revisar que o Diego tem no zap."""
+        self.db.salvar_draft("2026-08-12", "tok-vivo", "APPROVED",
+                             {"data": "2026-08-12", "review_token": "tok-vivo",
+                              "status": "APPROVED", "resumo": REAL, "artigo": {}})
+        self.lp.limpar_estoque()
+        d = self.db.obter_draft_por_token("tok-vivo")
+        self.assertIsNotNone(d, "o token do link do WhatsApp precisa continuar valendo")
+        self.assertEqual(d["status"], "APPROVED")
 
 
 if __name__ == "__main__":
