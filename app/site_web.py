@@ -200,6 +200,20 @@ input[type=text],input[type=password],input[type=tel]{width:100%;background:rgba
 .temachip:hover{color:var(--creme);border-color:rgba(201,162,39,.35)}
 .temachip.on{color:var(--ouro2);background:rgba(201,162,39,.15);border-color:rgba(201,162,39,.38)}
 .temachip b{font-family:var(--mono);font-weight:700}
+/* Reserva em cards por tema (acordeão exclusivo nativo: <details name>) */
+.temacard{border:1px solid var(--line);border-radius:12px;margin:10px 0;background:rgba(255,255,255,.02);
+      overflow:hidden}
+.temacard[open]{border-color:rgba(201,162,39,.32);background:rgba(201,162,39,.04)}
+.temacard>summary{cursor:pointer;list-style:none;padding:14px 16px;font-family:var(--ui);
+      font-size:14.5px;color:var(--creme);display:flex;align-items:center;gap:10px;transition:.15s}
+.temacard>summary::-webkit-details-marker{display:none}
+.temacard>summary:hover{color:var(--ouro2)}
+.temacard>summary::after{content:"▸";margin-left:auto;color:var(--muted);transition:transform .18s}
+.temacard[open]>summary::after{transform:rotate(90deg)}
+.temacard .cnt{font-family:var(--mono);font-size:12.5px;color:var(--muted);
+      background:rgba(255,255,255,.06);border-radius:100px;padding:2px 9px}
+.temacard[open] .cnt{color:var(--ouro2);background:rgba(201,162,39,.15)}
+.temacard-corpo{padding:0 16px 14px}
 .cacts{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
 .scorechip{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 9px;border-radius:100px;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums}
 .scorechip.hi{background:linear-gradient(180deg,var(--score-hi-bg1),var(--score-hi-bg2));color:var(--score-hi-tx);border:1px solid var(--score-hi-bd)}
@@ -1477,6 +1491,49 @@ def _curadoria_chips(candidatos, token, tema=""):
     return f'<div class="temachips">{"".join(chips)}</div>'
 
 
+def _curadoria_reserva_cards(prontos, resto, token):
+    """Reserva agrupada em cards por tema — tema no nível de cima, status dentro.
+
+    Antes eram ~51 itens numa lista corrida (medido em produção): scroll infinito e
+    nenhuma noção de onde o estoque está seco.
+
+    `<details name="reserva-tema">` faz o navegador tratar os cards como acordeão
+    EXCLUSIVO — abrir um fecha o anterior — sem uma linha de JavaScript. Navegador
+    antigo ignora o `name` e vira acordeão comum: degrada, não quebra.
+
+    Tema com 0 aparece mesmo assim, igual aos chips da Triagem: é justamente o card
+    vazio que mostra onde falta varredura.
+    """
+    porTema = {}
+    for r in prontos:
+        porTema.setdefault(r.get("tema") or "—", ([], []))[0].append(r)
+    for r in resto:
+        porTema.setdefault(r.get("tema") or "—", ([], []))[1].append(r)
+    temas = _CUR_ORDEM + [t for t in porTema if t not in _CUR_ORDEM]
+
+    cards = []
+    for t in temas:
+        ok, fora = porTema.get(t, ([], []))
+        total = len(ok) + len(fora)
+        corpo = ""
+        if ok:
+            corpo += (f'<div class="sectag">Prontos · {len(ok)}</div>'
+                      + "".join(_curadoria_reserva_item(r, token) for r in ok))
+        if fora:
+            # "Fora do estoque" (neutro) e não "Já enviados": a maior parte desse grupo
+            # numa instalação saudável é `agendado`, que ainda vai sair.
+            corpo += (f'<div class="sectag" style="margin-top:18px">📦 Fora do estoque · '
+                      f'{len(fora)}</div>'
+                      + "".join(_curadoria_reserva_item(r, token) for r in fora))
+        if not corpo:
+            corpo = '<p class="hint">Nada neste tema. Rode a varredura ou priorize na Triagem.</p>'
+        cards.append(
+            f'<details name="reserva-tema" class="temacard">'
+            f'<summary>{_CUR_EMOJI.get(t, "•")} {_esc(t)} <span class="cnt">{total}</span></summary>'
+            f'<div class="temacard-corpo">{corpo}</div></details>')
+    return "".join(cards)
+
+
 def _curadoria_reserva_item(r, token):
     """Item da Reserva: título + <details> pra editar/remover (comportamento original)."""
     tok, rid = _esc(token), _esc(r.get("id"))
@@ -1582,13 +1639,10 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
 
     if aba == "reserva":
-        corpo_aba = "".join(_curadoria_reserva_item(r, token) for r in prontos)
-        if resto_reserva:
-            corpo_aba += (f'<div class="sectag" style="margin-top:24px">📦 Fora do estoque · '
-                          f'{len(resto_reserva)}</div>'
-                          + "".join(_curadoria_reserva_item(r, token) for r in resto_reserva))
-        corpo_aba = corpo_aba or ('<p class="hint">Reserva vazia. Priorize candidatos na '
-                                  'Triagem — os resumos são gerados automaticamente à noite.</p>')
+        corpo_aba = (_curadoria_reserva_cards(prontos, resto_reserva, token)
+                     if (prontos or resto_reserva) else
+                     '<p class="hint">Reserva vazia. Priorize candidatos na '
+                     'Triagem — os resumos são gerados automaticamente à noite.</p>')
     elif aba == "classicos":
         lista = "".join(_curadoria_item(c, token, "classicos", "") for c in cl_cands)
         banco = "".join(
