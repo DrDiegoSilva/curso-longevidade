@@ -1849,8 +1849,8 @@ def trilha_painel():
 
 # ---------------------------------------------------------------- ia_uso
 def registrar_ia_uso(acao, modelo, tokens_in, tokens_out=0, chamadas=1):
-    """Uma linha por chamada paga. Guarda so o CRU (unidades); dinheiro e calculado na
-    leitura por `ia_custo.custo_usd`, pra preco errado virar recalculo e nao perda."""
+    """Uma linha por chamada paga. Guarda só o CRU (unidades); dinheiro é calculado na
+    leitura por `ia_custo.custo_usd`, pra preço errado virar recálculo e não perda."""
     import secrets
     from datetime import datetime
     with _conn() as c:
@@ -1865,6 +1865,7 @@ def listar_ia_uso():
     with _conn() as c:
         return [dict(r) for r in
                 c.execute("SELECT * FROM ia_uso ORDER BY quando DESC").fetchall()]
+
 
 def trilha_listar_pecas():
     """Todas as peças, em ordem. Alimenta a prévia do admin."""

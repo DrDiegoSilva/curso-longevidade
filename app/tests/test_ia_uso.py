@@ -3,8 +3,6 @@
 Pedido do Diego (2026-08-12): saber quanto custa cada coisa pra repassar na precificação.
 O sistema tem só DOIS pontos pagos — `resumo_diario.claude()` e `audio.narrar()` —, então
 instrumentar os dois mede tudo. Standalone: python3 app/tests/test_ia_uso.py"""
-import io
-import json
 import os
 import re
 import shutil
@@ -72,6 +70,22 @@ class TestTabelaIaUso(unittest.TestCase):
     def test_chamadas_tem_padrao_um(self):
         self.db.registrar_ia_uso("kit", "claude-sonnet-4-6", 5, 5)
         self.assertEqual(self.db.listar_ia_uso()[0]["chamadas"], 1)
+
+    def test_lista_ordem_desc_mais_novo_primeiro(self):
+        """listar_ia_uso promete ordenacao DESC (mais novo primeiro).
+        Força timestamps distintos via UPDATE para testar a ordem."""
+        self.db.registrar_ia_uso("dossie", "claude-sonnet-4-6", 1, 1)
+        self.db.registrar_ia_uso("kit", "claude-sonnet-4-6", 2, 2)
+        # Força timestamps distintos: a primeira fica mais velha, a segunda mais nova
+        with self.db._conn() as c:
+            c.execute("UPDATE ia_uso SET quando=? WHERE acao=?",
+                      ("2026-08-12T10:00:00.000000", "dossie"))
+            c.execute("UPDATE ia_uso SET quando=? WHERE acao=?",
+                      ("2026-08-12T10:00:01.000000", "kit"))
+        linhas = self.db.listar_ia_uso()
+        # Mais recente (kit) deve estar PRIMEIRO
+        self.assertEqual(linhas[0]["acao"], "kit")
+        self.assertEqual(linhas[1]["acao"], "dossie")
 
 
 class TestTodaTabelaTemRls(unittest.TestCase):
