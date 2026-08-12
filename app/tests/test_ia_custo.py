@@ -86,6 +86,21 @@ class TestOverrideDeEnv(unittest.TestCase):
         importlib.reload(config)
         self.assertAlmostEqual(config.USD_BRL, 6.25)
 
+    def test_entrada_valida_aplica_mesmo_com_entrada_ruim_no_mesmo_json(self):
+        """Uma entrada ruim não pode engolir as irmãs válidas. Testa ambas as ordens."""
+        import importlib, config, ia_custo
+        # Ordem 1: entrada ruim ANTES da válida
+        os.environ["DSCURSO_PRECOS_IA"] = '{"modelo-ruim": [1.0], "claude-sonnet-4-6": [9.0, 90.0]}'
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.assertAlmostEqual(ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0), 9.0)
+
+        # Ordem 2: entrada ruim DEPOIS da válida
+        os.environ["DSCURSO_PRECOS_IA"] = '{"claude-sonnet-4-6": [9.0, 90.0], "modelo-ruim": [1.0]}'
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.assertAlmostEqual(ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0), 9.0)
+
 
 if __name__ == "__main__":
     unittest.main()

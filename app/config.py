@@ -233,10 +233,16 @@ def _precos_ia():
     bruto = os.environ.get("DSCURSO_PRECOS_IA")
     if bruto:
         try:
-            for k, v in (json.loads(bruto) or {}).items():
+            parsed = json.loads(bruto) or {}
+        except Exception as e:      # JSON que nem parseia: cai tudo no padrão
+            print(f"[config] DSCURSO_PRECOS_IA ignorada (JSON inválido: {e})", flush=True)
+            return precos
+        # JSON parseia mas pode ter entradas malformadas. Processa por entrada para isolar erros.
+        for k, v in parsed.items():
+            try:
                 precos[k] = (float(v[0]), float(v[1]))
-        except Exception as e:      # env quebrada não pode derrubar o boot do site
-            print(f"[config] DSCURSO_PRECOS_IA ignorada ({e})", flush=True)
+            except (IndexError, TypeError, ValueError) as e:  # entrada ruim
+                print(f"[config] DSCURSO_PRECOS_IA entrada descartada {k}: {e}", flush=True)
     return precos
 
 
