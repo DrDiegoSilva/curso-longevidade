@@ -1,0 +1,91 @@
+"""Preço de IA -> dinheiro. O ledger guarda TOKENS; o custo é calculado na leitura, então
+preço errado (ou preço que mudou) é recálculo, não perda: a história inteira se revaloriza.
+Standalone: python3 app/tests/test_ia_custo.py"""
+import importlib
+import os
+import sys
+import unittest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+
+class TestCustoUsd(unittest.TestCase):
+    def setUp(self):
+        import config, ia_custo
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.cfg, self.ia = config, ia_custo
+
+    def test_um_milhao_de_tokens_de_entrada_custa_o_preco_de_entrada(self):
+        p_in, _ = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        self.assertAlmostEqual(self.ia.custo_usd("claude-sonnet-4-6", 1_000_000, 0), p_in)
+
+    def test_soma_entrada_e_saida(self):
+        p_in, p_out = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        self.assertAlmostEqual(self.ia.custo_usd("claude-sonnet-4-6", 500_000, 100_000),
+                               p_in / 2 + p_out / 10)
+
+    def test_tts_cobra_por_caractere_na_entrada(self):
+        p_in, _ = self.cfg.PRECOS_IA["tts-1-hd"]
+        self.assertAlmostEqual(self.ia.custo_usd("tts-1-hd", 1_000_000, 0), p_in)
+
+    def test_modelo_sem_preco_devolve_zero_em_vez_de_explodir(self):
+        """Modelo novo não pode derrubar a tela de custos — vira zero e um aviso no log."""
+        self.assertEqual(self.ia.custo_usd("modelo-que-nao-existe", 10_000, 1_000), 0.0)
+
+    def test_zero_tokens_custa_zero(self):
+        self.assertEqual(self.ia.custo_usd("claude-sonnet-4-6", 0, 0), 0.0)
+
+    def test_none_nao_explode(self):
+        self.assertEqual(self.ia.custo_usd("claude-sonnet-4-6", None, None), 0.0)
+
+
+class TestEmBrl(unittest.TestCase):
+    def setUp(self):
+        import config, ia_custo
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.cfg, self.ia = config, ia_custo
+
+    def test_usa_a_cotacao_do_config(self):
+        self.assertAlmostEqual(self.ia.em_brl(2.0), 2.0 * self.cfg.USD_BRL)
+
+
+class TestOverrideDeEnv(unittest.TestCase):
+    """Preço errado tem que dar pra corrigir SEM deploy — é a chave de admin do Diego
+    que está longe, não o código."""
+
+    def setUp(self):
+        self.snap = (os.environ.get("DSCURSO_PRECOS_IA"), os.environ.get("DSCURSO_USD_BRL"))
+
+    def tearDown(self):
+        import importlib, config
+        for k, v in zip(("DSCURSO_PRECOS_IA", "DSCURSO_USD_BRL"), self.snap):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        importlib.reload(config)
+
+    def test_env_troca_o_preco_de_um_modelo(self):
+        import importlib, config, ia_custo
+        os.environ["DSCURSO_PRECOS_IA"] = '{"claude-sonnet-4-6": [9.0, 90.0]}'
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.assertAlmostEqual(ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0), 9.0)
+
+    def test_env_quebrado_cai_no_padrao_em_vez_de_derrubar_o_boot(self):
+        import importlib, config
+        os.environ["DSCURSO_PRECOS_IA"] = "{isso não é json"
+        importlib.reload(config)
+        self.assertIn("claude-sonnet-4-6", config.PRECOS_IA)
+
+    def test_env_troca_a_cotacao_do_dolar(self):
+        import importlib, config
+        os.environ["DSCURSO_USD_BRL"] = "6.25"
+        importlib.reload(config)
+        self.assertAlmostEqual(config.USD_BRL, 6.25)
+
+
+if __name__ == "__main__":
+    unittest.main()
