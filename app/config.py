@@ -233,15 +233,19 @@ def _precos_ia():
     bruto = os.environ.get("DSCURSO_PRECOS_IA")
     if bruto:
         try:
-            parsed = json.loads(bruto) or {}
+            parsed = json.loads(bruto)
         except Exception as e:      # JSON que nem parseia: cai tudo no padrão
             print(f"[config] DSCURSO_PRECOS_IA ignorada (JSON inválido: {e})", flush=True)
             return precos
-        # JSON parseia mas pode ter entradas malformadas. Processa por entrada para isolar erros.
+        # JSON deve ser um objeto {modelo: [entrada, saida]}
+        if not isinstance(parsed, dict):
+            print(f"[config] DSCURSO_PRECOS_IA ignorada (esperava objeto, obteve {type(parsed).__name__})", flush=True)
+            return precos
+        # JSON parseia e é objeto, mas pode ter entradas malformadas. Processa por entrada para isolar erros.
         for k, v in parsed.items():
             try:
                 precos[k] = (float(v[0]), float(v[1]))
-            except (IndexError, TypeError, ValueError) as e:  # entrada ruim
+            except Exception as e:  # entrada ruim — qualquer erro (IndexError, KeyError, TypeError, etc.)
                 print(f"[config] DSCURSO_PRECOS_IA entrada descartada {k}: {e}", flush=True)
     return precos
 

@@ -101,6 +101,38 @@ class TestOverrideDeEnv(unittest.TestCase):
         importlib.reload(ia_custo)
         self.assertAlmostEqual(ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0), 9.0)
 
+    def test_json_que_eh_lista_cai_no_padrao(self):
+        """JSON válido mas que é lista, não objeto, deve cair no padrão sem derrubar o boot."""
+        import importlib, config
+        os.environ["DSCURSO_PRECOS_IA"] = '[1, 2]'
+        importlib.reload(config)
+        self.assertIn("claude-sonnet-4-6", config.PRECOS_IA)
+        self.assertEqual(config.PRECOS_IA["claude-sonnet-4-6"], (3.0, 15.0))
+
+    def test_json_que_eh_string_cai_no_padrao(self):
+        """JSON válido mas que é string, não objeto, deve cair no padrão sem derrubar o boot."""
+        import importlib, config
+        os.environ["DSCURSO_PRECOS_IA"] = '"claude"'
+        importlib.reload(config)
+        self.assertIn("claude-sonnet-4-6", config.PRECOS_IA)
+        self.assertEqual(config.PRECOS_IA["claude-sonnet-4-6"], (3.0, 15.0))
+
+    def test_json_que_eh_numero_cai_no_padrao(self):
+        """JSON válido mas que é número, não objeto, deve cair no padrão sem derrubar o boot."""
+        import importlib, config
+        os.environ["DSCURSO_PRECOS_IA"] = '42'
+        importlib.reload(config)
+        self.assertIn("claude-sonnet-4-6", config.PRECOS_IA)
+        self.assertEqual(config.PRECOS_IA["claude-sonnet-4-6"], (3.0, 15.0))
+
+    def test_entrada_com_valor_dict_eh_ignorada(self):
+        """Entrada cujo valor é um dict (em vez de lista) deve ser pulada com log, não derrubar boot."""
+        import importlib, config, ia_custo
+        os.environ["DSCURSO_PRECOS_IA"] = '{"m": {"a": 1}, "claude-sonnet-4-6": [9.0, 90.0]}'
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.assertAlmostEqual(ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0), 9.0)
+
 
 if __name__ == "__main__":
     unittest.main()
