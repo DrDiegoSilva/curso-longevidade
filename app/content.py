@@ -247,3 +247,38 @@ def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_j
         "gancho": gerar_gancho(artigo),
         "grafico": _parse_grafico(gerar_grafico_json(artigo)),
     }
+
+
+# ── Kit editável na tela das 18h ─────────────────────────────────────────────
+_CAMPOS_KIT = ("kit_frase", "kit_paciente", "kit_limites", "kit_reel_titulo",
+               "kit_reel_gancho", "kit_reel_roteiro", "kit_reel_apoio")
+
+
+def kit_do_form(form):
+    """Remonta o kit a partir do formulário do `/revisar`. `form` é o dict de LISTAS do
+    `parse_qs` — as pautas usam nomes repetidos e voltam na ordem.
+
+    Devolve **None** quando o formulário não traz campo de kit nenhum: POST antigo ou
+    forjado não pode APAGAR o kit por omissão. Campos presentes e vazios, sim, são uma
+    decisão dele de apagar.
+
+    Pauta sem título é descartada — é assim que ele tira uma pauta que não presta.
+    """
+    if not any(c in form for c in _CAMPOS_KIT):
+        return None
+    um = lambda k: (form.get(k) or [""])[0]
+    linhas = lambda t: [l.strip() for l in (t or "").splitlines() if l.strip()]
+    tits = form.get("kit_reel_titulo") or []
+    gans = form.get("kit_reel_gancho") or []
+    rots = form.get("kit_reel_roteiro") or []
+    aps = form.get("kit_reel_apoio") or []
+    pega = lambda lst, i: lst[i].strip() if i < len(lst) else ""
+    reels = []
+    for i, t in enumerate(tits):
+        if not (t or "").strip():
+            continue
+        reels.append({"titulo": t.strip(), "gancho": pega(gans, i),
+                      "roteiro": linhas(rots[i] if i < len(rots) else ""),
+                      "apoio": pega(aps, i)})
+    return {"frase": um("kit_frase").strip(), "paciente": um("kit_paciente").strip(),
+            "limites": linhas(um("kit_limites")), "reels": reels}

@@ -737,7 +737,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     audio_on=config.audio_ligado(), areas=areas))
             # Volta pra tela COM o texto (decisão do Diego): ele vê o que ficou salvo,
             # segue editando se quiser e confere o PDF sem reabrir o link do WhatsApp.
-            r2 = draft_store.aplicar(r["data"], g("acao"), g("texto"), area=g("area"))
+            import content
+            r2 = draft_store.aplicar(r["data"], g("acao"), g("texto"), area=g("area"),
+                                     kit=content.kit_do_form(form))
             return self._html(review_web.pagina_revisao(
                 r2, aviso=review_web.aviso_do_feito(g("acao"), r.get("status", "")),
                 audio_on=config.audio_ligado(), areas=areas))

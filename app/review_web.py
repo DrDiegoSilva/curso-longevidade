@@ -23,11 +23,53 @@ def _select_area(tema_atual, areas):
             f'{itens}</select></label></p>')
 
 
+_CX = 'style="width:100%;font-size:14px;padding:6px;margin:2px 0 10px"'
+_ROT = 'style="font-size:13px;color:#6b7a76"'
+
+
+def _campos_kit(gancho_bruto):
+    """O kit de marketing editável. Antes ele ia DIRETO pro PDF do assinante sem passar
+    pelo curador — a tela mostrava menos do que o sistema publicava (Diego, 2026-08-11).
+
+    Recolhido num `<details>`: o resumo clínico continua sendo o que ele lê primeiro, e
+    quem quer mexer na pauta abre. Apagar o título de uma pauta remove a pauta."""
+    esc = _html.escape
+    import content
+    k = content.parse_gancho(gancho_bruto)
+    reels = "".join(
+        f'<div style="border-left:3px solid #d8ddd7;padding-left:10px;margin:12px 0">'
+        f'<label {_ROT}>Título da pauta <small>(apagar remove a pauta)</small></label>'
+        f'<input name="kit_reel_titulo" value="{esc(x.get("titulo",""))}" {_CX}>'
+        f'<label {_ROT}>Gancho (3 primeiros segundos)</label>'
+        f'<input name="kit_reel_gancho" value="{esc(x.get("gancho",""))}" {_CX}>'
+        f'<label {_ROT}>Roteiro — uma linha por passo</label>'
+        f'<textarea name="kit_reel_roteiro" rows="4" {_CX}>'
+        f'{esc(chr(10).join(x.get("roteiro") or []))}</textarea>'
+        f'<label {_ROT}>Dado de apoio</label>'
+        f'<input name="kit_reel_apoio" value="{esc(x.get("apoio",""))}" {_CX}>'
+        f'</div>'
+        for x in (k.get("reels") or []))
+    return (f'<details style="margin:14px 0;border:1px solid #d8ddd7;border-radius:8px;'
+            f'padding:0 12px">'
+            f'<summary style="cursor:pointer;padding:12px 0;font-weight:600">'
+            f'🎬 Kit de redes <small style="font-weight:400;color:#6b7a76">'
+            f'— {len(k.get("reels") or [])} pauta(s); abra pra editar</small></summary>'
+            f'<label {_ROT}>Frase do achado (linguagem de paciente)</label>'
+            f'<input name="kit_frase" value="{esc(k.get("frase",""))}" {_CX}>'
+            f'<label {_ROT}>Como explicar pro paciente</label>'
+            f'<textarea name="kit_paciente" rows="4" {_CX}>{esc(k.get("paciente",""))}</textarea>'
+            f'<label {_ROT}>Limites e ressalvas — uma por linha</label>'
+            f'<textarea name="kit_limites" rows="3" {_CX}>'
+            f'{esc(chr(10).join(k.get("limites") or []))}</textarea>'
+            f'{reels}</details>')
+
+
 def pagina_revisao(r, aviso="", audio_on=False, areas=()):
     esc = _html.escape
     a = r.get("artigo", {})
     tok = esc(r.get("review_token", ""))
     sel_area = _select_area(a.get("tema", ""), areas)
+    kit = _campos_kit(r.get("gancho", ""))
     banner = (f'<div style="background:#e7f5ee;border:1px solid #0f4c3a;color:#0f4c3a;'
               f'padding:10px 12px;border-radius:8px;margin:12px 0">{esc(aviso)}</div>') if aviso else ""
     dica = ('<p style="color:#6b7a76;font-size:13px;margin:4px 0 12px">'
@@ -47,6 +89,7 @@ def pagina_revisao(r, aviso="", audio_on=False, areas=()):
 <form method="post" action="/revisar/{tok}">
 {sel_area}
   <textarea name="texto" rows="16" style="width:100%;font-size:15px">{esc(r.get('resumo',''))}</textarea>
+{kit}
   <p><a href="/pdf/{esc(r.get('data',''))}" target="_blank">📄 Ver PDF</a></p>
   <p style="color:#6b7a76;font-size:13px;margin:10px 0 12px">Se você não mexer em nada,
     este estudo sai <b>automaticamente às 08h</b>. Aprovar salva o texto acima junto.</p>

@@ -64,7 +64,23 @@ def _guardar_texto(r, texto):
     r["pdf_path"] = ""
 
 
-def aplicar(data_iso, acao, texto=None, area=None):
+def _guardar_kit(r, kit):
+    """Grava o kit de marketing editado. `None` = formulário não trouxe kit -> no-op.
+
+    Mexer no kit invalida o preview: senão o "📄 Ver PDF" devolve a versão velha e a
+    edição parece não ter pegado — o mesmo alçapão do texto e da área.
+    """
+    import json
+    if kit is None:
+        return
+    novo = json.dumps(kit, ensure_ascii=False)
+    if novo == (r.get("gancho") or ""):
+        return
+    r["gancho"] = novo
+    r["pdf_path"] = ""
+
+
+def aplicar(data_iso, acao, texto=None, area=None, kit=None):
     """Aplica a decisão do curador. `area` viaja junto com aprovar/editar (o <select>
     da tela de revisão fica dentro do mesmo form dos botões) — vetar o dia não é hora
     de mexer na área."""
@@ -77,10 +93,12 @@ def aplicar(data_iso, acao, texto=None, area=None):
     if acao == "aprovar":
         area_estudo.aplicar_no_rascunho(r, area)
         _guardar_texto(r, texto)
+        _guardar_kit(r, kit)
         r["status"] = "APPROVED"
     elif acao == "editar":
         area_estudo.aplicar_no_rascunho(r, area)
         _guardar_texto(r, texto)
+        _guardar_kit(r, kit)
         r["status"] = "EDITED"
     elif acao == "nao_enviar":
         r["status"] = "SKIPPED"
