@@ -186,5 +186,61 @@ class TestClaudeGravaOUso(unittest.TestCase):
         self.assertEqual(linhas[0]["tokens_in"], 500)
 
 
+class _IaCustoQuebrado:
+    """Substituto de `ia_custo` que quebra na chamada — simula import ok mas módulo
+    com o método renomeado/corrompido."""
+    def registrar(self, *a, **k):
+        raise ImportError("ia_custo quebrado de propósito")
+
+
+class TestFinallyDaContabilidadeEProtegido(unittest.TestCase):
+    """O `import ia_custo` + a chamada `ia_custo.registrar(...)` dentro do `finally` de
+    `claude()` também precisam da própria guarda: se `ia_custo` quebrar um dia (erro de
+    sintaxe, atributo renomeado...), isso não pode nem estourar uma geração saudável nem
+    mascarar a exceção real do laço."""
+
+    def setUp(self):
+        self.snap = _snapshot_env()
+        self.tmp = tempfile.mkdtemp()
+        self.db = _reload_db(self.tmp)
+        import importlib, resumo_diario
+        importlib.reload(resumo_diario)
+        self.rd = resumo_diario
+        self._ia_custo_original = sys.modules.get("ia_custo")
+        self.addCleanup(self._restaurar_ia_custo)
+        sys.modules["ia_custo"] = _IaCustoQuebrado()
+
+    def tearDown(self):
+        _restore_db(self.snap)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _restaurar_ia_custo(self):
+        if self._ia_custo_original is not None:
+            sys.modules["ia_custo"] = self._ia_custo_original
+        else:
+            sys.modules.pop("ia_custo", None)
+
+    def test_geracao_saudavel_nao_estoura_por_causa_do_ia_custo_quebrado(self):
+        self.rd._post = lambda body: _resposta_api("saiu mesmo com ia_custo quebrado")
+        self.assertEqual(
+            self.rd.claude(self.rd.SONNET, "oi", acao="kit"),
+            "saiu mesmo com ia_custo quebrado")
+
+    def test_excecao_original_do_laco_nao_e_mascarada_pela_do_ia_custo(self):
+        """A prova que importa: quem sobe pro chamador é o RuntimeError da rede, não o
+        ImportError da contabilidade quebrada."""
+        chamadas = {"n": 0}
+
+        def _post(body):
+            chamadas["n"] += 1
+            if chamadas["n"] == 1:
+                return _resposta_api("p1", 500, 50, stop="max_tokens")
+            raise RuntimeError("rede caiu")
+
+        self.rd._post = _post
+        with self.assertRaises(RuntimeError):
+            self.rd.claude(self.rd.SONNET, "oi", acao="boletim")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,6 +38,8 @@ def registrar(acao, modelo, unidades_in, unidades_out=0, chamadas=1):
     try:
         import db
         db.init()
+        # `acao or "desconhecido"`: claude() já normaliza antes de chamar, mas repetimos
+        # aqui como defesa para um futuro chamador direto que esqueça de normalizar.
         db.registrar_ia_uso(acao or "desconhecido", modelo, unidades_in,
                             unidades_out, chamadas)
     except Exception as e:

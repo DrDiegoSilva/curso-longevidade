@@ -86,8 +86,13 @@ def claude(model, prompt, system="", max_tokens=2000, cont=4, acao=""):
         # `finally`: se a 2ª ida estourar, a 1ª já foi cobrada pela Anthropic do mesmo
         # jeito — o que foi pago tem que aparecer na conta.
         if idas:
-            import ia_custo
-            ia_custo.registrar(acao or "desconhecido", model, tin, tout, idas)
+            try:
+                import ia_custo
+                ia_custo.registrar(acao or "desconhecido", model, tin, tout, idas)
+            except Exception as e:
+                # se ia_custo quebrar (import, atributo...), a contabilidade não pode
+                # nem estourar geração saudável nem mascarar uma exceção real do laço.
+                print(f"[custo] não registrei o uso ({acao or 'desconhecido'}): {e}", flush=True)
     return "".join(partes).strip()
 
 # ─── Z-API ────────────────────────────────────────────────────
