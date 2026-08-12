@@ -111,6 +111,17 @@ aviso *"fora da memória — refaça o dossiê (🧠) pra ver o efeito nas afirm
 e não sumir: o dossiê guardado ainda é o antigo, e esconder a linha faria parecer que a
 memória já foi reconstruída sem aquele estudo.
 
+**d) "🧠 Refazer só este tema"** — botão no cartão de cada tema. Observação do Diego:
+excluir obriga a reconstruir, e o botão das Ferramentas refaz **os cinco temas** (≈ 10
+chamadas Sonnet por tema). Refazer só o tema mexido corta o custo por ~5. É quase de graça
+de implementar: `dossie.reconstruir_todos(temas=[t])` já aceita a lista, e a trava
+`_LOCK` já impede dois cliques simultâneos. Mesmo desenho assíncrono do botão atual
+(thread + aviso no WhatsApp), porque a reconstrução leva minutos.
+
+> Quanto custa, hoje, por estimativa: um tema grande (~250 estudos, 10 lotes + fusão) sai
+> por ~US$ 0,7 (≈ R$ 4); os cinco, R$ 10-13. **É estimativa, não medição** — medir de
+> verdade é o item 40 do backlog (tela de custos), projeto separado.
+
 ## O casamento do título
 
 O dossiê guarda o título **como a IA escreveu** — ela pode ter traduzido ou truncado. A
