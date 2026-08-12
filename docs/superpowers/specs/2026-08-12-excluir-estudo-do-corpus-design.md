@@ -214,8 +214,26 @@ caractere). Consequência que vale o desenho: **preço errado ou preço que mudo
 recálculo, não perda** — a história inteira se revaloriza sozinha. Se o custo fosse
 congelado na linha, um preço errado hoje contaminaria os números para sempre.
 
-⚠️ Os valores de `PRECOS_IA` nascem como minha melhor leitura e **precisam ser conferidos
-pelo Diego** na página de preços da Anthropic e da OpenAI. Errar o preço erra a conta toda.
+**Por que não pedir o valor pronto para a API** (pergunta do Diego, 2026-08-12): a resposta
+das mensagens traz `usage` em tokens e **nenhum campo de dinheiro** — custo é sempre
+tokens × preço. Existe a Admin API de uso/custo da Anthropic (e equivalente na OpenAI),
+que devolve o valor **realmente faturado**, mas ela (1) exige chave de *admin da
+organização*, diferente da que o app usa, e (2) vem agregada por dia e modelo: sabe que
+gastou US$ 12 de Sonnet na terça, não sabe o que é um dossiê. A quebra por ação — que é o
+que serve para precificar — só o ledger dá. Conferir um contra o outro (ledger × fatura)
+é bom, e fica para o item 40, junto da tela.
+
+**Cotação do dólar fixa**: `config.USD_BRL` (padrão 5,50, override por
+`DSCURSO_USD_BRL`), e a tela futura sempre mostra qual cotação usou. Média basta: a
+decisão que esse número sustenta não muda com 3% de câmbio.
+
+⚠️ `PRECOS_IA` e `USD_BRL` nascem como minha melhor leitura e **precisam ser conferidos
+pelo Diego**. Ambos com override por variável de ambiente, para corrigir sem deploy.
+
+⚠️ **Se um dia entrar prompt caching**, `usage` ganha `cache_creation_input_tokens` e
+`cache_read_input_tokens`, que têm preço próprio; sem registrá-los o custo medido passa a
+mentir. Hoje o corpo da requisição não usa cache, então ficam de fora — mas quem ligar
+cache tem que voltar aqui.
 
 **A ação viaja explícita**: `claude(..., acao="dossie")`, um parâmetro novo com padrão
 `""`. São ~15 pontos de chamada, uma palavra em cada. Preferi explícito a inferir pela
