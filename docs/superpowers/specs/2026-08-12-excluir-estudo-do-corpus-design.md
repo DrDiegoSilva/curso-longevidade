@@ -1,4 +1,4 @@
-# Item 33 — tirar um estudo da memória (dossiê corrigível, parte A)
+# Item 33 — tirar um estudo da memória (parte A) + o ledger de custos de IA
 
 **Data:** 2026-08-12
 **Base:** `origin/main` = `ba3c17b`
@@ -176,10 +176,81 @@ TDD, `unittest`, `cd app && python3 -m unittest discover -s tests`.
 Fechando: quebrar cada guarda de propósito e conferir que a suíte cai. Suíte verde sozinha
 não é prova.
 
+---
+
+# Parte 2 — o ledger de custos (medição, sem tela)
+
+Pedido do Diego no meio desta spec, ao ver que excluir obriga a reconstruir: *"já coloca na
+tela tbm os possíveis custos de cada atualização de estudo, áudio, dossiê e tal pra eu ter
+uma noção dos custos ou uma tela com custos que já tivemos pra poder saber repassar na
+precificação"*. **É insumo de preço.**
+
+Decisão dele (2026-08-12): o **ledger entra junto com a exclusão**; a tela `/admin/custos`
+fica para depois (item 40 do backlog). Assim o histórico começa a acumular hoje, sem
+atrasar esta entrega — mas não há consulta antes da tela existir.
+
+**Ordem que importa:** medir antes de estimar. Número de custo em botão, antes do ledger,
+é chute — inclusive os R$ 4 que eu estimei acima.
+
+## O achado que dimensiona
+
+Só existem **dois** pontos de saída pagos no sistema inteiro:
+
+| Funil | Onde | O que a resposta traz |
+|---|---|---|
+| Anthropic | `resumo_diario.claude()` (`resumo_diario.py:47`) | `usage.input_tokens` / `output_tokens` — **hoje jogados fora** |
+| OpenAI TTS | `audio.narrar()` (`audio.py:44`) | nada; a cobrança é por caractere, e `len(texto)` já basta |
+
+Dossiê, resumo do dia, kit, triagem, perguntas, gancho, título, gráfico e o roteiro do
+áudio passam todos pelo primeiro. Instrumentar os dois mede o sistema inteiro.
+
+## Desenho
+
+**Tabela `ia_uso`** — `id, quando, acao, modelo, tokens_in, tokens_out, chamadas`.
+
+**Guarda o cru, calcula o custo na leitura.** A tabela guarda tokens; o preço vive em
+`config.PRECOS_IA` (US$ por 1M de unidades, por modelo — para o TTS a unidade é o
+caractere). Consequência que vale o desenho: **preço errado ou preço que mudou é
+recálculo, não perda** — a história inteira se revaloriza sozinha. Se o custo fosse
+congelado na linha, um preço errado hoje contaminaria os números para sempre.
+
+⚠️ Os valores de `PRECOS_IA` nascem como minha melhor leitura e **precisam ser conferidos
+pelo Diego** na página de preços da Anthropic e da OpenAI. Errar o preço erra a conta toda.
+
+**A ação viaja explícita**: `claude(..., acao="dossie")`, um parâmetro novo com padrão
+`""`. São ~15 pontos de chamada, uma palavra em cada. Preferi explícito a inferir pela
+pilha de chamadas: se eu esquecer um ponto, ele cai num balde `"desconhecido"` que
+**aparece na conta** — inferência mágica erraria calada.
+
+Os rótulos, fixados agora para a tela futura não nascer com sinônimos: `dossie`,
+`resumo_estudo`, `boletim`, `triagem`, `perguntas`, `kit`, `titulo`, `grafico`,
+`audio_roteiro`, `audio_tts`.
+
+**Uma linha por chamada de `claude()`**, somando o laço de continuação (o `cont=4` pode
+render 5 idas à API numa chamada só; `chamadas` guarda quantas foram).
+
+**Falha de contabilidade nunca derruba geração.** Todo o registro vai em `try/except` com
+`print` no log: perder uma linha de custo é aceitável, perder o estudo do dia não é.
+
+## Testes da parte 2
+
+- `custo_usd(modelo, tin, tout)` — cálculo por modelo, modelo desconhecido não explode;
+- `claude()` **grava** o uso: o POST vira uma função pequena (`_post`) que o teste
+  substitui, e aí dá pra provar o registro sem rede — inclusive que o laço de continuação
+  vira **uma linha com `chamadas=2`**, não duas linhas;
+- `narrar()` grava **o que foi mandado de verdade**: o código corta em 4000 caracteres
+  antes de enviar (`audio.py:47`), então o cobrado é o texto cortado, não o original —
+  teste com texto de 5000 caracteres tem que registrar 4000;
+- banco fora do ar não derruba a geração: `registrar_uso` levanta, `claude()` devolve o
+  texto assim mesmo.
+
 ## Fora de escopo
 
 - (B) editar a afirmação e fixar o bloco contra a reconstrução — spec própria, depois
   desta no ar;
 - a opinião do dia (2b), o interruptor (2c) e o áudio (3) do item 33;
 - apagar o estudo do banco. Exclusão é reversível por desenho: o abstract fica lá, só sai
-  do que é lido.
+  do que é lido;
+- **a tela `/admin/custos`** e a estimativa de custo nos botões — item 40 do backlog. Aqui
+  entra só a medição, por decisão do Diego. Enquanto a tela não existe, o gasto se lê por
+  consulta ao banco.
