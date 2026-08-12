@@ -102,5 +102,89 @@ class TestTodaTabelaTemRls(unittest.TestCase):
         self.assertEqual(criadas - set(db._TABELAS), set())
 
 
+def _resposta_api(texto="ok", tin=100, tout=20, stop="end_turn"):
+    return {"content": [{"type": "text", "text": texto}],
+            "stop_reason": stop,
+            "usage": {"input_tokens": tin, "output_tokens": tout}}
+
+
+class TestClaudeGravaOUso(unittest.TestCase):
+    """O POST vira uma função pequena (`_post`) só pra o teste poder provar a
+    contabilidade sem rede — o que importa aqui é o efeito no banco, não o HTTP."""
+
+    def setUp(self):
+        self.snap = _snapshot_env()
+        self.tmp = tempfile.mkdtemp()
+        self.db = _reload_db(self.tmp)
+        import importlib, resumo_diario
+        importlib.reload(resumo_diario)
+        self.rd = resumo_diario
+
+    def tearDown(self):
+        _restore_db(self.snap)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_uma_chamada_vira_uma_linha_com_a_acao_e_o_modelo(self):
+        self.rd._post = lambda body: _resposta_api(tin=1234, tout=56)
+        self.rd.claude(self.rd.SONNET, "oi", acao="dossie")
+        linhas = self.db.listar_ia_uso()
+        self.assertEqual(len(linhas), 1)
+        self.assertEqual(linhas[0]["acao"], "dossie")
+        self.assertEqual(linhas[0]["modelo"], self.rd.SONNET)
+        self.assertEqual(linhas[0]["tokens_in"], 1234)
+        self.assertEqual(linhas[0]["tokens_out"], 56)
+        self.assertEqual(linhas[0]["chamadas"], 1)
+
+    def test_laco_de_continuacao_vira_UMA_linha_somada(self):
+        """`cont=4` pode render 5 idas à API numa chamada só. Duas linhas fariam a tela
+        contar duas 'ações' onde houve uma."""
+        respostas = [_resposta_api("parte1", 100, 10, stop="max_tokens"),
+                     _resposta_api("parte2", 200, 20)]
+        self.rd._post = lambda body: respostas.pop(0)
+        self.rd.claude(self.rd.SONNET, "oi", acao="boletim")
+        linhas = self.db.listar_ia_uso()
+        self.assertEqual(len(linhas), 1)
+        self.assertEqual(linhas[0]["tokens_in"], 300)
+        self.assertEqual(linhas[0]["tokens_out"], 30)
+        self.assertEqual(linhas[0]["chamadas"], 2)
+
+    def test_sem_acao_cai_no_balde_desconhecido(self):
+        """Ponto de chamada que eu esquecer de rotular tem que APARECER na conta, não
+        sumir dela."""
+        self.rd._post = lambda body: _resposta_api()
+        self.rd.claude(self.rd.HAIKU, "oi")
+        self.assertEqual(self.db.listar_ia_uso()[0]["acao"], "desconhecido")
+
+    def test_o_texto_devolvido_continua_o_mesmo(self):
+        self.rd._post = lambda body: _resposta_api("resposta da IA")
+        self.assertEqual(self.rd.claude(self.rd.SONNET, "oi", acao="kit"), "resposta da IA")
+
+    def test_banco_fora_do_ar_nao_derruba_a_geracao(self):
+        """Perder uma linha de custo é aceitável; perder o estudo do dia não é."""
+        import db
+        def explode(*a, **k):
+            raise RuntimeError("banco caiu")
+        db.registrar_ia_uso = explode
+        self.rd._post = lambda body: _resposta_api("saiu mesmo assim")
+        self.assertEqual(self.rd.claude(self.rd.SONNET, "oi", acao="kit"), "saiu mesmo assim")
+
+    def test_falha_no_meio_do_laco_preserva_o_que_ja_foi_pago(self):
+        """A 1ª ida já foi cobrada pela Anthropic mesmo que a 2ª estoure."""
+        chamadas = {"n": 0}
+
+        def _post(body):
+            chamadas["n"] += 1
+            if chamadas["n"] == 1:
+                return _resposta_api("p1", 500, 50, stop="max_tokens")
+            raise RuntimeError("rede caiu")
+
+        self.rd._post = _post
+        with self.assertRaises(RuntimeError):
+            self.rd.claude(self.rd.SONNET, "oi", acao="boletim")
+        linhas = self.db.listar_ia_uso()
+        self.assertEqual(len(linhas), 1)
+        self.assertEqual(linhas[0]["tokens_in"], 500)
+
+
 if __name__ == "__main__":
     unittest.main()

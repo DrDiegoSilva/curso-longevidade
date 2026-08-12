@@ -30,3 +30,15 @@ def custo_usd(modelo, tokens_in, tokens_out=0):
 
 def em_brl(usd):
     return (usd or 0.0) * config.USD_BRL
+
+
+def registrar(acao, modelo, unidades_in, unidades_out=0, chamadas=1):
+    """Grava uma linha do ledger. NUNCA levanta: perder uma linha de custo é aceitável,
+    perder o estudo do dia não é."""
+    try:
+        import db
+        db.init()
+        db.registrar_ia_uso(acao or "desconhecido", modelo, unidades_in,
+                            unidades_out, chamadas)
+    except Exception as e:
+        print(f"[custo] não registrei o uso ({acao}): {e}", flush=True)

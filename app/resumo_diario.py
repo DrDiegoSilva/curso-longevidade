@@ -44,28 +44,50 @@ sys.stdout = sys.stderr = _Tee(sys.stdout, _logf)
 print(f"\n{'#'*70}\n# RUN {datetime.now():%Y-%m-%d %H:%M:%S}")
 
 # ─── Claude API ───────────────────────────────────────────────
-def claude(model, prompt, system="", max_tokens=2000, cont=4):
+def _post(body):
+    """O POST isolado — é o ponto que os testes substituem pra provar a contabilidade
+    sem rede."""
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=json.dumps(body).encode("utf-8"),
+        method="POST", headers={"x-api-key": KEY, "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"})
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return json.loads(r.read())
+
+
+def claude(model, prompt, system="", max_tokens=2000, cont=4, acao=""):
     """Chama a API. Se a resposta bater o teto de tokens (stop_reason='max_tokens'),
-    continua automaticamente de onde parou — garante que a aula NUNCA é cortada."""
+    continua automaticamente de onde parou — garante que a aula NUNCA é cortada.
+
+    `acao` é o rótulo do ledger de custos (dossie, kit, boletim...). Uma linha por
+    chamada de `claude`, somando o laço de continuação: 5 idas à API são UM trabalho.
+    """
     msgs = [{"role": "user", "content": prompt}]
     partes = []
-    for _ in range(cont + 1):
-        body = {"model": model, "max_tokens": max_tokens, "messages": msgs}
-        if system:
-            body["system"] = system
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages", data=json.dumps(body).encode("utf-8"),
-            method="POST", headers={"x-api-key": KEY, "anthropic-version": "2023-06-01",
-                                    "content-type": "application/json"})
-        with urllib.request.urlopen(req, timeout=180) as r:
-            d = json.loads(r.read())
-        chunk = "".join(b.get("text", "") for b in d.get("content", []))
-        partes.append(chunk)
-        if d.get("stop_reason") != "max_tokens":
-            break  # terminou naturalmente
-        # truncou -> pede continuação exata
-        msgs.append({"role": "assistant", "content": chunk})
-        msgs.append({"role": "user", "content": "Continue EXATAMENTE de onde parou, sem repetir nada nem recomeçar."})
+    tin = tout = idas = 0
+    try:
+        for _ in range(cont + 1):
+            body = {"model": model, "max_tokens": max_tokens, "messages": msgs}
+            if system:
+                body["system"] = system
+            d = _post(body)
+            uso = d.get("usage") or {}
+            tin += int(uso.get("input_tokens") or 0)
+            tout += int(uso.get("output_tokens") or 0)
+            idas += 1
+            chunk = "".join(b.get("text", "") for b in d.get("content", []))
+            partes.append(chunk)
+            if d.get("stop_reason") != "max_tokens":
+                break  # terminou naturalmente
+            # truncou -> pede continuação exata
+            msgs.append({"role": "assistant", "content": chunk})
+            msgs.append({"role": "user", "content": "Continue EXATAMENTE de onde parou, sem repetir nada nem recomeçar."})
+    finally:
+        # `finally`: se a 2ª ida estourar, a 1ª já foi cobrada pela Anthropic do mesmo
+        # jeito — o que foi pago tem que aparecer na conta.
+        if idas:
+            import ia_custo
+            ia_custo.registrar(acao or "desconhecido", model, tin, tout, idas)
     return "".join(partes).strip()
 
 # ─── Z-API ────────────────────────────────────────────────────
