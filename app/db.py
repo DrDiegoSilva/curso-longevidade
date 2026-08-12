@@ -278,6 +278,15 @@ def init():
                 subscriber_id TEXT, automacao_id TEXT, vencimento_ref TEXT, enviado_em TEXT,
                 PRIMARY KEY (subscriber_id, automacao_id, vencimento_ref)
             );
+            CREATE TABLE IF NOT EXISTS ia_uso (
+                id TEXT PRIMARY KEY,
+                quando TEXT,
+                acao TEXT DEFAULT '',
+                modelo TEXT DEFAULT '',
+                tokens_in INTEGER DEFAULT 0,
+                tokens_out INTEGER DEFAULT 0,
+                chamadas INTEGER DEFAULT 1
+            );
             """
         )
     _migrar_colunas()
@@ -296,7 +305,7 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
             "automacoes_renovacao", "avisos_renovacao", "classicos",
             "series", "serie_itens", "dossies",
-            "trilha_pecas", "trilha_progresso", "trilha_envios"]
+            "trilha_pecas", "trilha_progresso", "trilha_envios", "ia_uso"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -1837,6 +1846,25 @@ def trilha_painel():
             "ORDER BY p.proxima_peca DESC").fetchall()
     return [dict(r) for r in rows]
 
+
+# ---------------------------------------------------------------- ia_uso
+def registrar_ia_uso(acao, modelo, tokens_in, tokens_out=0, chamadas=1):
+    """Uma linha por chamada paga. Guarda so o CRU (unidades); dinheiro e calculado na
+    leitura por `ia_custo.custo_usd`, pra preco errado virar recalculo e nao perda."""
+    import secrets
+    from datetime import datetime
+    with _conn() as c:
+        c.execute("""INSERT INTO ia_uso (id,quando,acao,modelo,tokens_in,tokens_out,chamadas)
+                     VALUES (?,?,?,?,?,?,?)""",
+                  (secrets.token_hex(8), datetime.now().isoformat(), acao or "",
+                   modelo or "", int(tokens_in or 0), int(tokens_out or 0),
+                   int(chamadas or 1)))
+
+
+def listar_ia_uso():
+    with _conn() as c:
+        return [dict(r) for r in
+                c.execute("SELECT * FROM ia_uso ORDER BY quando DESC").fetchall()]
 
 def trilha_listar_pecas():
     """Todas as peças, em ordem. Alimenta a prévia do admin."""
