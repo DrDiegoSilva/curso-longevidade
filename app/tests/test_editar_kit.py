@@ -200,3 +200,61 @@ class TestFiacao(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCamposDeFraseQuebramLinha(unittest.TestCase):
+    """Diego, 2026-08-11: *"faz o campo de titulo com scroll pra baixo e nao lateral"*.
+
+    Título, frase do achado e gancho guardam FRASES — num `<input>` de uma linha só, o
+    texto rola pro lado e fica ilegível (pior ainda no celular). Viram `<textarea>`.
+
+    O que isso cria: `textarea` aceita Enter. Um título com quebra de linha estragaria a
+    diagramação do PDF, então esses campos normalizam o espaço em branco na volta.
+    """
+
+    def setUp(self):
+        import content
+        import review_web
+        importlib.reload(content)
+        importlib.reload(review_web)
+        self.c, self.rw = content, review_web
+
+    def _campo(self, html, nome):
+        i = html.find(f'name="{nome}"')
+        self.assertGreater(i, 0, f"campo {nome} não está na tela")
+        return html[html.rfind("<", 0, i):i]
+
+    def test_titulo_frase_e_gancho_sao_caixas_que_quebram_linha(self):
+        html = self.rw.pagina_revisao(_rascunho())
+        for nome in ("kit_frase", "kit_reel_titulo", "kit_reel_gancho"):
+            with self.subTest(campo=nome):
+                self.assertIn("textarea", self._campo(html, nome))
+
+    def test_o_valor_atual_aparece_dentro_da_caixa(self):
+        """`<input value=...>` vira conteúdo do `<textarea>` — trocar a tag sem trocar
+        isso deixaria os campos VAZIOS na tela, e ele perderia o kit ao aprovar."""
+        html = self.rw.pagina_revisao(_rascunho())
+        self.assertIn(">A frase do achado</textarea>", html)
+        self.assertIn(">Pauta 1</textarea>", html)
+        self.assertIn(">Você sabia?</textarea>", html)
+
+    def test_enter_no_titulo_nao_vira_quebra_de_linha_no_kit(self):
+        k = self.c.kit_do_form(_form(kit_reel_titulo=["Pauta\ncom enter"],
+                                     kit_frase=["Frase\nquebrada"],
+                                     kit_reel_gancho=["Gancho\nquebrado"]))
+        self.assertEqual(k["reels"][0]["titulo"], "Pauta com enter")
+        self.assertEqual(k["frase"], "Frase quebrada")
+        self.assertEqual(k["reels"][0]["gancho"], "Gancho quebrado")
+
+    def test_espaco_repetido_tambem_e_normalizado(self):
+        k = self.c.kit_do_form(_form(kit_frase=["  Frase    com   espaco  "]))
+        self.assertEqual(k["frase"], "Frase com espaco")
+
+    def test_o_roteiro_CONTINUA_uma_linha_por_passo(self):
+        """A normalização não pode vazar pro roteiro, onde a quebra é o separador."""
+        k = self.c.kit_do_form(_form(kit_reel_roteiro=["passo a\npasso b"]))
+        self.assertEqual(k["reels"][0]["roteiro"], ["passo a", "passo b"])
+
+    def test_os_limites_CONTINUAM_um_por_linha(self):
+        k = self.c.kit_do_form(_form(kit_limites=["limite 1\nlimite 2"]))
+        self.assertEqual(k["limites"], ["limite 1", "limite 2"])

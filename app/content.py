@@ -268,17 +268,21 @@ def kit_do_form(form):
         return None
     um = lambda k: (form.get(k) or [""])[0]
     linhas = lambda t: [l.strip() for l in (t or "").splitlines() if l.strip()]
+    # Título/frase/gancho são `<textarea>` (quebram linha em vez de rolar pro lado, que
+    # era ilegível no celular) — e textarea aceita Enter. Uma quebra ali estragaria a
+    # diagramação do PDF, então esses campos normalizam o espaço em branco.
+    frase = lambda t: " ".join((t or "").split())
     tits = form.get("kit_reel_titulo") or []
     gans = form.get("kit_reel_gancho") or []
     rots = form.get("kit_reel_roteiro") or []
     aps = form.get("kit_reel_apoio") or []
-    pega = lambda lst, i: lst[i].strip() if i < len(lst) else ""
+    pega = lambda lst, i: frase(lst[i]) if i < len(lst) else ""
     reels = []
     for i, t in enumerate(tits):
         if not (t or "").strip():
             continue
-        reels.append({"titulo": t.strip(), "gancho": pega(gans, i),
+        reels.append({"titulo": frase(t), "gancho": pega(gans, i),
                       "roteiro": linhas(rots[i] if i < len(rots) else ""),
                       "apoio": pega(aps, i)})
-    return {"frase": um("kit_frase").strip(), "paciente": um("kit_paciente").strip(),
+    return {"frase": frase(um("kit_frase")), "paciente": um("kit_paciente").strip(),
             "limites": linhas(um("kit_limites")), "reels": reels}
