@@ -214,6 +214,10 @@ class TestCorpusDoTema(_Base):
         self.db.excluir_digest("obesidade", "2026-07-19", "memoria")
         self.assertEqual(self._titulos(), ["Candidato bom", "Candidato ruim"])
 
+    def test_digest_excluido_de_tudo_tambem_sai_do_corpus(self):
+        self.db.excluir_digest("obesidade", "2026-07-19", "tudo")
+        self.assertEqual(self._titulos(), ["Candidato bom", "Candidato ruim"])
+
     def test_cada_item_carrega_id_e_origem(self):
         itens = {e["titulo"]: e for e in self.dossie.corpus_do_tema("Obesidade", self.db)}
         self.assertEqual(itens["Candidato bom"]["origem"], "candidato")
