@@ -113,6 +113,14 @@ class TestPaginaConfirmar(unittest.TestCase):
         self.assertIn('value="memoria"', html)
         self.assertNotIn('value="tudo"', html)
 
+    def test_devolve_pagina_completa_nao_fragmento(self):
+        """A Task 10 serve isto direto como corpo da resposta HTTP — sem `_pagina(...)`
+        o médico veria a tela de confirmação sem CSS, sem topbar e sem `<head>`, no meio
+        do fluxo que existe justamente pra ele conferir com calma antes de excluir."""
+        html = self.sw.pagina_confirmar_exclusao(self.estudo, "Obesidade", "tok")
+        self.assertTrue(html.startswith("<!doctype html>"))
+        self.assertIn("<head>", html)
+
 
 if __name__ == "__main__":
     unittest.main()

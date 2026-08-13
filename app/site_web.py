@@ -1532,18 +1532,24 @@ def _dossie_html(dossies, painel=None, token=""):
 
 def pagina_confirmar_exclusao(estudo, tema, token):
     """O ✕ do bloco não exclui na hora: mostra QUAL estudo casou com aquele título antes
-    de tirar. O título no dossiê é o que a IA escreveu — ver `dossie.casar_titulo`."""
+    de tirar. O título no dossiê é o que a IA escreveu — ver `dossie.casar_titulo`.
+
+    Página completa (via `_pagina`), não fragmento: a Task 10 serve isto direto como
+    corpo da resposta HTTP — sem o embrulho o médico veria a tela sem CSS/topbar no
+    meio do fluxo que existe justamente pra ele conferir com calma."""
     origem = "já enviado ao assinante" if estudo.get("origem") == "digest" else "candidato da base"
     voltar = f'/curadoria?token={_esc(token)}&aba=dossie'
-    return (f'<div class="panel"><h3>Tirar este estudo da memória?</h3>'
-            f'<p class="hint">{_esc(_AVISO_X)}</p>'
-            f'<div class="item"><div class="t">{_esc(estudo.get("titulo"))}</div>'
-            f'<div class="d">{_esc(estudo.get("fonte"))} · {_esc(estudo.get("data"))} · '
-            f'{origem}</div></div>'
-            f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
-            f'{_botoes_escopo(token, estudo, tema)}'
-            f'<a class="actbtn ghost" href="{voltar}" style="text-decoration:none">Cancelar</a>'
-            f'</div></div>')
+    corpo = (f'<div class="wrap"><div class="panel"><h3>Tirar este estudo da memória?</h3>'
+             f'<p class="hint">{_esc(_AVISO_X)}</p>'
+             f'<div class="item"><div class="t">{_esc(estudo.get("titulo"))}</div>'
+             f'<div class="d">{_esc(estudo.get("fonte"))} · {_esc(estudo.get("data"))} · '
+             f'{origem}</div></div>'
+             f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
+             f'{_botoes_escopo(token, estudo, tema)}'
+             f'<a class="actbtn ghost" href="{voltar}" style="text-decoration:none">Cancelar</a>'
+             f'</div></div></div>')
+    return _pagina("Tirar da memória · Admin", corpo, logado=True,
+                   meta_extra='<meta name="robots" content="noindex">')
 
 
 def _curadoria_abas(aba, contagens, token, tema=""):
