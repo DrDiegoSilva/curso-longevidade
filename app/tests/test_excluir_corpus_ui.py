@@ -304,6 +304,10 @@ class TestRotasExclusao(unittest.TestCase):
         body = _urlp.urlencode(campos).encode("utf-8")
         return self.serve.Handler.do_POST(_RouteStub("/curadoria", body))
 
+    def _get(self, querystring=""):
+        path = "/curadoria" + (f"?{querystring}" if querystring else "")
+        return self.serve.Handler.do_GET(_RouteStub(path))
+
     def test_sem_token_403_e_nada_muda(self):
         r = self._post({"acao": "excluir_corpus", "origem": "candidato",
                         "ref": self.cid, "escopo": "tudo", "tema": "Obesidade"})
@@ -323,11 +327,38 @@ class TestRotasExclusao(unittest.TestCase):
         self.assertEqual(len(self.db.listar_candidatos()), 1)
 
     def test_escopo_invalido_nao_derruba_a_rota(self):
-        """Campo vindo do navegador é entrada não confiável."""
+        """Campo vindo do navegador é entrada não confiável. E o médico precisa ser
+        AVISADO — sem mensagem, ele clica e não acontece nada, sem explicação."""
         r = self._post({"token": "tok123", "acao": "excluir_corpus", "origem": "candidato",
                         "ref": self.cid, "escopo": "sim", "tema": "Obesidade"})
         self.assertIn("redirect", r)
         self.assertEqual(len(self.db.listar_candidatos()), 1)
+        self.assertIn("tente+de+novo", r["redirect"].replace("%20", "+"))
+
+    def test_painel_so_monta_quando_aba_e_dossie(self):
+        """Restrição nomeada da task: centenas de linhas por tema, e /curadoria é a
+        tela que o médico mais abre. Espiona `dossie.painel` pra provar as duas pontas —
+        a (b) é a que pega a regressão de "monta sempre"."""
+        import dossie
+        chamadas = {"n": 0}
+        original = dossie.painel
+
+        def _espiao(*a, **k):
+            chamadas["n"] += 1
+            return original(*a, **k)
+
+        dossie.painel = _espiao
+        try:
+            self._get("token=tok123&aba=dossie")
+            self.assertEqual(chamadas["n"], 1, "aba=dossie deveria montar o painel")
+
+            self._get("token=tok123&aba=triagem")
+            self.assertEqual(chamadas["n"], 1, "aba=triagem NÃO deveria montar o painel")
+
+            self._get("token=tok123")           # aba ausente cai no padrão "triagem"
+            self.assertEqual(chamadas["n"], 1, "aba ausente NÃO deveria montar o painel")
+        finally:
+            dossie.painel = original
 
     def test_confirmar_com_titulo_que_casa_mostra_a_tela(self):
         r = self._post({"token": "tok123", "acao": "confirmar_exclusao",
