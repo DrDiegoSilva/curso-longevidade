@@ -241,8 +241,14 @@ pilha de chamadas: se eu esquecer um ponto, ele cai num balde `"desconhecido"` q
 **aparece na conta** — inferência mágica erraria calada.
 
 Os rótulos, fixados agora para a tela futura não nascer com sinônimos: `dossie`,
-`resumo_estudo`, `boletim`, `triagem`, `perguntas`, `kit`, `titulo`, `grafico`,
-`audio_roteiro`, `audio_tts`.
+`resumo_estudo`, `boletim`, `triagem`, `tags`, `metadados`, `perguntas`, `kit`, `titulo`,
+`grafico`, `aula`, `audio_roteiro`, `audio_tts` — mais `desconhecido` para quem esquecer.
+
+> Corrigido durante a implementação (2026-08-13): o levantamento original contava **15**
+> pontos de chamada e existem **17**. `triage.py` tem três, não uma. Triar a varredura,
+> etiquetar o estoque e extrair metadados de um PDF recém-subido são atividades diferentes,
+> com gatilho e frequência diferentes — juntá-las num rótulo só esconderia justamente o que
+> a tela vai existir pra mostrar. Daí `tags` e `metadados` separados de `triagem`.
 
 **Uma linha por chamada de `claude()`**, somando o laço de continuação (o `cont=4` pode
 render 5 idas à API numa chamada só; `chamadas` guarda quantas foram).
