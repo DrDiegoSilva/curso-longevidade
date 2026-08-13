@@ -311,5 +311,46 @@ class TestRotulosNosCaminhosReais(unittest.TestCase):
         self.assertEqual(self._acoes(), ["metadados"])
 
 
+class TestTtsNoLedger(unittest.TestCase):
+    """O TTS é cobrado por CARACTERE, então não há `usage` pra ler — o que se paga é o
+    tamanho do que a gente manda."""
+
+    def setUp(self):
+        self.snap = _snapshot_env()
+        self.tmp = tempfile.mkdtemp()
+        self.db = _reload_db(self.tmp)
+        self.snap_key = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "sk-teste"
+        import importlib, config, audio
+        importlib.reload(config)
+        importlib.reload(audio)
+        self.audio = audio
+        self.audio._post_tts = lambda body: b"mp3"
+
+    def tearDown(self):
+        if self.snap_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = self.snap_key
+        _restore_db(self.snap)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_grava_o_tamanho_do_texto_como_entrada(self):
+        self.audio.narrar("a" * 500)
+        linha = self.db.listar_ia_uso()[0]
+        self.assertEqual(linha["acao"], "audio_tts")
+        self.assertEqual(linha["tokens_in"], 500)
+        self.assertEqual(linha["tokens_out"], 0)
+
+    def test_grava_o_que_foi_MANDADO_e_nao_o_original(self):
+        """`narrar` corta em 4000 caracteres antes de enviar (audio.py:47) — cobrado é o
+        cortado. Registrar 5000 aqui inflaria a conta de propósito."""
+        self.audio.narrar("b" * 5000)
+        self.assertEqual(self.db.listar_ia_uso()[0]["tokens_in"], 4000)
+
+    def test_o_mp3_continua_voltando(self):
+        self.assertEqual(self.audio.narrar("oi"), b"mp3")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,17 +40,39 @@ def gerar_roteiro(art, conteudo, gerar_fn=None):
                                 system=_SISTEMA, max_tokens=800, acao="audio_roteiro").strip()
 
 
-def narrar(texto):
-    """Texto -> mp3 bytes via OpenAI TTS. Requer config.OPENAI_API_KEY."""
-    if not config.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY não configurada")
-    body = json.dumps({"model": config.TTS_MODEL, "voice": config.TTS_VOICE,
-                       "input": (texto or "")[:4000], "response_format": "mp3"}).encode()
+def _post_tts(body):
+    """POST isolado — ponto de substituição dos testes, mesmo padrão do
+    `resumo_diario._post`."""
     req = urllib.request.Request("https://api.openai.com/v1/audio/speech", data=body,
                                  headers={"Authorization": "Bearer " + config.OPENAI_API_KEY,
                                           "Content-Type": "application/json"}, method="POST")
     with urllib.request.urlopen(req, timeout=180) as r:
         return r.read()
+
+
+def narrar(texto):
+    """Texto -> mp3 bytes via OpenAI TTS. Requer config.OPENAI_API_KEY.
+
+    O TTS é cobrado por caractere e a resposta não traz contagem nenhuma: o que entra no
+    ledger é o tamanho do texto REALMENTE enviado — ou seja, já cortado em 4000.
+    """
+    if not config.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY não configurada")
+    falado = (texto or "")[:4000]
+    body = json.dumps({"model": config.TTS_MODEL, "voice": config.TTS_VOICE,
+                       "input": falado, "response_format": "mp3"}).encode()
+    try:
+        return _post_tts(body)
+    finally:
+        # `finally`: se o POST estourar, a chamada já foi feita (ou fez uma tentativa).
+        # O que foi consumido (caracteres de TTS) tem que aparecer na conta.
+        try:
+            import ia_custo
+            ia_custo.registrar("audio_tts", config.TTS_MODEL, len(falado), 0, 1)
+        except Exception as e:
+            # se ia_custo quebrar (import, atributo...), a contabilidade não pode
+            # nem estourar narração saudável nem mascarar uma exceção real do POST.
+            print(f"[custo] não registrei o uso (audio_tts): {e}", flush=True)
 
 
 def gerar_audio_do_estudo(art, conteudo):
