@@ -1471,7 +1471,6 @@ def _dossie_html(dossies, painel=None, token=""):
         tema = d.get("tema") or ""
         dados = painel.get(tema) or {}
         corpus, excluidos = dados.get("corpus") or [], dados.get("excluidos") or []
-        fora = {_dossie.normalizar_titulo(e.get("titulo")) for e in excluidos}
         try:
             blocos = (_json.loads(d.get("conteudo") or "{}") or {}).get("blocos") or []
         except Exception:
@@ -1480,7 +1479,12 @@ def _dossie_html(dossies, painel=None, token=""):
 
         def _estudo_linha(e):
             rot = _esc(f'{e.get("titulo","")} ({e.get("fonte","")} {e.get("data","")})')
-            if _dossie.normalizar_titulo(e.get("titulo")) in fora:
+            # Mesmo casamento usado pra EXCLUIR (dossie.casar_titulo, com o degrau de
+            # prefixo) — não um `==` cru. O título aqui é o que a IA escreveu no bloco,
+            # que pode ser uma truncagem do título real; se o riscado usasse igualdade
+            # exata, esse é justamente o caso em que a exclusão funciona mas o feedback
+            # visual não aparece.
+            if _dossie.casar_titulo(e.get("titulo"), excluidos) is not None:
                 return (f'<span style="text-decoration:line-through;opacity:.55">{rot}</span> '
                         f'<span class="hint">fora da memória — refaça o dossiê (🧠) pra ver '
                         f'o efeito nas afirmações</span>')

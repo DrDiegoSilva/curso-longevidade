@@ -101,6 +101,23 @@ class TestDossieHtml(unittest.TestCase):
         html = self.sw._dossie_html([d], _painel(corpus=[], excluidos=ex), token="tok")
         self.assertIn("line-through", html)
 
+    def test_riscado_aparece_quando_o_titulo_do_bloco_e_truncagem_do_excluido(self):
+        """O título no bloco do dossiê é o que a IA ESCREVEU, e pode ser uma truncagem
+        do título real — é justamente o caso que `dossie.casar_titulo` resolve com o
+        degrau de prefixo, e que um `==` (mesmo normalizado) nunca bate. Sem este
+        casamento: o médico clica ✕, a exclusão FUNCIONA (a rota usa `casar_titulo`),
+        mas o riscado não aparece — ele acha que não funcionou e clica de novo."""
+        titulo_real = ("Effects of Long Term Semaglutide Therapy on Cardiovascular "
+                       "Outcomes in Adults With Obesity and Type 2 Diabetes")
+        titulo_truncado = titulo_real[:-25]      # como a IA escreveu no bloco
+        d = _dossie(afirmacao="Semaglutida reduz eventos cardiovasculares",
+                    estudos=(titulo_truncado,))
+        ex = [{"origem": "candidato", "ref": "c1", "titulo": titulo_real,
+               "fonte": "NEJM", "data": "2026-03-01", "escopo": "memoria"}]
+        html = self.sw._dossie_html([d], _painel(corpus=[], excluidos=ex), token="tok")
+        self.assertIn("line-through", html)
+        self.assertNotIn("confirmar_exclusao", html)
+
     def test_lista_estudos_lidos_traz_os_dois_escopos(self):
         html = self.sw._dossie_html([_dossie()], _painel(), token="tok")
         self.assertIn("Estudos lidos", html)
