@@ -238,8 +238,14 @@ def reconstruir_todos(temas=None, gerar_fn=None, db_mod=None):
 
 
 def painel(db_mod=None, temas=None):
-    """O material da aba 🧠: por tema, o corpus lido (sem os abstracts — a tela não
-    precisa deles, e eles são o peso da consulta) e o que está fora da memória.
+    """O material da aba 🧠: por tema, o corpus lido (sem os abstracts — a tela só
+    precisa de id/origem/titulo/fonte/data pra montar a lista) e o que está fora da
+    memória.
+
+    O descarte do abstract é em Python, depois da consulta: o `SELECT *` de
+    `corpus_do_tema` continua trazendo abstract/resumo do banco por inteiro. Não
+    economiza a consulta — só evita carregar o peso pesado (abstracts de centenas de
+    estudos) no HTML da tela.
 
     Montado só quando a aba do dossiê está aberta: são centenas de linhas por tema.
     """
