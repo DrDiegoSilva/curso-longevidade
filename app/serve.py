@@ -499,10 +499,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                               "status": d.get("status", ""), "review_token": d.get("review_token", "")}
             except Exception as e:
                 print(f"[curadoria] rascunho de amanhã falhou: {e}", flush=True)
+            aba_atual = q.get("aba", ["triagem"])[0]
+            painel = None
+            if aba_atual == "dossie":
+                try:
+                    import dossie
+                    painel = dossie.painel()
+                except Exception as e:          # a aba tem que abrir mesmo sem o painel
+                    print(f"[curadoria] painel do dossiê falhou: {e}", flush=True)
             return self._html(site_web.pagina_curadoria(
                 estado, amanha, cands, db.listar_reserva(), classicos, config.ADMIN_TOKEN,
-                aba=q.get("aba", ["triagem"])[0], tema=q.get("tema", [""])[0],
-                msg=q.get("msg", [""])[0], dossies=db.listar_dossies()), 200)
+                aba=aba_atual, tema=q.get("tema", [""])[0],
+                msg=q.get("msg", [""])[0], dossies=db.listar_dossies(), painel=painel), 200)
         if path == "/series":
             import config, series, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -1040,6 +1048,65 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
                 threading.Thread(target=_dossies, daemon=True).start()
                 msg = "🧠 Construindo o dossiê em segundo plano — te aviso no WhatsApp quando terminar."
+            elif acao == "confirmar_exclusao":
+                # O título vem do dossiê — é o que a IA ESCREVEU. Resolve contra o corpus
+                # e mostra o estudo real antes de tirar; sem casamento, avisa em vez de
+                # fingir que excluiu (a próxima reconstrução traria o estudo de volta).
+                import dossie, site_web
+                t = g("tema")
+                achado = dossie.casar_titulo(g("titulo"), dossie.corpus_do_tema(t))
+                if achado:
+                    return self._html(site_web.pagina_confirmar_exclusao(
+                        achado, t, config.ADMIN_TOKEN), 200)
+                aba, msg = "dossie", ("Não achei este estudo na base com esse título "
+                                      "(a IA pode ter reescrito). Abra Estudos lidos "
+                                      "e tire de lá.")
+            elif acao in ("excluir_corpus", "devolver_corpus"):
+                escopo = "" if acao == "devolver_corpus" else g("escopo")
+                origem, ref = g("origem"), g("ref")
+                aba = "dossie"
+                try:
+                    if origem == "digest":
+                        slug, _, data = ref.partition("|")
+                        db.excluir_digest(slug, data, escopo)
+                    else:
+                        db.excluir_candidato(ref, escopo)
+                    msg = ("Estudo devolvido à memória." if not escopo else
+                           "Fora da memória — refaça o dossiê (🧠) pra ver o efeito "
+                           "nas afirmações." if escopo == "memoria" else
+                           "Fora da memória e da fila — refaça o dossiê (🧠) pra ver o "
+                           "efeito nas afirmações.")
+                except ValueError as e:         # escopo vindo do navegador é entrada suja
+                    print(f"[curadoria] exclusão recusada: {e}", flush=True)
+                    msg = "Não entendi o que era pra tirar — tente de novo pela lista."
+            elif acao == "refazer_dossie_tema":
+                # Mesmo desenho do botão que refaz tudo (thread + aviso no WhatsApp): são
+                # ~10 chamadas Sonnet e o navegador desistiria antes.
+                import threading
+                tema_alvo = g("tema")
+
+                def _um_tema(t=tema_alvo):
+                    try:
+                        import dossie
+                        r = dossie.reconstruir_todos(temas=[t])
+                        if r.get("ja_rodando"):
+                            return
+                        import deliver
+                        deliver.enviar_curador(
+                            f"🧠 Dossiê de {t} refeito a partir de {r.get(t, 0)} estudos.")
+                    except Exception as e:
+                        print(f"[dossie] refazer {t} explodiu: {e}", flush=True)
+                        try:
+                            import deliver
+                            deliver.enviar_curador(f"🧠 Refazer o dossiê de {t} falhou — "
+                                                   "dá pra tentar de novo.")
+                        except Exception:
+                            pass
+
+                threading.Thread(target=_um_tema, daemon=True).start()
+                aba = "dossie"
+                msg = (f"🧠 Refazendo o dossiê de {tema_alvo} em segundo plano — te aviso "
+                       "no WhatsApp quando terminar.")
             elif acao == "regerar_kit":
                 import threading
 

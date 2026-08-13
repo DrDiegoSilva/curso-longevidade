@@ -239,5 +239,133 @@ class TestPaginaConfirmar(unittest.TestCase):
         self.assertIn("<head>", html)
 
 
+import io
+import shutil
+import tempfile
+import urllib.parse as _urlp
+
+
+class _RouteStub:
+    """Mesmo stub de test_cupom_toggle.py — path/headers/rfile + `_html`/`_redirect`,
+    sem abrir socket."""
+
+    def __init__(self, path, body=b""):
+        self.path = path
+        self.rfile = io.BytesIO(body)
+        self.headers = {"Content-Length": str(len(body)),
+                        "Content-Type": "application/x-www-form-urlencoded"}
+        self.client_address = ("127.0.0.1", 0)
+
+    def _html(self, s, code=200):
+        return {"code": code, "body": s}
+
+    def _redirect(self, location, token=None, clear=False):
+        return {"redirect": location}
+
+    def _sessao(self):
+        return None
+
+
+class TestRotasExclusao(unittest.TestCase):
+    def setUp(self):
+        self.snap = (os.environ.get("DSCURSO_ARTIGOS_DB"), os.environ.get("DATABASE_URL"),
+                     os.environ.get("DSCURSO_ADMIN_TOKEN"))
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ.pop("DATABASE_URL", None)
+        os.environ["DSCURSO_ADMIN_TOKEN"] = "tok123"
+        import db, config, serve
+        importlib.reload(db)
+        importlib.reload(config)
+        importlib.reload(serve)
+        self.db, self.serve = db, serve
+        self.db.init()
+        self.db.salvar_candidatos([{
+            "chave": "k1", "titulo": "Once-Weekly Semaglutide in Adults with Overweight",
+            "tema": "Obesidade", "tipo": "varredura", "fonte": "NEJM",
+            "data": "2026-03-01", "doi": "10.1/k1", "url": "",
+            "abstract": "abs", "pergunta": "", "score": 8, "citacoes": 0, "tags": []}])
+        self.cid = self.db.listar_candidatos()[0]["id"]
+
+    def tearDown(self):
+        a, d, t = self.snap
+        for k, v in (("DSCURSO_ARTIGOS_DB", a), ("DATABASE_URL", d),
+                     ("DSCURSO_ADMIN_TOKEN", t)):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        import db, config
+        importlib.reload(db)
+        importlib.reload(config)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _post(self, campos):
+        body = _urlp.urlencode(campos).encode("utf-8")
+        return self.serve.Handler.do_POST(_RouteStub("/curadoria", body))
+
+    def test_sem_token_403_e_nada_muda(self):
+        r = self._post({"acao": "excluir_corpus", "origem": "candidato",
+                        "ref": self.cid, "escopo": "tudo", "tema": "Obesidade"})
+        self.assertEqual(r["code"], 403)
+        self.assertEqual(len(self.db.listar_candidatos()), 1)
+
+    def test_excluir_candidato_do_escopo_tudo(self):
+        r = self._post({"token": "tok123", "acao": "excluir_corpus", "origem": "candidato",
+                        "ref": self.cid, "escopo": "tudo", "tema": "Obesidade"})
+        self.assertIn("redirect", r)
+        self.assertEqual(self.db.listar_candidatos(), [])
+
+    def test_devolver_traz_de_volta(self):
+        self.db.excluir_candidato(self.cid, "tudo")
+        self._post({"token": "tok123", "acao": "devolver_corpus", "origem": "candidato",
+                    "ref": self.cid, "tema": "Obesidade"})
+        self.assertEqual(len(self.db.listar_candidatos()), 1)
+
+    def test_escopo_invalido_nao_derruba_a_rota(self):
+        """Campo vindo do navegador é entrada não confiável."""
+        r = self._post({"token": "tok123", "acao": "excluir_corpus", "origem": "candidato",
+                        "ref": self.cid, "escopo": "sim", "tema": "Obesidade"})
+        self.assertIn("redirect", r)
+        self.assertEqual(len(self.db.listar_candidatos()), 1)
+
+    def test_confirmar_com_titulo_que_casa_mostra_a_tela(self):
+        r = self._post({"token": "tok123", "acao": "confirmar_exclusao",
+                        "tema": "Obesidade",
+                        "titulo": "Once-Weekly Semaglutide in Adults with Overweight"})
+        self.assertEqual(r["code"], 200)
+        self.assertIn("Tirar este estudo da memória?", r["body"])
+
+    def test_confirmar_com_titulo_que_nao_casa_avisa_e_nao_exclui(self):
+        """Falha aberta: fingir que excluiu é o pior resultado possível."""
+        r = self._post({"token": "tok123", "acao": "confirmar_exclusao",
+                        "tema": "Obesidade", "titulo": "Estudo que a IA inventou"})
+        self.assertIn("redirect", r)
+        self.assertIn("Estudos+lidos", r["redirect"].replace("%20", "+"))
+        self.assertEqual(len(self.db.listar_candidatos()), 1)
+
+    def test_refazer_tema_responde_sem_esperar_a_IA(self):
+        """A reconstrução são ~10 chamadas Sonnet: a rota tem que devolver na hora e
+        avisar no WhatsApp depois. E tem que pedir UM tema, não os cinco."""
+        chamado = {}
+        import dossie, deliver
+
+        def _fake(temas=None, **k):
+            chamado["temas"] = temas
+            return {}
+
+        dossie.reconstruir_todos = _fake
+        deliver.enviar_curador = lambda msg: None     # sem rede no teste
+        r = self._post({"token": "tok123", "acao": "refazer_dossie_tema",
+                        "tema": "Obesidade"})
+        self.assertIn("redirect", r)
+        import time
+        for _ in range(50):                     # a thread é daemon; espera curta
+            if chamado:
+                break
+            time.sleep(0.02)
+        self.assertEqual(chamado.get("temas"), ["Obesidade"])
+
+
 if __name__ == "__main__":
     unittest.main()
