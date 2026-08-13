@@ -3,7 +3,9 @@ preço errado (ou preço que mudou) é recálculo, não perda: a história intei
 Standalone: python3 app/tests/test_ia_custo.py"""
 import importlib
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -132,6 +134,49 @@ class TestOverrideDeEnv(unittest.TestCase):
         importlib.reload(config)
         importlib.reload(ia_custo)
         self.assertAlmostEqual(ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0), 9.0)
+
+
+class TestRegistrarNuncaLevanta(unittest.TestCase):
+    """`registrar` precisa da própria guarda: os dois chamadores reais (`resumo_diario.
+    claude` e `audio.narrar`) JÁ embrulham a chamada num try/except deles — o que
+    mascara, no teste de cada um, se a guarda AQUI dentro sumiu. Um chamador futuro sem
+    guarda própria não pode cair porque o banco caiu."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = (os.environ.get("DSCURSO_ARTIGOS_DB"), os.environ.get("DATABASE_URL"))
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ.pop("DATABASE_URL", None)
+        import db, ia_custo
+        importlib.reload(db)
+        importlib.reload(ia_custo)
+        self.db, self.ia = db, ia_custo
+
+    def tearDown(self):
+        import db
+        a, d = self.snap
+        if a is None:
+            os.environ.pop("DSCURSO_ARTIGOS_DB", None)
+        else:
+            os.environ["DSCURSO_ARTIGOS_DB"] = a
+        if d is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = d
+        importlib.reload(db)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_banco_fora_do_ar_nao_derruba_a_geracao(self):
+        """Perder uma linha de custo é aceitável; perder o estudo do dia não é —
+        e essa garantia é do `registrar`, não de quem o chama."""
+        def explode(*a, **k):
+            raise RuntimeError("banco caiu")
+        original = self.db.registrar_ia_uso
+        self.db.registrar_ia_uso = explode
+        try:
+            self.ia.registrar("kit", "claude-sonnet-4-6", 100, 10, 1)  # não pode levantar
+        finally:
+            self.db.registrar_ia_uso = original
 
 
 if __name__ == "__main__":

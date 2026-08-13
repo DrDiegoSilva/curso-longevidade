@@ -264,6 +264,17 @@ class TestCasarTitulo(unittest.TestCase):
         r = self.d.casar_titulo("Estudo X", corpus)
         self.assertEqual(r["id"], "c1")
 
+    def test_prefixo_ambiguo_entre_dois_do_corpus_devolve_None(self):
+        """O alvo truncado é prefixo de DOIS estudos do corpus (nenhum bate exato) —
+        chutar o primeiro excluiria o estudo errado sem o Diego perceber. Tem que
+        devolver None, igual ao ambíguo por título igual."""
+        corpus = [
+            {"id": "obesidade", "titulo": "Semaglutide Reduces Weight in Adult Patients With Obesity"},
+            {"id": "diabetes", "titulo": "Semaglutide Reduces Weight in Adult Patients With Diabetes"},
+        ]
+        alvo = "Semaglutide Reduces Weight in Adult Patients With"
+        self.assertIsNone(self.d.casar_titulo(alvo, corpus))
+
 
 class TestCorpusDoTema(_Base):
     """O corpus tem DUAS fontes e a exclusão precisa valer nas duas."""
