@@ -181,6 +181,79 @@ class TestListarExcluidos(_Base):
         self.assertEqual(self.db.listar_excluidos("Longevidade"), [])
 
 
+class TestExcluirTudoAlcancaAReserva(_Base):
+    """O rótulo do botão é "memória + fila" — se a exclusão não alcançar o resumo já
+    pronto na `reserva_resumos`, o candidato some da memória e o assinante recebe o
+    estudo ruim do mesmo jeito. Não é DELETE: o resumo custou IA, então vira status
+    'excluido' (devolvível), não é apagado."""
+
+    def setUp(self):
+        super().setUp()
+        self.db.salvar_candidatos([_cand("k1", "Estudo com resumo pronto")])
+        self.cid = self._id_de("Estudo com resumo pronto")
+        self.rid = self.db.salvar_reserva({"candidato_id": self.cid, "tema": "Obesidade",
+                                           "titulo_pt": "Estudo com resumo pronto",
+                                           "resumo": "r", "gancho": "g"})
+
+    def test_tudo_tira_o_pronto_de_proximo_da_reserva(self):
+        self.db.excluir_candidato(self.cid, "tudo")
+        proximo = self.db.proximo_da_reserva()
+        self.assertIsNone(proximo)
+
+    def test_tudo_tira_o_pronto_de_contar_reserva_pronto(self):
+        self.db.excluir_candidato(self.cid, "tudo")
+        self.assertEqual(self.db.contar_reserva_pronto(), 0)
+
+    def test_tudo_marca_o_item_como_excluido_sem_apagar(self):
+        self.db.excluir_candidato(self.cid, "tudo")
+        item = self.db.obter_reserva(self.rid)
+        self.assertIsNotNone(item)
+        self.assertEqual(item["status"], "excluido")
+
+    def test_memoria_nao_mexe_na_reserva(self):
+        self.db.excluir_candidato(self.cid, "memoria")
+        self.assertEqual(self.db.contar_reserva_pronto(), 1)
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "pronto")
+        self.assertIsNotNone(self.db.proximo_da_reserva())
+
+    def test_devolver_traz_o_item_de_volta_para_pronto(self):
+        self.db.excluir_candidato(self.cid, "tudo")
+        self.db.excluir_candidato(self.cid, "")
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "pronto")
+        self.assertEqual(self.db.contar_reserva_pronto(), 1)
+        self.assertIsNotNone(self.db.proximo_da_reserva())
+
+    def test_item_agendado_nao_e_alterado_pelo_escopo_tudo(self):
+        """Preso num slot da agenda — um UPDATE daqui não desfaz o agendamento, e mexer
+        no status confundiria a agenda sem soltar o slot de verdade."""
+        self.db.marcar_reserva_agendado(self.rid)
+        self.db.excluir_candidato(self.cid, "tudo")
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "agendado")
+
+    def test_item_enviado_nao_e_alterado_por_nenhum_escopo(self):
+        """Já saiu — não tem UPDATE que desfaça um envio."""
+        self.db.marcar_reserva_enviado(self.rid)
+        self.db.excluir_candidato(self.cid, "tudo")
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "enviado")
+        self.db.excluir_candidato(self.cid, "memoria")
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "enviado")
+        self.db.excluir_candidato(self.cid, "")
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "enviado")
+
+    def test_candidato_sem_item_de_reserva_nao_quebra(self):
+        self.db.salvar_candidatos([_cand("k2", "Sem resumo ainda")])
+        cid2 = self._id_de("Sem resumo ainda")
+        self.db.excluir_candidato(cid2, "tudo")     # não pode levantar
+        self.assertEqual(self.db.obter_reserva(self.rid)["status"], "pronto")
+
+    def test_item_sai_dos_prontos_de_listar_reserva(self):
+        """Espelha a leitura que a aba Reserva faz: separa `status=='pronto'` do resto."""
+        self.db.excluir_candidato(self.cid, "tudo")
+        reserva = self.db.listar_reserva()
+        prontos = [r for r in reserva if r.get("status") == "pronto"]
+        self.assertEqual(prontos, [])
+
+
 class TestCasarTitulo(unittest.TestCase):
     """O dossiê guarda o título COMO A IA ESCREVEU. O ✕ do bloco precisa achar a linha
     real do banco — e, quando não achar, dizer isso em vez de fingir que excluiu."""

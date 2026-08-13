@@ -343,6 +343,17 @@ class TestRotasExclusao(unittest.TestCase):
                     "ref": self.cid, "tema": "Obesidade"})
         self.assertEqual(len(self.db.listar_candidatos()), 1)
 
+    def test_excluir_tudo_pela_rota_tira_o_resumo_pronto_da_fila(self):
+        """Fim a fim: "memória + fila" não pode deixar o resumo já pronto na reserva —
+        senão o assinante recebe o estudo que o médico acabou de tirar."""
+        rid = self.db.salvar_reserva({"candidato_id": self.cid, "tema": "Obesidade",
+                                      "titulo_pt": "Once-Weekly Semaglutide in Adults "
+                                                    "with Overweight"})
+        self._post({"token": "tok123", "acao": "excluir_corpus", "origem": "candidato",
+                    "ref": self.cid, "escopo": "tudo", "tema": "Obesidade"})
+        self.assertIsNone(self.db.proximo_da_reserva())
+        self.assertEqual(self.db.obter_reserva(rid)["status"], "excluido")
+
     def test_escopo_invalido_nao_derruba_a_rota(self):
         """Campo vindo do navegador é entrada não confiável. E o médico precisa ser
         AVISADO — sem mensagem, ele clica e não acontece nada, sem explicação."""

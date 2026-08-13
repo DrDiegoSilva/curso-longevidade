@@ -1901,10 +1901,24 @@ def _valida_escopo(escopo):
 
 
 def excluir_candidato(cand_id, escopo):
-    """Tira (ou devolve, com escopo='') um candidato da memória do dossiê."""
+    """Tira (ou devolve, com escopo='') um candidato da memória do dossiê.
+
+    escopo='tudo' também tira o resumo já pronto na fila de envio (`reserva_resumos`,
+    achado por `candidato_id`) — sem isso o rótulo "memória + fila" mentia: o candidato
+    saía da memória e o resumo continuava 'pronto', pronto pra ser entregue ao
+    assinante. Não é DELETE: o resumo já foi pago em IA, então vira status 'excluido'
+    (dá pra devolver). Só mexe em 'pronto' — 'agendado' já está preso a um slot da
+    agenda e 'enviado' já saiu; nenhum dos dois se desfaz com um UPDATE daqui.
+    """
     e = _valida_escopo(escopo)
     with _conn() as c:
         c.execute("UPDATE curadoria_candidatos SET excluido=? WHERE id=?", (e, cand_id))
+        if e == "tudo":
+            c.execute("UPDATE reserva_resumos SET status='excluido' "
+                      "WHERE candidato_id=? AND status='pronto'", (cand_id,))
+        elif e == "":
+            c.execute("UPDATE reserva_resumos SET status='pronto' "
+                      "WHERE candidato_id=? AND status='excluido'", (cand_id,))
 
 
 def excluir_digest(tema_slug, data, escopo):
