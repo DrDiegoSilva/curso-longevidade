@@ -12,6 +12,14 @@ dia e modelo — sabe quanto gastou de Sonnet na terça, não sabe o que é um d
 """
 import config
 
+# Vocabulário fixo dos rótulos de `acao`, pra tela futura de custos não nascer com
+# sinônimos. Não é guarda de runtime — `registrar` nunca rejeita um rótulo fora daqui
+# (o ledger não pode atrapalhar geração); quem confere é `tests/test_ia_custo.py`,
+# varrendo os `acao=` REAIS do código-fonte.
+ACOES = ("dossie", "resumo_estudo", "boletim", "triagem", "tags", "metadados",
+         "perguntas", "kit", "titulo", "grafico", "aula", "audio_roteiro",
+         "audio_tts", "desconhecido")
+
 _SEM_PRECO = set()          # avisa uma vez por modelo, não a cada chamada
 
 

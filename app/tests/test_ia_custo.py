@@ -1,8 +1,10 @@
 """Preço de IA -> dinheiro. O ledger guarda TOKENS; o custo é calculado na leitura, então
 preço errado (ou preço que mudou) é recálculo, não perda: a história inteira se revaloriza.
 Standalone: python3 app/tests/test_ia_custo.py"""
+import glob
 import importlib
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -177,6 +179,43 @@ class TestRegistrarNuncaLevanta(unittest.TestCase):
             self.ia.registrar("kit", "claude-sonnet-4-6", 100, 10, 1)  # não pode levantar
         finally:
             self.db.registrar_ia_uso = original
+
+
+class TestVocabularioDeRotulos(unittest.TestCase):
+    """A spec fixa 14 rótulos pro ledger justamente pra tela futura não nascer com
+    sinônimos. Sem esta lista em código, um typo em `acao="dossiee"` não cai num
+    `desconhecido` visível — cria uma linha nova silenciosa, e ninguém percebe.
+
+    Varre os `acao=` REAIS do código-fonte (não os dos testes) — grep no fonte já
+    provou enganar antes (ver `TestRotulosNosCaminhosReais`, em test_ia_uso.py)."""
+
+    def _rotulos_no_codigo(self):
+        raiz = os.path.join(os.path.dirname(__file__), "..")
+        kw = re.compile(r'acao="([a-zA-Z_]+)"')
+        posicional = re.compile(r'ia_custo\.registrar\("([a-zA-Z_]+)"')
+        achados = set()
+        for caminho in glob.glob(os.path.join(raiz, "*.py")):
+            fonte = open(caminho, encoding="utf-8").read()
+            achados.update(kw.findall(fonte))
+            achados.update(posicional.findall(fonte))
+        return achados
+
+    def test_a_regex_acha_rotulo_algum(self):
+        """Se isto for vazio, a regex quebrou e o teste seguinte passaria por nada
+        vasculhar — falso verde."""
+        self.assertTrue(self._rotulos_no_codigo())
+
+    def test_todo_rotulo_usado_no_codigo_pertence_ao_vocabulario(self):
+        import ia_custo
+        rotulos = self._rotulos_no_codigo()
+        self.assertEqual(rotulos - set(ia_custo.ACOES), set())
+
+    def test_vocabulario_tem_exatamente_os_14_rotulos_fixados(self):
+        import ia_custo
+        self.assertEqual(set(ia_custo.ACOES), {
+            "dossie", "resumo_estudo", "boletim", "triagem", "tags", "metadados",
+            "perguntas", "kit", "titulo", "grafico", "aula", "audio_roteiro",
+            "audio_tts", "desconhecido"})
 
 
 if __name__ == "__main__":
