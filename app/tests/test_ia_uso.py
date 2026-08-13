@@ -351,6 +351,25 @@ class TestTtsNoLedger(unittest.TestCase):
     def test_o_mp3_continua_voltando(self):
         self.assertEqual(self.audio.narrar("oi"), b"mp3")
 
+    def test_post_falhando_nao_grava_no_ledger(self):
+        """Falha de rede (ou 401) não é cobrada pela OpenAI — zero caracteres faturados.
+        Gravar mesmo assim infla o número que vira insumo de PREÇO. Mesma disciplina de
+        `resumo_diario.claude()`, que só grava com `if idas:` (o que a API já cobrou)."""
+        def _explode(body):
+            raise RuntimeError("rede caiu")
+        self.audio._post_tts = _explode
+        with self.assertRaises(RuntimeError):
+            self.audio.narrar("a" * 500)
+        self.assertEqual(self.db.listar_ia_uso(), [])
+
+    def test_post_falhando_deixa_a_excecao_original_subir(self):
+        """A guarda do `import ia_custo` não pode mascarar a exceção real do POST."""
+        def _explode(body):
+            raise RuntimeError("motivo especifico da falha de rede")
+        self.audio._post_tts = _explode
+        with self.assertRaisesRegex(RuntimeError, "motivo especifico da falha de rede"):
+            self.audio.narrar("oi")
+
 
 if __name__ == "__main__":
     unittest.main()

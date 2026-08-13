@@ -54,25 +54,25 @@ def narrar(texto):
     """Texto -> mp3 bytes via OpenAI TTS. Requer config.OPENAI_API_KEY.
 
     O TTS é cobrado por caractere e a resposta não traz contagem nenhuma: o que entra no
-    ledger é o tamanho do texto REALMENTE enviado — ou seja, já cortado em 4000.
+    ledger é o tamanho do texto REALMENTE enviado — ou seja, já cortado em 4000. Só
+    registra quando o POST volta com sucesso: uma falha de rede (ou um 401) não é
+    cobrada pela OpenAI, e gravar mesmo assim infla o número que vira insumo de preço —
+    mesma disciplina de `resumo_diario.claude()`, que só grava o que a API já cobrou.
     """
     if not config.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY não configurada")
     falado = (texto or "")[:4000]
     body = json.dumps({"model": config.TTS_MODEL, "voice": config.TTS_VOICE,
                        "input": falado, "response_format": "mp3"}).encode()
+    mp3 = _post_tts(body)
     try:
-        return _post_tts(body)
-    finally:
-        # `finally`: se o POST estourar, a chamada já foi feita (ou fez uma tentativa).
-        # O que foi consumido (caracteres de TTS) tem que aparecer na conta.
-        try:
-            import ia_custo
-            ia_custo.registrar("audio_tts", config.TTS_MODEL, len(falado), 0, 1)
-        except Exception as e:
-            # se ia_custo quebrar (import, atributo...), a contabilidade não pode
-            # nem estourar narração saudável nem mascarar uma exceção real do POST.
-            print(f"[custo] não registrei o uso (audio_tts): {e}", flush=True)
+        import ia_custo
+        ia_custo.registrar("audio_tts", config.TTS_MODEL, len(falado), 0, 1)
+    except Exception as e:
+        # se ia_custo quebrar (import, atributo...), a contabilidade não pode
+        # nem estourar narração saudável nem mascarar uma exceção real do POST.
+        print(f"[custo] não registrei o uso (audio_tts): {e}", flush=True)
+    return mp3
 
 
 def gerar_audio_do_estudo(art, conteudo):
