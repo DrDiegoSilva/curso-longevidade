@@ -233,13 +233,13 @@ def gerar_conteudo(artigo, gerar_resumo=None, gerar_gancho=None, gerar_grafico_j
         from resumo_diario import claude, SONNET
         # 2500, nao 900: a saida real medida (frase + paciente + limites + 2 pautas com
         # roteiro) deu 934 tokens. Com o teto antigo o JSON chega cortado e o kit some.
-        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=2500)
+        gerar_gancho = lambda a: claude(SONNET, _prompt_gancho(a), system=SYS_GANCHO, max_tokens=2500, acao="kit")
     if gerar_grafico_json is None:
         from resumo_diario import claude, HAIKU
-        gerar_grafico_json = lambda a: claude(HAIKU, _prompt_grafico(a), max_tokens=300)
+        gerar_grafico_json = lambda a: claude(HAIKU, _prompt_grafico(a), max_tokens=300, acao="grafico")
     if gerar_titulo is None:
         from resumo_diario import claude, HAIKU
-        gerar_titulo = lambda a: claude(HAIKU, _prompt_titulo(a), max_tokens=80)
+        gerar_titulo = lambda a: claude(HAIKU, _prompt_titulo(a), max_tokens=80, acao="titulo")
     titulo_pt = (gerar_titulo(artigo) or "").strip().strip('"').strip() or artigo.get("titulo", "")
     return {
         "titulo_pt": titulo_pt,

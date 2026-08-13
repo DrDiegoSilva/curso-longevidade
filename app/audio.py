@@ -37,7 +37,7 @@ def gerar_roteiro(art, conteudo, gerar_fn=None):
     import resumo_diario
     return resumo_diario.claude(resumo_diario.SONNET,
                                 "Faça o roteiro de áudio deste estudo:\n\n" + material,
-                                system=_SISTEMA, max_tokens=800).strip()
+                                system=_SISTEMA, max_tokens=800, acao="audio_roteiro").strip()
 
 
 def narrar(texto):

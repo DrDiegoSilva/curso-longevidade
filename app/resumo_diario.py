@@ -152,7 +152,7 @@ def modo_atualizacao(tema):
         "dermatologia/psoríase/diverticulite que apenas cita obesidade). Só DESTAQUE/MENCAO se o FOCO for o tema. "
         "Na dúvida, LIXO — é melhor cortar do que enviar ruído. "
         'Responda SÓ JSON: [{"i":0,"classe":"DESTAQUE"}, ...]',
-        system="Você é triador de literatura médica, MUITO rigoroso em cortar ruído. Prefere falso-negativo a falso-positivo.", max_tokens=800)
+        system="Você é triador de literatura médica, MUITO rigoroso em cortar ruído. Prefere falso-negativo a falso-positivo.", max_tokens=800, acao="triagem")
     try:
         cls = json.loads(re.search(r"\[.*\]", tri, re.S).group(0))
     except Exception:
@@ -166,12 +166,12 @@ def modo_atualizacao(tema):
     partes = []
     if dest:
         blob = "\n\n".join(f"### {e['titulo']}\nData de publicação: {e['data']}\nRevista: {e['journal']} | doi:{e['doi']}\n{e['abstract']}" for e in dest)
-        partes.append(claude(OPUS, f"Tema: {tema}. Aprofunde ESTES estudos-destaque (abra cada um pela data de publicação):\n\n{blob}", system=SYS_APROF, max_tokens=3200))
+        partes.append(claude(OPUS, f"Tema: {tema}. Aprofunde ESTES estudos-destaque (abra cada um pela data de publicação):\n\n{blob}", system=SYS_APROF, max_tokens=3200, acao="boletim"))
     # 3) Sonnet menções
     if menc:
         blob = "\n\n".join(f"- [{e['data']}] {e['titulo']} ({e['journal']}, doi:{e['doi']}): {e['abstract'][:600]}" for e in menc)
         rotulo = "*📋 Também saiu (menção):*" if dest else "*📋 Nada que mude conduta esta semana; o que saiu de relevante:*"
-        partes.append(rotulo + "\n" + claude(SONNET, f"Tema: {tema}. Escreva 1 menção curta (1–2 linhas: achado + relevância clínica) por estudo, com o nome da revista:\n\n{blob}", system=SYS_MENC, max_tokens=700))
+        partes.append(rotulo + "\n" + claude(SONNET, f"Tema: {tema}. Escreva 1 menção curta (1–2 linhas: achado + relevância clínica) por estudo, com o nome da revista:\n\n{blob}", system=SYS_MENC, max_tokens=700, acao="boletim"))
     cab = f"🔬 *{tema.upper()} — atualização da semana* (curadoria IA · Europe PMC)\n\n"
     msg = cab + "\n\n".join(partes) + "\n\n_Siglas explicadas no texto · filtro RCT/meta/revisão._"
     dois = [e["doi"] for e in dest + menc if e["doi"]]
@@ -210,7 +210,7 @@ def _gerar_aula(num, titulo, escopo):
         f"Estudos de apoio (Europe PMC):\n{apoio}\n\n"
         "Escreva a AULA completa no formato do curso, usando também seu conhecimento consolidado. "
         "IMPORTANTE: sempre feche com a seção de CONDUTA prática — é a parte mais importante, nunca omita.",
-        system=SYS_CURSO, max_tokens=4000)
+        system=SYS_CURSO, max_tokens=4000, acao="aula")
 
 def regenerar_modulo(num):
     """Regenera a aula de um módulo JÁ concluído (conserta cortes) e sobrescreve o .md. NÃO envia, não re-marca."""
@@ -307,7 +307,7 @@ def gerar_texto_do_artigo(artigo):
     blob = (f"### {artigo.get('titulo','')}\nData: {artigo.get('data','')}\n"
             f"Fonte: {artigo.get('fonte','')} | doi:{artigo.get('doi','')}\n{artigo.get('resumo','')}")
     return claude(OPUS, f"Resuma ESTE estudo para o médico:\n\n{blob}",
-                  system=SYS_ESTUDO, max_tokens=3600)
+                  system=SYS_ESTUDO, max_tokens=3600, acao="resumo_estudo")
 
 
 # ─── Main ─────────────────────────────────────────────────────

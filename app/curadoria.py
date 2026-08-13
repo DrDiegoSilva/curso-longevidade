@@ -167,7 +167,7 @@ def regerar_kits(limite=None, gerar_fn=None):
             import content
             from resumo_diario import claude, SONNET
             gerar_fn = lambda a: claude(SONNET, content._prompt_gancho(a),
-                                        system=content.SYS_GANCHO, max_tokens=2500)
+                                        system=content.SYS_GANCHO, max_tokens=2500, acao="kit")
         regerados = falhas = 0
         for r in db.listar_reserva():
             if limite is not None and regerados >= limite:
@@ -322,7 +322,7 @@ def gerar_perguntas(cands, llm_fn=None, chunk=15):
         return cands
     if llm_fn is None:
         from resumo_diario import claude, HAIKU
-        llm_fn = lambda p: claude(HAIKU, p, max_tokens=1500)
+        llm_fn = lambda p: claude(HAIKU, p, max_tokens=1500, acao="perguntas")
     for ini in range(0, len(cands), chunk):
         lote = cands[ini:ini + chunk]
         mapa = _parse_perguntas(llm_fn(_prompt_perguntas(lote)))
@@ -348,7 +348,7 @@ def gerar_resumo(cand, modelo="sonnet", gerar_resumo=None, gerar_gancho=None,
                     "\nFonte: " + a.get("fonte", "") + " | doi:" + a.get("doi", "") +
                     "\n" + a.get("resumo", ""))
             return claude(mdl, "Resuma ESTE estudo para o médico:\n\n" + blob,
-                          system=SYS_ESTUDO, max_tokens=3600)
+                          system=SYS_ESTUDO, max_tokens=3600, acao="resumo_estudo")
     return content.gerar_conteudo(art, gerar_resumo=f_resumo, gerar_gancho=gerar_gancho,
                                   gerar_grafico_json=gerar_grafico_json, gerar_titulo=gerar_titulo)
 
@@ -444,7 +444,7 @@ def adicionar_meu_estudo(texto, titulo="", fonte="", doi="", url="", data="", mo
     if not (titulo or "").strip() and "gerar_titulo" not in geradores:
         import content
         from resumo_diario import claude, HAIKU
-        geradores["gerar_titulo"] = lambda a: claude(HAIKU, content._prompt_titulo_do_texto(a), max_tokens=80)
+        geradores["gerar_titulo"] = lambda a: claude(HAIKU, content._prompt_titulo_do_texto(a), max_tokens=80, acao="titulo")
     r = gerar_resumo(cand, modelo=modelo, **geradores)
     rid = db.salvar_reserva({
         "tema": meta["area"] or "Meus estudos", "titulo_pt": r["titulo_pt"],

@@ -3,6 +3,7 @@
 Pedido do Diego (2026-08-12): saber quanto custa cada coisa pra repassar na precificação.
 O sistema tem só DOIS pontos pagos — `resumo_diario.claude()` e `audio.narrar()` —, então
 instrumentar os dois mede tudo. Standalone: python3 app/tests/test_ia_uso.py"""
+import json
 import os
 import re
 import shutil
@@ -240,6 +241,74 @@ class TestFinallyDaContabilidadeEProtegido(unittest.TestCase):
         self.rd._post = _post
         with self.assertRaises(RuntimeError):
             self.rd.claude(self.rd.SONNET, "oi", acao="boletim")
+
+
+class TestRotulosNosCaminhosReais(unittest.TestCase):
+    """Não basta o parâmetro existir — o que importa é o ponto de chamada REAL passar o
+    rótulo. Com `_post` substituído dá pra rodar o caminho de verdade sem rede.
+
+    (Lição da fatia anterior do item 33: grep no fonte não prova call site.)
+
+    `triage.py` tem TRÊS chamadas, não uma: triar (classifica a varredura semanal),
+    taggear (etiqueta o estoque no backfill) e extrair_metadados (lê área/fonte/data de
+    um PDF recém-subido). São atividades diferentes, com gatilhos e frequências
+    diferentes — por isso três rótulos (`triagem`, `tags`, `metadados`), não um só
+    (decisão do controlador 2026-08-12, corrigindo o levantamento incompleto do brief)."""
+
+    def setUp(self):
+        self.snap = _snapshot_env()
+        self.tmp = tempfile.mkdtemp()
+        self.db = _reload_db(self.tmp)
+        import importlib, resumo_diario
+        importlib.reload(resumo_diario)
+        self.rd = resumo_diario
+        self.rd._post = lambda body: _resposta_api(json.dumps({"blocos": []}))
+
+    def tearDown(self):
+        _restore_db(self.snap)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _acoes(self):
+        return [l["acao"] for l in self.db.listar_ia_uso()]
+
+    def test_dossie_se_rotula_dossie(self):
+        import importlib, dossie
+        importlib.reload(dossie)
+        dossie._gerador_padrao()("prompt qualquer")
+        self.assertEqual(self._acoes(), ["dossie"])
+
+    def test_roteiro_do_audio_se_rotula_audio_roteiro(self):
+        import importlib, audio
+        importlib.reload(audio)
+        audio.gerar_roteiro({"titulo": "T", "fonte": "NEJM"}, {"resumo": "r"})
+        self.assertEqual(self._acoes(), ["audio_roteiro"])
+
+    def test_resumo_do_estudo_se_rotula_resumo_estudo(self):
+        self.rd.gerar_texto_do_artigo({"titulo": "T", "fonte": "NEJM", "resumo": "r"})
+        self.assertEqual(self._acoes(), ["resumo_estudo"])
+
+    def test_triagem_se_rotula_triagem(self):
+        """Dirige `triage.triar` (classificar ENTRA/LIXO da varredura semanal)."""
+        import importlib, triage
+        importlib.reload(triage)
+        triage.triar([{"titulo": "T", "fonte": "NEJM", "resumo": "r"}], "Obesidade")
+        self.assertEqual(self._acoes(), ["triagem"])
+
+    def test_tags_se_rotula_tags(self):
+        """Dirige `triage.taggear` (etiquetar o estoque, backfill) — rótulo próprio,
+        separado de `triagem` (era o que o brief original testava sob o nome errado)."""
+        import importlib, triage
+        importlib.reload(triage)
+        triage.taggear([{"titulo": "T", "resumo": "r"}])
+        self.assertEqual(self._acoes(), ["tags"])
+
+    def test_metadados_se_rotula_metadados(self):
+        """Dirige `triage.extrair_metadados` (área/fonte/data do PDF recém-subido) —
+        a terceira chamada de triage.py, sem teste nenhum no brief original."""
+        import importlib, triage
+        importlib.reload(triage)
+        triage.extrair_metadados("T", "corpo do estudo", ["Obesidade"])
+        self.assertEqual(self._acoes(), ["metadados"])
 
 
 if __name__ == "__main__":

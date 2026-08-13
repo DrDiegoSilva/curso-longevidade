@@ -115,7 +115,7 @@ def acrescentar(dossie_atual, estudo, gerar_fn=None):
 
 def _gerador_padrao():
     from resumo_diario import claude, SONNET
-    return lambda p: claude(SONNET, p, system=SYS, max_tokens=4000)
+    return lambda p: claude(SONNET, p, system=SYS, max_tokens=4000, acao="dossie")
 
 
 _LOCK = __import__("threading").Lock()
