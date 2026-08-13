@@ -235,6 +235,35 @@ class TestCasarTitulo(unittest.TestCase):
         self.assertEqual(self.d.normalizar_titulo("Ação: Reposição — Hormonal!"),
                          "acao reposicao hormonal")
 
+    def test_titulo_exato_mas_prefixo_de_outro_devolve_None(self):
+        """Se o alvo (normalizado) é prefixo exato de outro estudo, é ambíguo —
+        pode ser uma truncagem da IA. Só com a lista o médico resolve."""
+        corpus = [
+            {"id": "adulto", "titulo": "Semaglutide for Weight Management"},
+            {"id": "adolesc", "titulo": "Semaglutide for Weight Management in Adolescents"},
+        ]
+        # O alvo "Semaglutide for Weight Management" bate exato com "adulto",
+        # mas é prefixo de "adolesc". Ambíguo.
+        self.assertIsNone(self.d.casar_titulo("Semaglutide for Weight Management", corpus))
+
+    def test_titulo_longo_com_prefixo_curto_no_corpus_ainda_acha(self):
+        """Mas o título longo (completo) do adolescente ainda funciona."""
+        corpus = [
+            {"id": "adulto", "titulo": "Semaglutide for Weight Management"},
+            {"id": "adolesc", "titulo": "Semaglutide for Weight Management in Adolescents"},
+        ]
+        r = self.d.casar_titulo("Semaglutide for Weight Management in Adolescents", corpus)
+        self.assertEqual(r["id"], "adolesc")
+
+    def test_titulo_exato_unico_sem_parente_continua_casando(self):
+        """Título único e sem parente por prefixo continua funcionando."""
+        corpus = [
+            {"id": "c1", "titulo": "Estudo X"},
+            {"id": "c2", "titulo": "Estudo Y diferente"},
+        ]
+        r = self.d.casar_titulo("Estudo X", corpus)
+        self.assertEqual(r["id"], "c1")
+
 
 class TestCorpusDoTema(_Base):
     """O corpus tem DUAS fontes e a exclusão precisa valer nas duas."""

@@ -84,6 +84,14 @@ def casar_titulo(titulo, corpus):
         return None
     iguais = [e for e in corpus if normalizar_titulo(e.get("titulo")) == alvo]
     if len(iguais) == 1:
+        # Antes de devolver, confira se existe outro estudo do qual o alvo é prefixo.
+        # Se sim, é ambíguo (o alvo pode ser uma truncagem). Com MIN_PREFIXO pra evitar
+        # falsos positivos em títulos muito curtos.
+        if len(alvo) >= MIN_PREFIXO:
+            for e in corpus:
+                n = normalizar_titulo(e.get("titulo"))
+                if n != alvo and n.startswith(alvo):
+                    return None  # ambíguo: alvo é prefixo de outro
         return iguais[0]
     if iguais:
         return None                      # repetido no banco: manda pra lista
