@@ -181,5 +181,54 @@ class TestListarExcluidos(_Base):
         self.assertEqual(self.db.listar_excluidos("Longevidade"), [])
 
 
+class TestCorpusDoTema(_Base):
+    """O corpus tem DUAS fontes e a exclusão precisa valer nas duas."""
+
+    def setUp(self):
+        super().setUp()
+        self.db.salvar_candidatos([_cand("k1", "Candidato bom"), _cand("k2", "Candidato ruim")])
+        self.db.registrar_digest(
+            {"tema": "Obesidade", "doi": "10.1/d", "fonte": "NEJM", "url": "",
+             "titulo": "orig"},
+            {"titulo_pt": "Enviado bom", "resumo": "r", "gancho": "g", "grafico": None},
+            None, data="2026-07-19")
+        import importlib, dossie
+        importlib.reload(dossie)
+        self.dossie = dossie
+
+    def _titulos(self):
+        return sorted(e["titulo"] for e in self.dossie.corpus_do_tema("Obesidade", self.db))
+
+    def test_junta_as_duas_fontes(self):
+        self.assertEqual(self._titulos(), ["Candidato bom", "Candidato ruim", "Enviado bom"])
+
+    def test_candidato_excluido_da_memoria_sai_do_corpus(self):
+        self.db.excluir_candidato(self._id_de("Candidato ruim"), "memoria")
+        self.assertEqual(self._titulos(), ["Candidato bom", "Enviado bom"])
+
+    def test_candidato_excluido_de_tudo_tambem_sai_do_corpus(self):
+        self.db.excluir_candidato(self._id_de("Candidato ruim"), "tudo")
+        self.assertEqual(self._titulos(), ["Candidato bom", "Enviado bom"])
+
+    def test_digest_excluido_da_memoria_sai_do_corpus(self):
+        self.db.excluir_digest("obesidade", "2026-07-19", "memoria")
+        self.assertEqual(self._titulos(), ["Candidato bom", "Candidato ruim"])
+
+    def test_cada_item_carrega_id_e_origem(self):
+        itens = {e["titulo"]: e for e in self.dossie.corpus_do_tema("Obesidade", self.db)}
+        self.assertEqual(itens["Candidato bom"]["origem"], "candidato")
+        self.assertTrue(itens["Candidato bom"]["id"])
+        self.assertEqual(itens["Enviado bom"]["origem"], "digest")
+        self.assertEqual(itens["Enviado bom"]["id"], "obesidade|2026-07-19")
+
+    def test_construir_continua_funcionando_com_os_campos_novos(self):
+        """`_linha` lê título/fonte/data/abstract; campo extra não pode atrapalhar."""
+        estudos = self.dossie.corpus_do_tema("Obesidade", self.db)
+        d = self.dossie.construir(
+            estudos, gerar_fn=lambda p: '{"blocos":[{"afirmacao":"a","estudos":'
+                                        '[{"titulo":"Candidato bom"}]}]}')
+        self.assertTrue(d["blocos"])
+
+
 if __name__ == "__main__":
     unittest.main()

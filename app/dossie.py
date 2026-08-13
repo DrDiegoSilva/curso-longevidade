@@ -123,17 +123,32 @@ _LOCK = __import__("threading").Lock()
 
 def corpus_do_tema(tema, db_mod=None):
     """Os estudos do tema, das 3 fontes que acumulam: candidatos da varredura e do
-    backfill (com o abstract inteiro), estudos já enviados e clássicos bancados."""
+    backfill (com o abstract inteiro), estudos já enviados e clássicos bancados.
+
+    Cada item carrega `id` e `origem` — é o que permite a tela oferecer um ✕ que aponta
+    para uma linha de verdade do banco, em vez de para um título solto.
+
+    Excluídos ficam de fora: `listar_candidatos` já esconde o escopo 'tudo', e o
+    'memoria' é filtrado aqui (ele continua na fila, só não alimenta a memória). Nos
+    digests o filtro é SÓ aqui: `listar_por_tema` serve o portal do assinante.
+    """
     if db_mod is None:
         import db as db_mod
     fonte = []
     for c in db_mod.listar_candidatos(tema=tema):
+        if (c.get("excluido") or "").strip():
+            continue
         if (c.get("abstract") or "").strip():
-            fonte.append({"titulo": c.get("titulo", ""), "fonte": c.get("fonte", ""),
+            fonte.append({"id": c.get("id", ""), "origem": "candidato",
+                          "titulo": c.get("titulo", ""), "fonte": c.get("fonte", ""),
                           "data": c.get("data", ""), "abstract": c.get("abstract", "")})
     for d in db_mod.listar_por_tema(slug_de(tema, db_mod)):
-        fonte.append({"titulo": d.get("titulo_pt", ""), "fonte": d.get("fonte", ""),
-                      "data": d.get("data", ""), "abstract": d.get("resumo", "")})
+        if (d.get("excluido") or "").strip():
+            continue
+        fonte.append({"id": f'{d.get("tema_slug","")}|{d.get("data","")}',
+                      "origem": "digest", "titulo": d.get("titulo_pt", ""),
+                      "fonte": d.get("fonte", ""), "data": d.get("data", ""),
+                      "abstract": d.get("resumo", "")})
     return fonte
 
 
