@@ -1421,35 +1421,129 @@ def _curadoria_amanha(amanha):
             f'<div class="am-rod"><span>{_esc(rot)}</span>{botao}</div></div>')
 
 
-def _dossie_html(dossies):
+_AVISO_X = ("tirar da memória — estudo fora do tema, duplicado ou fraco. Não use pra "
+            "discordar do achado: a divergência entre estudos é o que o dossiê existe "
+            "pra guardar.")
+
+
+def _form_curadoria(token, acao, campos, label, classe="actbtn ghost", titulo=""):
+    """Um botão POST da /curadoria. Os campos extras viajam em hidden."""
+    ocultos = "".join(f'<input type="hidden" name="{_esc(k)}" value="{_esc(v)}">'
+                      for k, v in campos.items())
+    tit = f' title="{_esc(titulo)}"' if titulo else ""
+    return (f'<form method="post" action="/curadoria" style="display:inline">'
+            f'<input type="hidden" name="token" value="{_esc(token)}">'
+            f'<input type="hidden" name="acao" value="{_esc(acao)}">{ocultos}'
+            f'<button class="{classe}" type="submit"{tit}>{label}</button></form>')
+
+
+def _botoes_escopo(token, item, tema):
+    """Os dois escopos, decisão do Diego de escolher no clique. Estudo já enviado só
+    oferece 'memória': não se des-envia."""
+    campos = {"origem": item.get("origem", ""), "ref": item.get("id") or item.get("ref", ""),
+              "tema": tema}
+    b = _form_curadoria(token, "excluir_corpus", dict(campos, escopo="memoria"),
+                        "só da memória", titulo=_AVISO_X)
+    if item.get("origem") != "digest":
+        b += " " + _form_curadoria(token, "excluir_corpus", dict(campos, escopo="tudo"),
+                                   "memória + fila", titulo=_AVISO_X)
+    return b
+
+
+def _dossie_html(dossies, painel=None, token=""):
     """O dossiê é AFIRMAÇÃO + os estudos que a sustentam — nunca prosa. A tela mostra
     exatamente isso, pra o Diego conseguir julgar se a memória tem lastro (e não só se
-    o texto ficou bonito)."""
+    o texto ficou bonito).
+
+    Cada estudo citado ganha um ✕ que abre a confirmação (o título do dossiê é o que a IA
+    escreveu; a confirmação mostra qual estudo REAL casou). Estudo já tirado da memória
+    aparece riscado, não some: o dossiê guardado ainda é o antigo, e sumir faria parecer
+    que a memória já foi refeita sem ele.
+    """
     import json as _json
+    import dossie as _dossie
     if not dossies:
         return ('<p class="hint">Nenhum dossiê ainda. Rode <strong>🧠 Construir o dossiê</strong> '
                 'em Ferramentas — ele lê os estudos da base e organiza a memória por tema.</p>')
+    painel = painel or {}
     cards = []
     for d in dossies:
+        tema = d.get("tema") or ""
+        dados = painel.get(tema) or {}
+        corpus, excluidos = dados.get("corpus") or [], dados.get("excluidos") or []
+        fora = {_dossie.normalizar_titulo(e.get("titulo")) for e in excluidos}
         try:
             blocos = (_json.loads(d.get("conteudo") or "{}") or {}).get("blocos") or []
         except Exception:
             blocos = []
         quando = (d.get("atualizado_em") or "")[:10]
+
+        def _estudo_linha(e):
+            rot = _esc(f'{e.get("titulo","")} ({e.get("fonte","")} {e.get("data","")})')
+            if _dossie.normalizar_titulo(e.get("titulo")) in fora:
+                return (f'<span style="text-decoration:line-through;opacity:.55">{rot}</span> '
+                        f'<span class="hint">fora da memória — refaça o dossiê (🧠) pra ver '
+                        f'o efeito nas afirmações</span>')
+            botao = _form_curadoria(token, "confirmar_exclusao",
+                                    {"tema": tema, "titulo": e.get("titulo", "")},
+                                    "✕", classe="actbtn ghost", titulo=_AVISO_X)
+            return f"{rot} {botao}"
+
         corpo = "".join(
             f'<div class="item"><div class="t">{_esc(b.get("afirmacao"))}</div>'
-            f'<div class="d">' + " · ".join(
-                _esc(f'{e.get("titulo","")} ({e.get("fonte","")} {e.get("data","")})')
-                for e in (b.get("estudos") or [])) + '</div></div>'
+            f'<div class="d">' + " · ".join(_estudo_linha(e) for e in (b.get("estudos") or []))
+            + '</div></div>'
             for b in blocos) or '<p class="hint">Dossiê vazio — a IA não devolveu nada útil.</p>'
+
+        lidos = "".join(
+            f'<div class="item"><div class="d">{_esc(e.get("titulo"))} '
+            f'<span class="hint">({_esc(e.get("fonte"))} {_esc(e.get("data"))}'
+            + (" · já enviado" if e.get("origem") == "digest" else "") + ')</span> '
+            + _botoes_escopo(token, e, tema) + '</div></div>' for e in corpus)
+        bloco_lidos = (f'<details class="temacard"><summary>Estudos lidos '
+                       f'<span class="cnt">{len(corpus)}</span></summary>'
+                       f'<div class="temacard-corpo"><p class="hint">{_esc(_AVISO_X)}</p>'
+                       f'{lidos}</div></details>') if corpus else ""
+
+        fora_html = "".join(
+            f'<div class="item"><div class="d">{_esc(e.get("titulo"))} '
+            f'<span class="hint">({_esc(e.get("escopo"))})</span> '
+            + _form_curadoria(token, "devolver_corpus",
+                              {"origem": e.get("origem", ""), "ref": e.get("ref", ""),
+                               "tema": tema}, "↩︎ Devolver")
+            + '</div></div>' for e in excluidos)
+        bloco_fora = (f'<details class="temacard"><summary>Fora da memória '
+                      f'<span class="cnt">{len(excluidos)}</span></summary>'
+                      f'<div class="temacard-corpo">{fora_html}</div></details>'
+                      ) if excluidos else ""
+
+        refazer = _form_curadoria(token, "refazer_dossie_tema", {"tema": tema},
+                                  "🧠 Refazer só este tema")
         cards.append(
             f'<details name="dossie-tema" class="temacard">'
-            f'<summary>{_emoji(d.get("tema"))} {_esc(d.get("tema"))} '
+            f'<summary>{_emoji(tema)} {_esc(tema)} '
             f'<span class="cnt">{len(blocos)}</span></summary>'
             f'<div class="temacard-corpo">'
-            f'<p class="hint">{d.get("n_estudos", 0)} estudos lidos · atualizado em {_esc(quando)}</p>'
-            f'{corpo}</div></details>')
+            f'<p class="hint">{d.get("n_estudos", 0)} estudos lidos · atualizado em '
+            f'{_esc(quando)}</p>{corpo}{bloco_lidos}{bloco_fora}'
+            f'<div style="margin-top:12px">{refazer}</div></div></details>')
     return "".join(cards)
+
+
+def pagina_confirmar_exclusao(estudo, tema, token):
+    """O ✕ do bloco não exclui na hora: mostra QUAL estudo casou com aquele título antes
+    de tirar. O título no dossiê é o que a IA escreveu — ver `dossie.casar_titulo`."""
+    origem = "já enviado ao assinante" if estudo.get("origem") == "digest" else "candidato da base"
+    voltar = f'/curadoria?token={_esc(token)}&aba=dossie'
+    return (f'<div class="panel"><h3>Tirar este estudo da memória?</h3>'
+            f'<p class="hint">{_esc(_AVISO_X)}</p>'
+            f'<div class="item"><div class="t">{_esc(estudo.get("titulo"))}</div>'
+            f'<div class="d">{_esc(estudo.get("fonte"))} · {_esc(estudo.get("data"))} · '
+            f'{origem}</div></div>'
+            f'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">'
+            f'{_botoes_escopo(token, estudo, tema)}'
+            f'<a class="actbtn ghost" href="{voltar}" style="text-decoration:none">Cancelar</a>'
+            f'</div></div>')
 
 
 def _curadoria_abas(aba, contagens, token, tema=""):
@@ -1676,7 +1770,7 @@ def _curadoria_ferramentas(token):
 
 
 def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
-                     aba="triagem", tema="", msg="", dossies=None):
+                     aba="triagem", tema="", msg="", dossies=None, painel=None):
     """Bancada de triagem: faixa de estoque + o que sai amanhã + abas
     (Triagem · Reserva · Clássicos) + ferramentas recolhidas."""
     aba = aba if aba in ("triagem", "reserva", "classicos", "dossie") else "triagem"
@@ -1695,7 +1789,7 @@ def pagina_curadoria(estado, amanha, candidatos, reserva, classicos, token,
     if aba == "dossie":
         corpo_aba = ('<p class="hint">A memória destilada do que a base sabe. É daqui que a '
                      'opinião do estudo do dia vai sair — em vez de reler centenas de estudos '
-                     'todo dia.</p>' + _dossie_html(dossies or []))
+                     'todo dia.</p>' + _dossie_html(dossies or [], painel, token))
     elif aba == "reserva":
         corpo_aba = (_curadoria_reserva_cards(prontos, resto_reserva, token)
                      if (prontos or resto_reserva) else

@@ -235,3 +235,22 @@ def reconstruir_todos(temas=None, gerar_fn=None, db_mod=None):
         return feitos
     finally:
         _LOCK.release()
+
+
+def painel(db_mod=None, temas=None):
+    """O material da aba 🧠: por tema, o corpus lido (sem os abstracts — a tela não
+    precisa deles, e eles são o peso da consulta) e o que está fora da memória.
+
+    Montado só quando a aba do dossiê está aberta: são centenas de linhas por tema.
+    """
+    if db_mod is None:
+        import db as db_mod
+    if temas is None:
+        import area_estudo
+        temas = area_estudo.areas()
+    out = {}
+    for t in temas:
+        corpus = [{k: e.get(k, "") for k in ("id", "origem", "titulo", "fonte", "data")}
+                  for e in corpus_do_tema(t, db_mod)]
+        out[t] = {"corpus": corpus, "excluidos": db_mod.listar_excluidos(t)}
+    return out
