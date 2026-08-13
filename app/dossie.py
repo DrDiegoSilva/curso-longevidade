@@ -16,6 +16,8 @@ Bloco sem afirmação ou sem estudo é descartado no parse — afirmação sem l
 solta, exatamente o que o dossiê existe pra impedir.
 """
 import json
+import re
+import unicodedata
 
 SYS = ("Você organiza a memória de um médico sobre um tema, a partir de estudos científicos. "
        "Agrupe os achados em AFIRMAÇÕES, e para cada uma liste os estudos que a sustentam. "
@@ -56,6 +58,43 @@ def parse(bruto):
         if afirmacao and estudos:      # sem lastro não entra
             blocos.append({"afirmacao": afirmacao, "estudos": estudos})
     return {"blocos": blocos}
+
+
+MIN_PREFIXO = 30      # abaixo disso, "Once" casaria com meio corpus
+
+
+def normalizar_titulo(t):
+    """Minúsculas, sem acento, sem pontuação, espaços colapsados."""
+    t = unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", t.lower())).strip()
+
+
+def casar_titulo(titulo, corpus):
+    """O estudo do corpus que corresponde ao título escrito pela IA no dossiê, ou None.
+
+    Três degraus: igual depois de normalizar; truncado (um é prefixo do outro, com pelo
+    menos MIN_PREFIXO caracteres); nada.
+
+    Ambíguo devolve None de propósito. O que NÃO se pode fazer é chutar — excluir o
+    estudo errado é invisível até a reconstrução seguinte, quando a afirmação some sem
+    explicação.
+    """
+    alvo = normalizar_titulo(titulo)
+    if not alvo or not corpus:
+        return None
+    iguais = [e for e in corpus if normalizar_titulo(e.get("titulo")) == alvo]
+    if len(iguais) == 1:
+        return iguais[0]
+    if iguais:
+        return None                      # repetido no banco: manda pra lista
+    if len(alvo) < MIN_PREFIXO:
+        return None
+    prefixos = []
+    for e in corpus:
+        n = normalizar_titulo(e.get("titulo"))
+        if len(n) >= MIN_PREFIXO and (n.startswith(alvo) or alvo.startswith(n)):
+            prefixos.append(e)
+    return prefixos[0] if len(prefixos) == 1 else None
 
 
 def _chamar(gerar_fn, prompt):

@@ -181,6 +181,61 @@ class TestListarExcluidos(_Base):
         self.assertEqual(self.db.listar_excluidos("Longevidade"), [])
 
 
+class TestCasarTitulo(unittest.TestCase):
+    """O dossiê guarda o título COMO A IA ESCREVEU. O ✕ do bloco precisa achar a linha
+    real do banco — e, quando não achar, dizer isso em vez de fingir que excluiu."""
+
+    def setUp(self):
+        import importlib, dossie
+        importlib.reload(dossie)
+        self.d = dossie
+        self.corpus = [
+            {"id": "a", "origem": "candidato",
+             "titulo": "Once-Weekly Semaglutide in Adults with Overweight or Obesity"},
+            {"id": "b", "origem": "candidato",
+             "titulo": "Efeitos da reposição hormonal na densidade óssea"},
+            {"id": "c", "origem": "digest", "titulo": "Tirzepatide Once Weekly for Obesity"},
+        ]
+
+    def test_titulo_igual_acha(self):
+        r = self.d.casar_titulo("Tirzepatide Once Weekly for Obesity", self.corpus)
+        self.assertEqual(r["id"], "c")
+
+    def test_ignora_caixa_pontuacao_e_acento(self):
+        r = self.d.casar_titulo("EFEITOS DA REPOSICAO HORMONAL NA DENSIDADE OSSEA!",
+                                self.corpus)
+        self.assertEqual(r["id"], "b")
+
+    def test_titulo_truncado_pela_IA_ainda_acha(self):
+        r = self.d.casar_titulo("Once-Weekly Semaglutide in Adults with Over", self.corpus)
+        self.assertEqual(r["id"], "a")
+
+    def test_titulo_inexistente_devolve_None(self):
+        self.assertIsNone(self.d.casar_titulo("Estudo que a IA inventou", self.corpus))
+
+    def test_prefixo_curto_demais_nao_casa(self):
+        """'Once' casaria com meio corpus — casamento frouxo excluiria o estudo errado,
+        e o Diego só descobriria na reconstrução seguinte."""
+        self.assertIsNone(self.d.casar_titulo("Once", self.corpus))
+
+    def test_ambiguo_devolve_None_em_vez_de_chutar(self):
+        corpus = [{"id": "x", "titulo": "Estudo repetido no banco"},
+                  {"id": "y", "titulo": "Estudo repetido no banco"}]
+        self.assertIsNone(self.d.casar_titulo("Estudo repetido no banco", corpus))
+
+    def test_titulo_vazio_devolve_None(self):
+        for t in ("", None, "   "):
+            with self.subTest(t=t):
+                self.assertIsNone(self.d.casar_titulo(t, self.corpus))
+
+    def test_corpus_vazio_devolve_None(self):
+        self.assertIsNone(self.d.casar_titulo("Qualquer coisa", []))
+
+    def test_normalizar_tira_acento_e_pontuacao(self):
+        self.assertEqual(self.d.normalizar_titulo("Ação: Reposição — Hormonal!"),
+                         "acao reposicao hormonal")
+
+
 class TestCorpusDoTema(_Base):
     """O corpus tem DUAS fontes e a exclusão precisa valer nas duas."""
 
