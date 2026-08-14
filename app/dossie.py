@@ -16,6 +16,8 @@ Bloco sem afirmação ou sem estudo é descartado no parse — afirmação sem l
 solta, exatamente o que o dossiê existe pra impedir.
 """
 import json
+import re
+import unicodedata
 
 SYS = ("Você organiza a memória de um médico sobre um tema, a partir de estudos científicos. "
        "Agrupe os achados em AFIRMAÇÕES, e para cada uma liste os estudos que a sustentam. "
@@ -56,6 +58,51 @@ def parse(bruto):
         if afirmacao and estudos:      # sem lastro não entra
             blocos.append({"afirmacao": afirmacao, "estudos": estudos})
     return {"blocos": blocos}
+
+
+MIN_PREFIXO = 30      # abaixo disso, "Once" casaria com meio corpus
+
+
+def normalizar_titulo(t):
+    """Minúsculas, sem acento, sem pontuação, espaços colapsados."""
+    t = unicodedata.normalize("NFKD", str(t or "")).encode("ascii", "ignore").decode()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", t.lower())).strip()
+
+
+def casar_titulo(titulo, corpus):
+    """O estudo do corpus que corresponde ao título escrito pela IA no dossiê, ou None.
+
+    Três degraus: igual depois de normalizar; truncado (um é prefixo do outro, com pelo
+    menos MIN_PREFIXO caracteres); nada.
+
+    Ambíguo devolve None de propósito. O que NÃO se pode fazer é chutar — excluir o
+    estudo errado é invisível até a reconstrução seguinte, quando a afirmação some sem
+    explicação.
+    """
+    alvo = normalizar_titulo(titulo)
+    if not alvo or not corpus:
+        return None
+    iguais = [e for e in corpus if normalizar_titulo(e.get("titulo")) == alvo]
+    if len(iguais) == 1:
+        # Antes de devolver, confira se existe outro estudo do qual o alvo é prefixo.
+        # Se sim, é ambíguo (o alvo pode ser uma truncagem). Com MIN_PREFIXO pra evitar
+        # falsos positivos em títulos muito curtos.
+        if len(alvo) >= MIN_PREFIXO:
+            for e in corpus:
+                n = normalizar_titulo(e.get("titulo"))
+                if n != alvo and n.startswith(alvo):
+                    return None  # ambíguo: alvo é prefixo de outro
+        return iguais[0]
+    if iguais:
+        return None                      # repetido no banco: manda pra lista
+    if len(alvo) < MIN_PREFIXO:
+        return None
+    prefixos = []
+    for e in corpus:
+        n = normalizar_titulo(e.get("titulo"))
+        if len(n) >= MIN_PREFIXO and (n.startswith(alvo) or alvo.startswith(n)):
+            prefixos.append(e)
+    return prefixos[0] if len(prefixos) == 1 else None
 
 
 def _chamar(gerar_fn, prompt):
@@ -115,7 +162,7 @@ def acrescentar(dossie_atual, estudo, gerar_fn=None):
 
 def _gerador_padrao():
     from resumo_diario import claude, SONNET
-    return lambda p: claude(SONNET, p, system=SYS, max_tokens=4000)
+    return lambda p: claude(SONNET, p, system=SYS, max_tokens=4000, acao="dossie")
 
 
 _LOCK = __import__("threading").Lock()
@@ -123,17 +170,32 @@ _LOCK = __import__("threading").Lock()
 
 def corpus_do_tema(tema, db_mod=None):
     """Os estudos do tema, das 3 fontes que acumulam: candidatos da varredura e do
-    backfill (com o abstract inteiro), estudos já enviados e clássicos bancados."""
+    backfill (com o abstract inteiro), estudos já enviados e clássicos bancados.
+
+    Cada item carrega `id` e `origem` — é o que permite a tela oferecer um ✕ que aponta
+    para uma linha de verdade do banco, em vez de para um título solto.
+
+    Excluídos ficam de fora: `listar_candidatos` já esconde o escopo 'tudo', e o
+    'memoria' é filtrado aqui (ele continua na fila, só não alimenta a memória). Nos
+    digests o filtro é SÓ aqui: `listar_por_tema` serve o portal do assinante.
+    """
     if db_mod is None:
         import db as db_mod
     fonte = []
     for c in db_mod.listar_candidatos(tema=tema):
+        if (c.get("excluido") or "").strip():
+            continue
         if (c.get("abstract") or "").strip():
-            fonte.append({"titulo": c.get("titulo", ""), "fonte": c.get("fonte", ""),
+            fonte.append({"id": c.get("id", ""), "origem": "candidato",
+                          "titulo": c.get("titulo", ""), "fonte": c.get("fonte", ""),
                           "data": c.get("data", ""), "abstract": c.get("abstract", "")})
     for d in db_mod.listar_por_tema(slug_de(tema, db_mod)):
-        fonte.append({"titulo": d.get("titulo_pt", ""), "fonte": d.get("fonte", ""),
-                      "data": d.get("data", ""), "abstract": d.get("resumo", "")})
+        if (d.get("excluido") or "").strip():
+            continue
+        fonte.append({"id": f'{d.get("tema_slug","")}|{d.get("data","")}',
+                      "origem": "digest", "titulo": d.get("titulo_pt", ""),
+                      "fonte": d.get("fonte", ""), "data": d.get("data", ""),
+                      "abstract": d.get("resumo", "")})
     return fonte
 
 
@@ -173,3 +235,28 @@ def reconstruir_todos(temas=None, gerar_fn=None, db_mod=None):
         return feitos
     finally:
         _LOCK.release()
+
+
+def painel(db_mod=None, temas=None):
+    """O material da aba 🧠: por tema, o corpus lido (sem os abstracts — a tela só
+    precisa de id/origem/titulo/fonte/data pra montar a lista) e o que está fora da
+    memória.
+
+    O descarte do abstract é em Python, depois da consulta: o `SELECT *` de
+    `corpus_do_tema` continua trazendo abstract/resumo do banco por inteiro. Não
+    economiza a consulta — só evita carregar o peso pesado (abstracts de centenas de
+    estudos) no HTML da tela.
+
+    Montado só quando a aba do dossiê está aberta: são centenas de linhas por tema.
+    """
+    if db_mod is None:
+        import db as db_mod
+    if temas is None:
+        import area_estudo
+        temas = area_estudo.areas()
+    out = {}
+    for t in temas:
+        corpus = [{k: e.get(k, "") for k in ("id", "origem", "titulo", "fonte", "data")}
+                  for e in corpus_do_tema(t, db_mod)]
+        out[t] = {"corpus": corpus, "excluidos": db_mod.listar_excluidos(t)}
+    return out

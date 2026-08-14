@@ -214,6 +214,51 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 TTS_MODEL = os.environ.get("DSCURSO_TTS_MODEL") or "tts-1-hd"
 TTS_VOICE = os.environ.get("DSCURSO_TTS_VOICE") or "onyx"
 
+# ─── Preços de IA (para o ledger de custos) ───────────────────
+# US$ por 1M de unidades: (entrada, saída). Para o TTS a unidade é o CARACTERE.
+# ⚠️ CONFERIR nas páginas de preço da Anthropic e da OpenAI — preço errado erra a conta
+# toda, e essa conta vira preço de assinatura. Dá pra corrigir sem deploy pela env
+# DSCURSO_PRECOS_IA (JSON: {"modelo": [entrada, saida]}).
+_PRECOS_PADRAO = {
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-opus-4-8": (15.0, 75.0),
+    "tts-1-hd": (30.0, 0.0),
+    "tts-1": (15.0, 0.0),
+}
+
+
+def _precos_ia():
+    precos = dict(_PRECOS_PADRAO)
+    bruto = os.environ.get("DSCURSO_PRECOS_IA")
+    if bruto:
+        try:
+            parsed = json.loads(bruto)
+        except Exception as e:      # JSON que nem parseia: cai tudo no padrão
+            print(f"[config] DSCURSO_PRECOS_IA ignorada (JSON inválido: {e})", flush=True)
+            return precos
+        # JSON deve ser um objeto {modelo: [entrada, saida]}
+        if not isinstance(parsed, dict):
+            print(f"[config] DSCURSO_PRECOS_IA ignorada (esperava objeto, obteve {type(parsed).__name__})", flush=True)
+            return precos
+        # JSON parseia e é objeto, mas pode ter entradas malformadas. Processa por entrada para isolar erros.
+        for k, v in parsed.items():
+            try:
+                precos[k] = (float(v[0]), float(v[1]))
+            except Exception as e:  # entrada ruim — qualquer erro (IndexError, KeyError, TypeError, etc.)
+                print(f"[config] DSCURSO_PRECOS_IA entrada descartada {k}: {e}", flush=True)
+    return precos
+
+
+PRECOS_IA = _precos_ia()
+
+# Cotação fixa. Média basta: a decisão que esse número sustenta (repassar no preço) não
+# muda com 3% de câmbio. A tela sempre mostra qual cotação usou.
+try:
+    USD_BRL = float(os.environ.get("DSCURSO_USD_BRL") or 5.50)
+except ValueError:
+    USD_BRL = 5.50
+
 
 def audio_ligado():
     """Envia áudio junto com o estudo? Precisa da chave OpenAI e não estar desligado."""

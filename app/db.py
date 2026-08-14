@@ -112,6 +112,7 @@ def init():
                 fonte TEXT,
                 url TEXT,
                 criado_em TEXT,
+                excluido TEXT DEFAULT '',
                 PRIMARY KEY (data, tema_slug)
             );
             CREATE TABLE IF NOT EXISTS login_codes (
@@ -185,7 +186,8 @@ def init():
                 tema TEXT, titulo TEXT, fonte TEXT, data TEXT, doi TEXT, url TEXT,
                 abstract TEXT, pergunta TEXT, score REAL, chave TEXT UNIQUE,
                 citacoes INTEGER DEFAULT 0, tipo TEXT DEFAULT 'varredura',
-                status TEXT DEFAULT 'novo', criado_em TEXT, tags TEXT DEFAULT '[]'
+                status TEXT DEFAULT 'novo', criado_em TEXT, tags TEXT DEFAULT '[]',
+                excluido TEXT DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS classicos (
                 id TEXT PRIMARY KEY, tema TEXT, titulo_pt TEXT, titulo_original TEXT, resumo TEXT,
@@ -278,6 +280,15 @@ def init():
                 subscriber_id TEXT, automacao_id TEXT, vencimento_ref TEXT, enviado_em TEXT,
                 PRIMARY KEY (subscriber_id, automacao_id, vencimento_ref)
             );
+            CREATE TABLE IF NOT EXISTS ia_uso (
+                id TEXT PRIMARY KEY,
+                quando TEXT,
+                acao TEXT DEFAULT '',
+                modelo TEXT DEFAULT '',
+                tokens_in INTEGER DEFAULT 0,
+                tokens_out INTEGER DEFAULT 0,
+                chamadas INTEGER DEFAULT 1
+            );
             """
         )
     _migrar_colunas()
@@ -296,7 +307,7 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
             "automacoes_renovacao", "avisos_renovacao", "classicos",
             "series", "serie_itens", "dossies",
-            "trilha_pecas", "trilha_progresso", "trilha_envios"]
+            "trilha_pecas", "trilha_progresso", "trilha_envios", "ia_uso"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -354,6 +365,8 @@ def _migrar_colunas():
         _add_coluna(c, "curadoria_candidatos", "tags", "TEXT DEFAULT '[]'")
         _add_coluna(c, "reserva_resumos", "tags", "TEXT DEFAULT '[]'")
         _add_coluna(c, "classicos", "tags", "TEXT DEFAULT '[]'")
+        _add_coluna(c, "curadoria_candidatos", "excluido", "TEXT DEFAULT ''")
+        _add_coluna(c, "digests", "excluido", "TEXT DEFAULT ''")
 
 
 # Índices ÚNICOS que podem falhar num banco já povoado (linhas já em conflito).
@@ -1023,7 +1036,14 @@ def salvar_candidatos(cands):
     return depois - antes
 
 
-def listar_candidatos(status=None, tema=None, tipo=None):
+def listar_candidatos(status=None, tema=None, tipo=None, incluir_excluidos=False):
+    """Candidatos da curadoria.
+
+    O filtro de excluídos mora AQUI, e não nos cinco consumidores (agenda, triagem,
+    clássicos, backfill de tags, picker do 🔁): esquecer um deles é exatamente como o
+    `tipo='corpus'` vazou pro picker. `excluido='memoria'` continua aparecendo — esse
+    escopo tira do dossiê, não da fila.
+    """
     q = "SELECT * FROM curadoria_candidatos"
     conds, params = [], []
     if status:
@@ -1032,6 +1052,8 @@ def listar_candidatos(status=None, tema=None, tipo=None):
         conds.append("tema=?"); params.append(tema)
     if tipo:
         conds.append("tipo=?"); params.append(tipo)
+    if not incluir_excluidos:
+        conds.append("(excluido IS NULL OR excluido <> 'tudo')")
     if conds:
         q += " WHERE " + " AND ".join(conds)
     q += " ORDER BY tema, score DESC, criado_em DESC"
@@ -1838,8 +1860,91 @@ def trilha_painel():
     return [dict(r) for r in rows]
 
 
+# ---------------------------------------------------------------- ia_uso
+def registrar_ia_uso(acao, modelo, tokens_in, tokens_out=0, chamadas=1):
+    """Uma linha por chamada paga. Guarda só o CRU (unidades); dinheiro é calculado na
+    leitura por `ia_custo.custo_usd`, pra preço errado virar recálculo e não perda."""
+    import secrets
+    from datetime import datetime
+    with _conn() as c:
+        c.execute("""INSERT INTO ia_uso (id,quando,acao,modelo,tokens_in,tokens_out,chamadas)
+                     VALUES (?,?,?,?,?,?,?)""",
+                  (secrets.token_hex(8), datetime.now().isoformat(), acao or "",
+                   modelo or "", int(tokens_in or 0), int(tokens_out or 0),
+                   int(chamadas or 1)))
+
+
+def listar_ia_uso():
+    with _conn() as c:
+        return [dict(r) for r in
+                c.execute("SELECT * FROM ia_uso ORDER BY quando DESC").fetchall()]
+
+
 def trilha_listar_pecas():
     """Todas as peças, em ordem. Alimenta a prévia do admin."""
     with _conn() as c:
         rows = c.execute("SELECT * FROM trilha_pecas ORDER BY numero").fetchall()
     return [dict(r) for r in rows]
+
+
+# ---------------------------------------------------------------- exclusão do corpus
+ESCOPOS_EXCLUSAO = ("", "memoria", "tudo")
+
+
+def _valida_escopo(escopo):
+    """Escopo com typo gravado no banco nunca filtraria nada — e o Diego acharia que
+    excluiu. Falha fechada."""
+    e = escopo or ""
+    if e not in ESCOPOS_EXCLUSAO:
+        raise ValueError(f"escopo inválido: {escopo!r} (use {ESCOPOS_EXCLUSAO})")
+    return e
+
+
+def excluir_candidato(cand_id, escopo):
+    """Tira (ou devolve, com escopo='') um candidato da memória do dossiê.
+
+    escopo='tudo' também tira o resumo já pronto na fila de envio (`reserva_resumos`,
+    achado por `candidato_id`) — sem isso o rótulo "memória + fila" mentia: o candidato
+    saía da memória e o resumo continuava 'pronto', pronto pra ser entregue ao
+    assinante. Não é DELETE: o resumo já foi pago em IA, então vira status 'excluido'
+    (dá pra devolver). Só mexe em 'pronto' — 'agendado' já está preso a um slot da
+    agenda e 'enviado' já saiu; nenhum dos dois se desfaz com um UPDATE daqui.
+    """
+    e = _valida_escopo(escopo)
+    with _conn() as c:
+        c.execute("UPDATE curadoria_candidatos SET excluido=? WHERE id=?", (e, cand_id))
+        if e == "tudo":
+            c.execute("UPDATE reserva_resumos SET status='excluido' "
+                      "WHERE candidato_id=? AND status='pronto'", (cand_id,))
+        elif e == "":
+            c.execute("UPDATE reserva_resumos SET status='pronto' "
+                      "WHERE candidato_id=? AND status='excluido'", (cand_id,))
+
+
+def excluir_digest(tema_slug, data, escopo):
+    """Idem para estudo JÁ ENVIADO. Vale só dentro do corpus do dossiê: `listar_por_tema`
+    (o portal do assinante) nunca filtra por esta coluna — não se des-envia um estudo."""
+    e = _valida_escopo(escopo)
+    with _conn() as c:
+        c.execute("UPDATE digests SET excluido=? WHERE tema_slug=? AND data=?",
+                  (e, tema_slug, data))
+
+
+def listar_excluidos(tema):
+    """O que está fora da memória neste tema, das duas fontes, para a lista de devolver."""
+    with _conn() as c:
+        cands = c.execute(
+            "SELECT id,titulo,fonte,data,excluido FROM curadoria_candidatos "
+            "WHERE tema=? AND excluido IS NOT NULL AND excluido <> '' "
+            "ORDER BY titulo", (tema,)).fetchall()
+        digs = c.execute(
+            "SELECT tema_slug,data,titulo_pt,fonte,excluido FROM digests "
+            "WHERE tema=? AND excluido IS NOT NULL AND excluido <> '' "
+            "ORDER BY data DESC", (tema,)).fetchall()
+    out = [{"origem": "candidato", "ref": r["id"], "titulo": r["titulo"],
+            "fonte": r["fonte"], "data": r["data"], "escopo": r["excluido"]}
+           for r in cands]
+    out += [{"origem": "digest", "ref": f'{r["tema_slug"]}|{r["data"]}',
+             "titulo": r["titulo_pt"], "fonte": r["fonte"], "data": r["data"],
+             "escopo": r["excluido"]} for r in digs]
+    return out

@@ -73,7 +73,7 @@ def triar(artigos, tema, llm=None):
         return []
     if llm is None:
         from resumo_diario import claude, HAIKU
-        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=900)
+        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=900, acao="triagem")
     return _parse(llm(_prompt(artigos, tema)), artigos, tema)
 
 
@@ -94,7 +94,7 @@ def taggear(artigos, llm=None):
         return {}
     if llm is None:
         from resumo_diario import claude, HAIKU
-        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=700)
+        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=700, acao="tags")
     import jsonx
     bruto = jsonx.primeiro_array(llm(_prompt_tags(artigos)))
     try:
@@ -128,7 +128,7 @@ def extrair_metadados(titulo, texto, temas, llm=None):
     vazio = {"area": "", "fonte": "", "data": ""}
     if llm is None:
         from resumo_diario import claude, HAIKU
-        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=200)
+        llm = lambda p: claude(HAIKU, p, system=SYS, max_tokens=200, acao="metadados")
     try:
         import jsonx
         bruto = jsonx.primeiro_objeto(llm(_prompt_metadados(titulo, texto, temas)) or "")
