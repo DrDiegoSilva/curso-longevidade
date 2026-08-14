@@ -85,6 +85,28 @@ class TestBlocoEditavel(unittest.TestCase):
         html = self.sw._dossie_html([_dossie_row([_bloco()])], None, token="tok")
         self.assertNotIn('<div class="d"></div>', html)
 
+    def test_estudo_excluido_num_bloco_fixado_nao_manda_refazer_o_dossie(self):
+        """Achado da revisão final: dentro de um bloco fixado, 'refaça o dossiê (🧠) pra
+        ver o efeito' é falso — a reconstrução NUNCA mexe em bloco fixado. O médico
+        apertaria 🧠, esperaria minutos e gastaria IA à toa, e a afirmação voltaria igual."""
+        painel = {"Obesidade": {"corpus": [], "excluidos": [
+            {"titulo": "Estudo A", "fonte": "NEJM", "data": "2026-03",
+             "origem": "candidato", "ref": "c1", "escopo": "memoria"}]}}
+        html = self.sw._dossie_html([_dossie_row([_bloco(fixado=True)])], painel, token="tok")
+        self.assertIn("line-through", html)
+        self.assertNotIn("refaça o dossiê (🧠) pra ver o efeito nas afirmações", html)
+        self.assertIn("este bloco é seu", html)
+
+    def test_estudo_excluido_num_bloco_NAO_fixado_continua_mandando_refazer(self):
+        """O texto antigo continua valendo pro caso comum, onde refazer de fato ajuda."""
+        painel = {"Obesidade": {"corpus": [], "excluidos": [
+            {"titulo": "Estudo A", "fonte": "NEJM", "data": "2026-03",
+             "origem": "candidato", "ref": "c1", "escopo": "memoria"}]}}
+        html = self.sw._dossie_html([_dossie_row([_bloco(fixado=False)])], painel, token="tok")
+        self.assertIn("line-through", html)
+        self.assertIn("refaça o dossiê (🧠) pra ver o efeito nas afirmações", html)
+        self.assertNotIn("este bloco é seu", html)
+
 
 import io
 import shutil

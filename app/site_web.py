@@ -1477,7 +1477,7 @@ def _dossie_html(dossies, painel=None, token=""):
             blocos = []
         quando = (d.get("atualizado_em") or "")[:10]
 
-        def _estudo_linha(e):
+        def _estudo_linha(e, fixado=False):
             rot = _esc(f'{e.get("titulo","")} ({e.get("fonte","")} {e.get("data","")})')
             # Mesmo casamento usado pra EXCLUIR (dossie.casar_titulo, com o degrau de
             # prefixo) — não um `==` cru. O título aqui é o que a IA escreveu no bloco,
@@ -1485,9 +1485,16 @@ def _dossie_html(dossies, painel=None, token=""):
             # exata, esse é justamente o caso em que a exclusão funciona mas o feedback
             # visual não aparece.
             if _dossie.casar_titulo(e.get("titulo"), excluidos) is not None:
+                # Num bloco fixado, "refaça o dossiê" é falso por construção: a
+                # reconstrução deliberadamente NÃO mexe em bloco fixado (é a garantia do
+                # gravador), então apertar 🧠 nunca vai tirar este estudo dali.
+                if fixado:
+                    aviso = ('este bloco é seu; edite a afirmação ou solte o bloco pra '
+                              'reconstrução refazê-lo')
+                else:
+                    aviso = 'refaça o dossiê (🧠) pra ver o efeito nas afirmações'
                 return (f'<span style="text-decoration:line-through;opacity:.55">{rot}</span> '
-                        f'<span class="hint">fora da memória — refaça o dossiê (🧠) pra ver '
-                        f'o efeito nas afirmações</span>')
+                        f'<span class="hint">fora da memória — {aviso}</span>')
             botao = _form_curadoria(token, "confirmar_exclusao",
                                     {"tema": tema, "titulo": e.get("titulo", "")},
                                     "✕", classe="actbtn ghost", titulo=_AVISO_X)
@@ -1527,7 +1534,7 @@ def _dossie_html(dossies, painel=None, token=""):
             detalhe = f'<div class="d">{selo}</div>' if selo else ""
             return (f'<div class="item"><div class="t">{_esc(b.get("afirmacao"))}</div>'
                     f'<div class="d">'
-                    + " · ".join(_estudo_linha(e) for e in (b.get("estudos") or []))
+                    + " · ".join(_estudo_linha(e, fixado) for e in (b.get("estudos") or []))
                     + f'</div>{detalhe}{editar}</div>')
 
         corpo = "".join(_bloco_html(b) for b in blocos) or \
