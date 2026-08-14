@@ -267,6 +267,24 @@ class TestReconstrucaoSabeDosFixados(_Base):
                               fixadas=["Uma afirmação que o Diego escreveu"])
         self.assertTrue(any("Uma afirmação que o Diego escreveu" in p for p in prompts))
 
+    def test_o_aviso_fica_so_no_prompt_da_fusao_nao_nos_lotes(self):
+        """Achado da revisão da Task 3: `any(... in prompts)` passaria mesmo se o aviso
+        vazasse pros prompts dos LOTES também — gastaria tokens em toda chamada e
+        poluiria a instrução de cada lote, sem que a suíte percebesse."""
+        prompts = []
+
+        def gerar_fn(p):
+            prompts.append(p)
+            return '{"blocos":[{"afirmacao":"a","estudos":[{"titulo":"Estudo 1"}]}]}'
+
+        self.dossie.construir(self._estudos(), lote=2, gerar_fn=gerar_fn,
+                              fixadas=["Uma afirmação que o Diego escreveu"])
+        *prompts_lote, prompt_fusao = prompts
+        self.assertTrue(prompts_lote)          # sanity: houve mais de um lote nesta chamada
+        self.assertIn("Uma afirmação que o Diego escreveu", prompt_fusao)
+        for p in prompts_lote:
+            self.assertNotIn("Uma afirmação que o Diego escreveu", p)
+
     def test_sem_fixadas_o_prompt_nao_ganha_o_aviso(self):
         prompts = []
 
