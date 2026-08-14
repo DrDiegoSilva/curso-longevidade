@@ -1493,11 +1493,43 @@ def _dossie_html(dossies, painel=None, token=""):
                                     "✕", classe="actbtn ghost", titulo=_AVISO_X)
             return f"{rot} {botao}"
 
-        corpo = "".join(
-            f'<div class="item"><div class="t">{_esc(b.get("afirmacao"))}</div>'
-            f'<div class="d">' + " · ".join(_estudo_linha(e) for e in (b.get("estudos") or []))
-            + '</div></div>'
-            for b in blocos) or '<p class="hint">Dossiê vazio — a IA não devolveu nada útil.</p>'
+        def _bloco_html(b):
+            """Afirmação + lastro + as ações do bloco. O ✏️ abre o texto numa caixa; salvar
+            fixa o bloco (editar já fixa — decisão do Diego), e aí ele ganha o 📌 e o
+            soltar."""
+            bid = b.get("id") or ""
+            fixado = bool(b.get("fixado"))
+            selo = ""
+            if fixado:
+                selo = (f'<span class="hint">📌 sua versão, de '
+                        f'{_esc((b.get("editado_em") or "")[:10])} — a reconstrução não '
+                        f'mexe neste bloco</span> '
+                        + _form_curadoria(token, "soltar_bloco",
+                                          {"tema": tema, "bloco": bid}, "soltar"))
+            editar = ""
+            if bid:                     # dossiê antigo, sem id: não dá pra apontar o bloco
+                editar = (
+                    f'<details style="margin-top:8px">'
+                    f'<summary style="cursor:pointer;color:var(--ouro2);'
+                    f'font-family:system-ui,sans-serif;font-size:13px">✏️ Editar</summary>'
+                    f'<form method="post" action="/curadoria" style="margin-top:10px">'
+                    f'<input type="hidden" name="token" value="{_esc(token)}">'
+                    f'<input type="hidden" name="acao" value="editar_bloco">'
+                    f'<input type="hidden" name="aba" value="dossie">'
+                    f'<input type="hidden" name="tema" value="{_esc(tema)}">'
+                    f'<input type="hidden" name="bloco" value="{_esc(bid)}">'
+                    f'<textarea name="afirmacao" rows="3">{_esc(b.get("afirmacao"))}</textarea>'
+                    f'<p class="hint">Salvar deixa este bloco no seu texto — a reconstrução '
+                    f'passa a não mexer nele.</p>'
+                    f'<button class="actbtn" type="submit">Salvar afirmação</button>'
+                    f'</form></details>')
+            return (f'<div class="item"><div class="t">{_esc(b.get("afirmacao"))}</div>'
+                    f'<div class="d">'
+                    + " · ".join(_estudo_linha(e) for e in (b.get("estudos") or []))
+                    + f'</div><div class="d">{selo}</div>{editar}</div>')
+
+        corpo = "".join(_bloco_html(b) for b in blocos) or \
+            '<p class="hint">Dossiê vazio — a IA não devolveu nada útil.</p>'
 
         lidos = "".join(
             f'<div class="item"><div class="d">{_esc(e.get("titulo"))} '
