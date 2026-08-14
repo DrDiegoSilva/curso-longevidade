@@ -1714,6 +1714,12 @@ def salvar_dossie(tema, conteudo, n_estudos):
     reconstrói: assim nenhum caminho futuro — botão novo, cron, script de madrugada —
     consegue apagar o texto que o Diego escreveu. Perder isso seria invisível até a
     afirmação sumir semanas depois. Soltar o bloco é a única porta de saída, e é explícita.
+
+    A única exceção é uma corrida com a thread da reconstrução (botão 🧠): esta função lê
+    os fixados numa conexão e grava noutra, e `dossie_editar_bloco`/`dossie_soltar_bloco`
+    leem a lista inteira e a regravam inteira — se as duas intercalarem, dá pra perder o
+    texto do médico ou descartar a reconstrução daquele tema. Janela sub-milissegundo, um
+    único usuário admin; não é pra consertar agora.
     """
     from datetime import datetime
     fixados = _com_ids([b for b in blocos_do_dossie(tema) if b.get("fixado")])
@@ -1780,6 +1786,25 @@ def dossie_soltar_bloco(tema, bloco_id):
         return False
     _gravar_blocos_cru(tema, blocos)
     return True
+
+
+def dossie_backfill_ids(tema):
+    """Dá `id` aos blocos gravados antes desta entrega. Sem id, `_bloco_html` (site_web.py)
+    não oferece ✏️ Editar — o mesmo gate que protege o soltar de apontar pro bloco errado
+    também deixa o dossiê legado sem editar, e sem nenhuma pista disso na tela.
+
+    Idempotente: se nenhum bloco estiver sem id, não escreve nada e devolve 0 — pra não
+    bater `atualizado_em` toda vez que a aba abre. Só adiciona a chave que falta; não toca
+    em `fixado`, `afirmacao` nem `estudos` de bloco nenhum (`_com_ids` só preenche o id).
+
+    Devolve quantos blocos ganharam id.
+    """
+    blocos = blocos_do_dossie(tema)
+    sem_id = sum(1 for b in blocos if not b.get("id"))
+    if not sem_id:
+        return 0
+    _gravar_blocos_cru(tema, _com_ids(blocos))
+    return sem_id
 
 
 def obter_dossie(tema):

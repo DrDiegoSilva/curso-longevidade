@@ -80,6 +80,64 @@ class TestIdsNosBlocos(_Base):
         self.assertEqual(self.db.blocos_do_dossie("Obesidade"), [])
 
 
+class TestBackfillIds(_Base):
+    """Achado da revisão final: um dossiê gravado ANTES desta entrega não tem `id` nos
+    blocos, e sem id a tela não oferece ✏️ Editar — sem nenhuma pista disso. O backfill
+    destrava o botão sem custar minutos e reais de IA reconstruindo à toa."""
+
+    def _tira_o_id(self, tema, indice=0):
+        blocos = self.db.blocos_do_dossie(tema)
+        blocos[indice].pop("id", None)
+        self.db._gravar_blocos_cru(tema, blocos)
+
+    def test_dossie_legado_ganha_ids(self):
+        self.db.salvar_dossie("Obesidade", {"blocos": [_bloco("Texto da IA")]}, 10)
+        self._tira_o_id("Obesidade")
+        self.assertIsNone(self.db.blocos_do_dossie("Obesidade")[0].get("id"))
+
+        n = self.db.dossie_backfill_ids("Obesidade")
+
+        self.assertEqual(n, 1)
+        self.assertTrue(self.db.blocos_do_dossie("Obesidade")[0].get("id"))
+
+    def test_rodar_de_novo_a_segunda_vez_devolve_0_e_nao_reescreve(self):
+        self.db.salvar_dossie("Obesidade", {"blocos": [_bloco("Texto da IA")]}, 10)
+        self._tira_o_id("Obesidade")
+        self.assertEqual(self.db.dossie_backfill_ids("Obesidade"), 1)
+        antes = self.db.obter_dossie("Obesidade")
+
+        n2 = self.db.dossie_backfill_ids("Obesidade")
+
+        self.assertEqual(n2, 0)
+        depois = self.db.obter_dossie("Obesidade")
+        self.assertEqual(antes["conteudo"], depois["conteudo"])
+        self.assertEqual(antes["atualizado_em"], depois["atualizado_em"],
+                         "sem nada pra fazer, nem `atualizado_em` pode mudar — senão a "
+                         "tela mostra 'atualizado agora' toda vez que a aba abre")
+
+    def test_nao_altera_fixado_afirmacao_ou_estudos(self):
+        self.db.salvar_dossie("Obesidade", {"blocos": [_bloco("Texto da IA")]}, 10)
+        bid = self.db.blocos_do_dossie("Obesidade")[0]["id"]
+        self.db.dossie_editar_bloco("Obesidade", bid, "Texto do Diego")
+        blocos = self.db.blocos_do_dossie("Obesidade") + [
+            {"afirmacao": "Órfão", "estudos": [{"titulo": "Y", "fonte": "", "data": ""}]}]
+        self.db._gravar_blocos_cru("Obesidade", blocos)
+
+        self.db.dossie_backfill_ids("Obesidade")
+
+        fixado = next(b for b in self.db.blocos_do_dossie("Obesidade") if b["id"] == bid)
+        self.assertTrue(fixado.get("fixado"))
+        self.assertEqual(fixado["afirmacao"], "Texto do Diego")
+        orfao = next(b for b in self.db.blocos_do_dossie("Obesidade")
+                     if b["afirmacao"] == "Órfão")
+        self.assertEqual(orfao["estudos"], [{"titulo": "Y", "fonte": "", "data": ""}])
+        self.assertFalse(orfao.get("fixado"))
+        self.assertTrue(orfao.get("id"))
+
+    def test_tema_sem_dossie_nao_quebra(self):
+        self.assertEqual(self.db.dossie_backfill_ids("Longevidade"), 0)
+
+
 class TestGravadorPreservaOsFixados(_Base):
     """O teste que dá sentido ao desenho inteiro."""
 

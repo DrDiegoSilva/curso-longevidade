@@ -388,6 +388,36 @@ class TestRotasExclusao(unittest.TestCase):
         finally:
             dossie.painel = original
 
+    def test_get_dossie_faz_backfill_de_ids_no_dossie_legado(self):
+        """Item 2 da revisão final: um dossiê gravado antes desta entrega não tem `id`
+        nos blocos, e sem id a tela não oferece ✏️ Editar — sem nenhuma pista disso. O
+        GET da aba 🧠 destrava sozinho, sem o médico ter que apertar 🧠 (minutos + IA)."""
+        self.db.salvar_dossie("Obesidade", {"blocos": [
+            {"afirmacao": "Texto da IA",
+             "estudos": [{"titulo": "Estudo A", "fonte": "NEJM", "data": "2026-03"}]}]}, 5)
+        blocos = self.db.blocos_do_dossie("Obesidade")
+        blocos[0].pop("id", None)
+        self.db._gravar_blocos_cru("Obesidade", blocos)
+        self.assertIsNone(self.db.blocos_do_dossie("Obesidade")[0].get("id"))
+
+        self._get("token=tok123&aba=dossie")
+
+        self.assertTrue(self.db.blocos_do_dossie("Obesidade")[0].get("id"))
+
+    def test_get_triagem_nao_faz_backfill(self):
+        """Mesma restrição do painel, e pela mesma razão: /curadoria é a tela mais
+        aberta, não pode pagar o custo de ler+regravar todo dossiê à toa."""
+        self.db.salvar_dossie("Obesidade", {"blocos": [
+            {"afirmacao": "Texto da IA",
+             "estudos": [{"titulo": "Estudo A", "fonte": "NEJM", "data": "2026-03"}]}]}, 5)
+        blocos = self.db.blocos_do_dossie("Obesidade")
+        blocos[0].pop("id", None)
+        self.db._gravar_blocos_cru("Obesidade", blocos)
+
+        self._get("token=tok123&aba=triagem")
+
+        self.assertIsNone(self.db.blocos_do_dossie("Obesidade")[0].get("id"))
+
     def test_confirmar_com_titulo_que_casa_mostra_a_tela(self):
         r = self._post({"token": "tok123", "acao": "confirmar_exclusao",
                         "tema": "Obesidade",

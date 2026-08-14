@@ -507,6 +507,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     painel = dossie.painel()
                 except Exception as e:          # a aba tem que abrir mesmo sem o painel
                     print(f"[curadoria] painel do dossiê falhou: {e}", flush=True)
+                # Backfill dos ids: dossiê gravado antes desta entrega não tem `id` nos
+                # blocos, e sem id a tela não oferece ✏️ Editar (sem nenhuma pista disso).
+                # Idempotente — na segunda abertura não escreve nada.
+                for d in db.listar_dossies():
+                    try:
+                        db.dossie_backfill_ids(d.get("tema"))
+                    except Exception as e:      # a aba tem que abrir mesmo se falhar
+                        print(f"[curadoria] backfill de ids do dossiê falhou "
+                              f"({d.get('tema')}): {e}", flush=True)
             return self._html(site_web.pagina_curadoria(
                 estado, amanha, cands, db.listar_reserva(), classicos, config.ADMIN_TOKEN,
                 aba=aba_atual, tema=q.get("tema", [""])[0],
