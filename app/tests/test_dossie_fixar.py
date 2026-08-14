@@ -220,5 +220,75 @@ class TestEditarEsoltar(_Base):
         self.assertFalse(self.db.dossie_soltar_bloco("Obesidade", "nao-existe"))
 
 
+class TestReconstrucaoSabeDosFixados(_Base):
+    """Sem isso o dossiê passa a dizer a mesma coisa duas vezes: uma com as palavras do
+    Diego, outra com as da IA."""
+
+    def setUp(self):
+        super().setUp()
+        import importlib, dossie
+        importlib.reload(dossie)
+        self.dossie = dossie
+
+    def _estudos(self, n=3):
+        return [{"titulo": f"Estudo {i}", "fonte": "NEJM", "data": "2026-03",
+                 "abstract": "abstract " * 30} for i in range(n)]
+
+    def test_a_afirmacao_fixada_vai_no_prompt_da_fusao(self):
+        prompts = []
+
+        def gerar_fn(p):
+            prompts.append(p)
+            return '{"blocos":[{"afirmacao":"a","estudos":[{"titulo":"Estudo 1"}]}]}'
+
+        self.dossie.construir(self._estudos(), lote=2, gerar_fn=gerar_fn,
+                              fixadas=["Uma afirmação que o Diego escreveu"])
+        self.assertTrue(any("Uma afirmação que o Diego escreveu" in p for p in prompts))
+
+    def test_sem_fixadas_o_prompt_nao_ganha_o_aviso(self):
+        prompts = []
+
+        def gerar_fn(p):
+            prompts.append(p)
+            return '{"blocos":[{"afirmacao":"a","estudos":[{"titulo":"Estudo 1"}]}]}'
+
+        self.dossie.construir(self._estudos(), lote=2, gerar_fn=gerar_fn)
+        self.assertFalse(any("FIXADAS" in p for p in prompts))
+
+    def test_reconstruir_passa_as_fixadas_lidas_do_banco(self):
+        self.db.salvar_dossie("Obesidade", {"blocos": [_bloco("Texto da IA")]}, 1)
+        bid = self.db.blocos_do_dossie("Obesidade")[0]["id"]
+        self.db.dossie_editar_bloco("Obesidade", bid, "Texto do Diego")
+        self.db.salvar_candidatos([{
+            "chave": "k1", "titulo": "Estudo A", "tema": "Obesidade", "tipo": "varredura",
+            "fonte": "NEJM", "data": "2026-03-01", "doi": "10.1/k1", "url": "",
+            "abstract": "abs " * 40, "pergunta": "", "score": 8, "citacoes": 0, "tags": []}])
+        prompts = []
+
+        def gerar_fn(p):
+            prompts.append(p)
+            return '{"blocos":[{"afirmacao":"nova","estudos":[{"titulo":"Estudo A"}]}]}'
+
+        self.dossie.reconstruir_todos(temas=["Obesidade"], gerar_fn=gerar_fn, db_mod=self.db)
+        self.assertTrue(any("Texto do Diego" in p for p in prompts))
+
+    def test_reconstruir_ponta_a_ponta_preserva_o_bloco_do_Diego(self):
+        """O caminho real: o botão 🧠 roda inteiro e o texto dele continua lá."""
+        self.db.salvar_dossie("Obesidade", {"blocos": [_bloco("Texto da IA")]}, 1)
+        bid = self.db.blocos_do_dossie("Obesidade")[0]["id"]
+        self.db.dossie_editar_bloco("Obesidade", bid, "Texto do Diego")
+        self.db.salvar_candidatos([{
+            "chave": "k2", "titulo": "Estudo B", "tema": "Obesidade", "tipo": "varredura",
+            "fonte": "NEJM", "data": "2026-03-01", "doi": "10.1/k2", "url": "",
+            "abstract": "abs " * 40, "pergunta": "", "score": 8, "citacoes": 0, "tags": []}])
+        self.dossie.reconstruir_todos(
+            temas=["Obesidade"], db_mod=self.db,
+            gerar_fn=lambda p: '{"blocos":[{"afirmacao":"tudo novo",'
+                               '"estudos":[{"titulo":"Estudo B"}]}]}')
+        afirmacoes = [b["afirmacao"] for b in self.db.blocos_do_dossie("Obesidade")]
+        self.assertIn("Texto do Diego", afirmacoes)
+        self.assertIn("tudo novo", afirmacoes)
+
+
 if __name__ == "__main__":
     unittest.main()
