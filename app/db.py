@@ -1663,16 +1663,148 @@ def registrar_digest(art, conteudo, tmeta=None, data=None):
         )
 
 
-def salvar_dossie(tema, conteudo, n_estudos):
-    """Upsert do dossiê de um tema (1 por tema). `conteudo` é o dict do `dossie.py`."""
+def blocos_do_dossie(tema):
+    """Os blocos gravados hoje. JSON quebrado devolve lista vazia — isto roda no caminho
+    da tela e de todo salvamento; explodir aqui derrubaria a aba inteira."""
+    r = obter_dossie(tema)
+    if not r:
+        return []
+    try:
+        d = json.loads(r.get("conteudo") or "{}") or {}
+    except Exception:
+        return []
+    return [b for b in (d.get("blocos") or []) if isinstance(b, dict)]
+
+
+def _com_ids(blocos):
+    """Identidade estável por bloco. Sem ela não há como apontar 'este bloco' numa tela, e
+    o pino do fixado acabaria apontando pro bloco errado depois de a reconstrução mudar a
+    ordem da lista."""
+    import secrets
+    out = []
+    for b in (blocos or []):
+        if not isinstance(b, dict):
+            continue
+        nb = dict(b)                       # não muta o dict do chamador
+        if not nb.get("id"):
+            nb["id"] = secrets.token_hex(8)
+        out.append(nb)
+    return out
+
+
+def _gravar_blocos_cru(tema, blocos):
+    """Grava a lista EXATAMENTE como veio, sem preservar nada. É a porta explícita — a
+    única forma de mexer num bloco fixado (editar/soltar). Todo o resto passa por
+    `salvar_dossie`, que preserva.
+
+    UPDATE puro de propósito: editar e soltar só operam em bloco que já existe, então o
+    dossiê já existe. `n_estudos` não é tocado — ele conta o corpus lido, não os blocos.
+    """
     from datetime import datetime
+    with _conn() as c:
+        c.execute("UPDATE dossies SET conteudo=?, atualizado_em=? WHERE tema=?",
+                  (json.dumps({"blocos": blocos}, ensure_ascii=False),
+                   datetime.now().isoformat(), tema))
+
+
+def salvar_dossie(tema, conteudo, n_estudos):
+    """Upsert do dossiê de um tema (1 por tema). `conteudo` é o dict do `dossie.py`.
+
+    **PRESERVA os blocos fixados.** A garantia mora aqui, no gravador, e não em quem
+    reconstrói: assim nenhum caminho futuro — botão novo, cron, script de madrugada —
+    consegue apagar o texto que o Diego escreveu. Perder isso seria invisível até a
+    afirmação sumir semanas depois. Soltar o bloco é a única porta de saída, e é explícita.
+
+    A única exceção é uma corrida com a thread da reconstrução (botão 🧠): esta função lê
+    os fixados numa conexão e grava noutra, e `dossie_editar_bloco`/`dossie_soltar_bloco`
+    leem a lista inteira e a regravam inteira — se as duas intercalarem, dá pra perder o
+    texto do médico ou descartar a reconstrução daquele tema. Janela sub-milissegundo, um
+    único usuário admin; não é pra consertar agora.
+    """
+    from datetime import datetime
+    fixados = _com_ids([b for b in blocos_do_dossie(tema) if b.get("fixado")])
+    ja = {b.get("id") for b in fixados}
+    novos = [b for b in _com_ids((conteudo or {}).get("blocos")) if b.get("id") not in ja]
     with _conn() as c:
         c.execute("""INSERT INTO dossies (tema,conteudo,n_estudos,atualizado_em)
                      VALUES (?,?,?,?)
                      ON CONFLICT(tema) DO UPDATE SET conteudo=excluded.conteudo,
                        n_estudos=excluded.n_estudos, atualizado_em=excluded.atualizado_em""",
-                  (tema, json.dumps(conteudo, ensure_ascii=False), int(n_estudos or 0),
-                   datetime.now().isoformat()))
+                  (tema, json.dumps({"blocos": fixados + novos}, ensure_ascii=False),
+                   int(n_estudos or 0), datetime.now().isoformat()))
+
+
+def dossie_editar_bloco(tema, bloco_id, afirmacao):
+    """O texto do Diego entra e o bloco vira dele — editar FIXA na mesma tacada.
+
+    Decisão dele (2026-08-13): não existe editar sem fixar. O estado intermediário — texto
+    dele num bloco solto — seria apagado pela reconstrução seguinte sem aviso, que é
+    exatamente a armadilha que esta fatia fecha.
+
+    `bloco_id` vazio/None devolve False sem procurar: um bloco órfão sem id (achado da
+    revisão da Task 2) teria `b.get("id")` igual a None, e um `bloco_id` vazio/None casaria
+    com ele por acidente — editando o bloco errado em vez de avisar que não achou.
+    """
+    if not bloco_id:
+        return False
+    from datetime import datetime
+    txt = (afirmacao or "").strip()
+    if not txt:
+        raise ValueError("afirmação vazia")
+    blocos = blocos_do_dossie(tema)
+    achou = False
+    for b in blocos:
+        if b.get("id") == bloco_id:
+            b["afirmacao"] = txt
+            b["fixado"] = True
+            b["editado_em"] = datetime.now().isoformat()
+            achou = True
+            break
+    if not achou:
+        return False
+    _gravar_blocos_cru(tema, blocos)
+    return True
+
+
+def dossie_soltar_bloco(tema, bloco_id):
+    """Devolve o bloco à máquina. O texto atual fica até a próxima reconstrução
+    substituí-lo — soltar não é desfazer, é parar de proteger.
+
+    Mesma guarda do editar: `bloco_id` vazio/None devolve False sem procurar, pra não
+    casar por acidente com um bloco órfão sem id.
+    """
+    if not bloco_id:
+        return False
+    blocos = blocos_do_dossie(tema)
+    achou = False
+    for b in blocos:
+        if b.get("id") == bloco_id:
+            b["fixado"] = False
+            achou = True
+            break
+    if not achou:
+        return False
+    _gravar_blocos_cru(tema, blocos)
+    return True
+
+
+def dossie_backfill_ids(tema):
+    """Dá `id` aos blocos gravados antes desta entrega. Sem id, `_bloco_html` (site_web.py)
+    não oferece ✏️ Editar — o mesmo gate que protege o soltar de apontar pro bloco errado
+    também deixa o dossiê legado sem editar, e sem nenhuma pista disso na tela.
+
+    Idempotente: se nenhum bloco estiver sem id, não escreve nada e devolve 0 — pra não
+    bater `atualizado_em` toda vez que a aba abre. Só adiciona a chave que falta; não toca
+    em `fixado`, `afirmacao` nem `estudos` de bloco nenhum (`_com_ids` só preenche o id).
+
+    Devolve quantos blocos ganharam id.
+    """
+    blocos = blocos_do_dossie(tema)
+    sem_id = sum(1 for b in blocos if not b.get("id"))
+    if not sem_id:
+        return 0
+    _gravar_blocos_cru(tema, _com_ids(blocos))
+    return sem_id
 
 
 def obter_dossie(tema):

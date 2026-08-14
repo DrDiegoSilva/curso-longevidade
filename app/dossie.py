@@ -114,7 +114,7 @@ def _chamar(gerar_fn, prompt):
         return {"blocos": []}
 
 
-def construir(estudos, lote=LOTE_PADRAO, gerar_fn=None):
+def construir(estudos, lote=LOTE_PADRAO, gerar_fn=None, fixadas=None):
     """Dossiê do zero, a partir do corpus do tema.
 
     Map-reduce: o tema não cabe numa chamada só (~250 estudos = ~100k tokens), então vai
@@ -123,6 +123,9 @@ def construir(estudos, lote=LOTE_PADRAO, gerar_fn=None):
 
     Reconstruir é a defesa contra o telefone sem fio do `acrescentar`: os abstracts brutos
     ficam no banco, então dá pra refazer do zero e comparar sempre que der desconfiança.
+
+    `fixadas` são as afirmações que o médico já corrigiu (ver `db.blocos_do_dossie`) —
+    entram só no prompt da fusão, avisando a IA pra não repetir o que ele já escreveu.
     """
     if gerar_fn is None:
         gerar_fn = _gerador_padrao()
@@ -133,11 +136,20 @@ def construir(estudos, lote=LOTE_PADRAO, gerar_fn=None):
         parciais.extend(d["blocos"])
     if not parciais:
         return {"blocos": []}
+    aviso = ""
+    if fixadas:
+        # Sem isto o dossiê passa a dizer a mesma coisa duas vezes — uma com as palavras
+        # do Diego, outra com as da IA. Não é garantia (modelo repete às vezes), e por
+        # isso a defesa real é a tela: ele vê as duas e resolve. Filtrar por semelhança de
+        # texto apagaria em silêncio uma afirmação nova legítima.
+        aviso = ("\n\nEstas afirmações já estão FIXADAS pelo médico e vão continuar no "
+                 "dossiê exatamente como estão. NÃO as repita nem reescreva com outras "
+                 "palavras — cuide do resto:\n- " + "\n- ".join(str(f) for f in fixadas))
     fundido = _chamar(gerar_fn,
                       "Estas são memórias parciais do MESMO tema, feitas em lotes. "
                       "Funda numa só: junte afirmações repetidas somando os estudos de "
                       "cada uma, e mantenha explícitas as divergências.\n\n"
-                      + json.dumps({"blocos": parciais}, ensure_ascii=False))
+                      + json.dumps({"blocos": parciais}, ensure_ascii=False) + aviso)
     return fundido if fundido["blocos"] else {"blocos": parciais}
 
 
@@ -146,6 +158,11 @@ def acrescentar(dossie_atual, estudo, gerar_fn=None):
 
     Resposta ruim ou falha da IA preserva o dossiê que existia: dossiê velho é melhor que
     dossiê nenhum, e é a mesma regra do kit (`curadoria.regerar_kits`).
+
+    ATENÇÃO se um dia ligar isto a `db.salvar_dossie`: `parse` devolve blocos só com
+    `afirmacao`/`estudos` — sem `id` nem `fixado`. O eco de uma afirmação já fixada volta
+    sem id, ganha um id NOVO em `salvar_dossie` e passa a conviver com o bloco fixado
+    original: duplicata. Sem chamador de produção hoje.
     """
     atual = dossie_atual or {"blocos": []}
     if gerar_fn is None:
@@ -226,7 +243,9 @@ def reconstruir_todos(temas=None, gerar_fn=None, db_mod=None):
             estudos = corpus_do_tema(t, db_mod)
             if not estudos:
                 continue
-            d = construir(estudos, gerar_fn=gerar_fn)
+            fixadas = [b.get("afirmacao", "") for b in db_mod.blocos_do_dossie(t)
+                       if b.get("fixado")]
+            d = construir(estudos, gerar_fn=gerar_fn, fixadas=fixadas)
             if not d["blocos"]:          # IA fora do ar: não apaga o dossiê que existia
                 print(f"[dossie] {t}: nada gerado, mantendo o anterior", flush=True)
                 continue

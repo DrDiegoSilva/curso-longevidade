@@ -507,6 +507,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     painel = dossie.painel()
                 except Exception as e:          # a aba tem que abrir mesmo sem o painel
                     print(f"[curadoria] painel do dossiê falhou: {e}", flush=True)
+                # Backfill dos ids: dossiê gravado antes desta entrega não tem `id` nos
+                # blocos, e sem id a tela não oferece ✏️ Editar (sem nenhuma pista disso).
+                # Idempotente — na segunda abertura não escreve nada.
+                for d in db.listar_dossies():
+                    try:
+                        db.dossie_backfill_ids(d.get("tema"))
+                    except Exception as e:      # a aba tem que abrir mesmo se falhar
+                        print(f"[curadoria] backfill de ids do dossiê falhou "
+                              f"({d.get('tema')}): {e}", flush=True)
             return self._html(site_web.pagina_curadoria(
                 estado, amanha, cands, db.listar_reserva(), classicos, config.ADMIN_TOKEN,
                 aba=aba_atual, tema=q.get("tema", [""])[0],
@@ -1107,6 +1116,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 aba = "dossie"
                 msg = (f"🧠 Refazendo o dossiê de {tema_alvo} em segundo plano — te aviso "
                        "no WhatsApp quando terminar.")
+            elif acao in ("editar_bloco", "soltar_bloco"):
+                aba = "dossie"
+                tema_b, bloco = g("tema"), g("bloco")
+                try:
+                    if acao == "soltar_bloco":
+                        ok = db.dossie_soltar_bloco(tema_b, bloco)
+                        msg = ("Bloco solto — a próxima reconstrução pode reescrevê-lo."
+                               if ok else "Não achei esse bloco no dossiê.")
+                    else:
+                        ok = db.dossie_editar_bloco(tema_b, bloco, g("afirmacao"))
+                        msg = ("Afirmação salva e bloco fixado — a reconstrução não mexe "
+                               "mais nele." if ok else "Não achei esse bloco no dossiê.")
+                except ValueError:
+                    # Texto vazio. Falha aberta: sem a mensagem ele clica, nada acontece
+                    # e não sabe por quê.
+                    msg = "A afirmação não pode ficar vazia — o bloco não foi alterado."
             elif acao == "regerar_kit":
                 import threading
 
