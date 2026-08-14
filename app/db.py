@@ -1663,16 +1663,69 @@ def registrar_digest(art, conteudo, tmeta=None, data=None):
         )
 
 
-def salvar_dossie(tema, conteudo, n_estudos):
-    """Upsert do dossiê de um tema (1 por tema). `conteudo` é o dict do `dossie.py`."""
+def blocos_do_dossie(tema):
+    """Os blocos gravados hoje. JSON quebrado devolve lista vazia — isto roda no caminho
+    da tela e de todo salvamento; explodir aqui derrubaria a aba inteira."""
+    r = obter_dossie(tema)
+    if not r:
+        return []
+    try:
+        d = json.loads(r.get("conteudo") or "{}") or {}
+    except Exception:
+        return []
+    return [b for b in (d.get("blocos") or []) if isinstance(b, dict)]
+
+
+def _com_ids(blocos):
+    """Identidade estável por bloco. Sem ela não há como apontar 'este bloco' numa tela, e
+    o pino do fixado acabaria apontando pro bloco errado depois de a reconstrução mudar a
+    ordem da lista."""
+    import secrets
+    out = []
+    for b in (blocos or []):
+        if not isinstance(b, dict):
+            continue
+        nb = dict(b)                       # não muta o dict do chamador
+        if not nb.get("id"):
+            nb["id"] = secrets.token_hex(8)
+        out.append(nb)
+    return out
+
+
+def _gravar_blocos_cru(tema, blocos):
+    """Grava a lista EXATAMENTE como veio, sem preservar nada. É a porta explícita — a
+    única forma de mexer num bloco fixado (editar/soltar). Todo o resto passa por
+    `salvar_dossie`, que preserva.
+
+    UPDATE puro de propósito: editar e soltar só operam em bloco que já existe, então o
+    dossiê já existe. `n_estudos` não é tocado — ele conta o corpus lido, não os blocos.
+    """
     from datetime import datetime
+    with _conn() as c:
+        c.execute("UPDATE dossies SET conteudo=?, atualizado_em=? WHERE tema=?",
+                  (json.dumps({"blocos": blocos}, ensure_ascii=False),
+                   datetime.now().isoformat(), tema))
+
+
+def salvar_dossie(tema, conteudo, n_estudos):
+    """Upsert do dossiê de um tema (1 por tema). `conteudo` é o dict do `dossie.py`.
+
+    **PRESERVA os blocos fixados.** A garantia mora aqui, no gravador, e não em quem
+    reconstrói: assim nenhum caminho futuro — botão novo, cron, script de madrugada —
+    consegue apagar o texto que o Diego escreveu. Perder isso seria invisível até a
+    afirmação sumir semanas depois. Soltar o bloco é a única porta de saída, e é explícita.
+    """
+    from datetime import datetime
+    fixados = [b for b in blocos_do_dossie(tema) if b.get("fixado")]
+    ja = {b.get("id") for b in fixados}
+    novos = [b for b in _com_ids((conteudo or {}).get("blocos")) if b.get("id") not in ja]
     with _conn() as c:
         c.execute("""INSERT INTO dossies (tema,conteudo,n_estudos,atualizado_em)
                      VALUES (?,?,?,?)
                      ON CONFLICT(tema) DO UPDATE SET conteudo=excluded.conteudo,
                        n_estudos=excluded.n_estudos, atualizado_em=excluded.atualizado_em""",
-                  (tema, json.dumps(conteudo, ensure_ascii=False), int(n_estudos or 0),
-                   datetime.now().isoformat()))
+                  (tema, json.dumps({"blocos": fixados + novos}, ensure_ascii=False),
+                   int(n_estudos or 0), datetime.now().isoformat()))
 
 
 def obter_dossie(tema):
