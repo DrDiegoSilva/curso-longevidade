@@ -39,6 +39,9 @@ qualquer caminho futuro que grave um dossiê — um botão novo, um cron, um scr
 madrugada — apagaria o texto do Diego, e o erro só apareceria semanas depois, quando a
 afirmação sumisse. Com a regra no gravador **não existe forma de perder o texto dele
 escrevendo errado**. Soltar o bloco vira a única porta de saída, explícita e nomeada.
+(Exceção nomeada na revisão final: uma corrida entre a reconstrução e uma edição —
+leitura e escrita não são atômicas — ainda pode perder o texto ou descartar a
+reconstrução; janela sub-milissegundo, um usuário admin só, não é pra consertar agora.)
 
 Um bloco fixado guarda **o texto que o Diego escreveu** e a lista de estudos que estava
 embaixo dele no momento em que fixou. A exclusão da parte A continua valendo por cima:

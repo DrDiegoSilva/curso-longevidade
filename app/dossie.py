@@ -158,6 +158,11 @@ def acrescentar(dossie_atual, estudo, gerar_fn=None):
 
     Resposta ruim ou falha da IA preserva o dossiê que existia: dossiê velho é melhor que
     dossiê nenhum, e é a mesma regra do kit (`curadoria.regerar_kits`).
+
+    ATENÇÃO se um dia ligar isto a `db.salvar_dossie`: `parse` devolve blocos só com
+    `afirmacao`/`estudos` — sem `id` nem `fixado`. O eco de uma afirmação já fixada volta
+    sem id, ganha um id NOVO em `salvar_dossie` e passa a conviver com o bloco fixado
+    original: duplicata. Sem chamador de produção hoje.
     """
     atual = dossie_atual or {"blocos": []}
     if gerar_fn is None:
