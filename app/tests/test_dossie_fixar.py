@@ -130,6 +130,95 @@ class TestGravadorPreservaOsFixados(_Base):
         self.assertEqual([b["afirmacao"] for b in self.db.blocos_do_dossie("Longevidade")],
                          ["Nova"])
 
+    def test_fixado_sem_id_ganha_um_no_proximo_salvar_dossie(self):
+        """Endurecimento (achado da revisão da Task 1): hoje todo fixado nasce com id, mas
+        um que chegasse sem — linha legada, edição direta no banco, bug futuro — não pode
+        ficar órfão pra sempre. `salvar_dossie` também passa os fixados por `_com_ids`.
+
+        `_gravar_blocos_cru` é UPDATE puro (task 1): precisa da linha já existir, por isso
+        o primeiro `salvar_dossie` só cria o dossiê antes de forçar o bloco sem id."""
+        self.db.salvar_dossie("Longevidade", {"blocos": []}, 0)
+        self.db._gravar_blocos_cru("Longevidade",
+                                    [{"afirmacao": "Texto do Diego", "fixado": True}])
+        self.db.salvar_dossie("Longevidade", {"blocos": [_bloco("Nova")]}, 5)
+        blocos = self.db.blocos_do_dossie("Longevidade")
+        fixado = [b for b in blocos if b.get("fixado")][0]
+        self.assertTrue(fixado.get("id"))
+        self.assertEqual(fixado["afirmacao"], "Texto do Diego")
+
+
+class TestEditarEsoltar(_Base):
+    def setUp(self):
+        super().setUp()
+        self.db.salvar_dossie("Obesidade",
+                              {"blocos": [_bloco("Texto da IA"), _bloco("Outro")]}, 10)
+        self.bid = self.db.blocos_do_dossie("Obesidade")[0]["id"]
+
+    def _bloco_por_id(self, bid):
+        return next(b for b in self.db.blocos_do_dossie("Obesidade") if b["id"] == bid)
+
+    def test_editar_grava_o_texto(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.assertEqual(self._bloco_por_id(self.bid)["afirmacao"], "Texto do Diego")
+
+    def test_editar_FIXA_na_mesma_tacada(self):
+        """Decisão do Diego: não existe editar sem fixar — senão a reconstrução seguinte
+        apaga o que ele escreveu, calada."""
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.assertTrue(self._bloco_por_id(self.bid).get("fixado"))
+
+    def test_editar_carimba_a_data(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.assertTrue(self._bloco_por_id(self.bid).get("editado_em"))
+
+    def test_editar_nao_mexe_nos_estudos_do_bloco(self):
+        antes = self._bloco_por_id(self.bid)["estudos"]
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.assertEqual(self._bloco_por_id(self.bid)["estudos"], antes)
+
+    def test_editar_nao_mexe_nos_outros_blocos(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        outros = [b for b in self.db.blocos_do_dossie("Obesidade") if b["id"] != self.bid]
+        self.assertEqual([b["afirmacao"] for b in outros], ["Outro"])
+        self.assertFalse(outros[0].get("fixado"))
+
+    def test_texto_vazio_levanta_e_nao_grava(self):
+        """Afirmação em branco não é edição: é um bloco sem sentido — e como editar fixa,
+        salvar vazio congelaria o nada."""
+        for ruim in ("", "   ", "\n\t "):
+            with self.subTest(ruim=ruim):
+                with self.assertRaises(ValueError):
+                    self.db.dossie_editar_bloco("Obesidade", self.bid, ruim)
+        self.assertEqual(self._bloco_por_id(self.bid)["afirmacao"], "Texto da IA")
+
+    def test_texto_com_espaco_nas_pontas_e_aparado(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "  Texto do Diego  ")
+        self.assertEqual(self._bloco_por_id(self.bid)["afirmacao"], "Texto do Diego")
+
+    def test_bloco_inexistente_devolve_False_sem_gravar(self):
+        self.assertFalse(self.db.dossie_editar_bloco("Obesidade", "nao-existe", "X"))
+        self.assertEqual(len(self.db.blocos_do_dossie("Obesidade")), 2)
+
+    def test_soltar_tira_o_fixado(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.assertTrue(self.db.dossie_soltar_bloco("Obesidade", self.bid))
+        self.assertFalse(self._bloco_por_id(self.bid).get("fixado"))
+
+    def test_soltar_mantem_o_texto_ate_a_proxima_reconstrucao(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.db.dossie_soltar_bloco("Obesidade", self.bid)
+        self.assertEqual(self._bloco_por_id(self.bid)["afirmacao"], "Texto do Diego")
+
+    def test_depois_de_soltar_a_reconstrucao_substitui(self):
+        self.db.dossie_editar_bloco("Obesidade", self.bid, "Texto do Diego")
+        self.db.dossie_soltar_bloco("Obesidade", self.bid)
+        self.db.salvar_dossie("Obesidade", {"blocos": [_bloco("Só a nova")]}, 10)
+        self.assertEqual([b["afirmacao"] for b in self.db.blocos_do_dossie("Obesidade")],
+                         ["Só a nova"])
+
+    def test_soltar_bloco_inexistente_devolve_False(self):
+        self.assertFalse(self.db.dossie_soltar_bloco("Obesidade", "nao-existe"))
+
 
 if __name__ == "__main__":
     unittest.main()

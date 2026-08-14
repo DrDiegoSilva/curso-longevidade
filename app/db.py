@@ -1716,7 +1716,7 @@ def salvar_dossie(tema, conteudo, n_estudos):
     afirmação sumir semanas depois. Soltar o bloco é a única porta de saída, e é explícita.
     """
     from datetime import datetime
-    fixados = [b for b in blocos_do_dossie(tema) if b.get("fixado")]
+    fixados = _com_ids([b for b in blocos_do_dossie(tema) if b.get("fixado")])
     ja = {b.get("id") for b in fixados}
     novos = [b for b in _com_ids((conteudo or {}).get("blocos")) if b.get("id") not in ja]
     with _conn() as c:
@@ -1726,6 +1726,46 @@ def salvar_dossie(tema, conteudo, n_estudos):
                        n_estudos=excluded.n_estudos, atualizado_em=excluded.atualizado_em""",
                   (tema, json.dumps({"blocos": fixados + novos}, ensure_ascii=False),
                    int(n_estudos or 0), datetime.now().isoformat()))
+
+
+def dossie_editar_bloco(tema, bloco_id, afirmacao):
+    """O texto do Diego entra e o bloco vira dele — editar FIXA na mesma tacada.
+
+    Decisão dele (2026-08-13): não existe editar sem fixar. O estado intermediário — texto
+    dele num bloco solto — seria apagado pela reconstrução seguinte sem aviso, que é
+    exatamente a armadilha que esta fatia fecha.
+    """
+    from datetime import datetime
+    txt = (afirmacao or "").strip()
+    if not txt:
+        raise ValueError("afirmação vazia")
+    blocos = blocos_do_dossie(tema)
+    achou = False
+    for b in blocos:
+        if b.get("id") == bloco_id:
+            b["afirmacao"] = txt
+            b["fixado"] = True
+            b["editado_em"] = datetime.now().isoformat()
+            achou = True
+    if not achou:
+        return False
+    _gravar_blocos_cru(tema, blocos)
+    return True
+
+
+def dossie_soltar_bloco(tema, bloco_id):
+    """Devolve o bloco à máquina. O texto atual fica até a próxima reconstrução
+    substituí-lo — soltar não é desfazer, é parar de proteger."""
+    blocos = blocos_do_dossie(tema)
+    achou = False
+    for b in blocos:
+        if b.get("id") == bloco_id:
+            b["fixado"] = False
+            achou = True
+    if not achou:
+        return False
+    _gravar_blocos_cru(tema, blocos)
+    return True
 
 
 def obter_dossie(tema):
