@@ -1500,7 +1500,8 @@ def _dossie_html(dossies, painel=None, token=""):
             bid = b.get("id") or ""
             fixado = bool(b.get("fixado"))
             selo = ""
-            if fixado:
+            if fixado and bid:          # sem id não dá pra apontar o bloco — mesmo
+                                         # gate do editar, senão o soltar erraria o alvo
                 selo = (f'<span class="hint">📌 sua versão, de '
                         f'{_esc((b.get("editado_em") or "")[:10])} — a reconstrução não '
                         f'mexe neste bloco</span> '
@@ -1523,10 +1524,11 @@ def _dossie_html(dossies, painel=None, token=""):
                     f'passa a não mexer nele.</p>'
                     f'<button class="actbtn" type="submit">Salvar afirmação</button>'
                     f'</form></details>')
+            detalhe = f'<div class="d">{selo}</div>' if selo else ""
             return (f'<div class="item"><div class="t">{_esc(b.get("afirmacao"))}</div>'
                     f'<div class="d">'
                     + " · ".join(_estudo_linha(e) for e in (b.get("estudos") or []))
-                    + f'</div><div class="d">{selo}</div>{editar}</div>')
+                    + f'</div>{detalhe}{editar}</div>')
 
         corpo = "".join(_bloco_html(b) for b in blocos) or \
             '<p class="hint">Dossiê vazio — a IA não devolveu nada útil.</p>'

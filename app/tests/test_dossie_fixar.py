@@ -219,6 +219,28 @@ class TestEditarEsoltar(_Base):
     def test_soltar_bloco_inexistente_devolve_False(self):
         self.assertFalse(self.db.dossie_soltar_bloco("Obesidade", "nao-existe"))
 
+    def test_bloco_id_vazio_nao_edita_bloco_orfao(self):
+        """Achado da revisão da Task 2: um bloco órfão sem id (`b.get("id")` devolve
+        None) não pode ser casado quando `bloco_id` chega vazio ou None do formulário —
+        senão a função editaria o bloco errado em vez de devolver False."""
+        blocos = self.db.blocos_do_dossie("Obesidade") + [{"afirmacao": "Órfão"}]
+        self.db._gravar_blocos_cru("Obesidade", blocos)
+        self.assertFalse(self.db.dossie_editar_bloco("Obesidade", "", "X"))
+        self.assertFalse(self.db.dossie_editar_bloco("Obesidade", None, "X"))
+        orfao = next(b for b in self.db.blocos_do_dossie("Obesidade")
+                     if b["afirmacao"] == "Órfão")
+        self.assertFalse(orfao.get("fixado"))
+
+    def test_bloco_id_vazio_nao_solta_bloco_orfao(self):
+        blocos = self.db.blocos_do_dossie("Obesidade") + \
+            [{"afirmacao": "Órfão", "fixado": True}]
+        self.db._gravar_blocos_cru("Obesidade", blocos)
+        self.assertFalse(self.db.dossie_soltar_bloco("Obesidade", ""))
+        self.assertFalse(self.db.dossie_soltar_bloco("Obesidade", None))
+        orfao = next(b for b in self.db.blocos_do_dossie("Obesidade")
+                     if b["afirmacao"] == "Órfão")
+        self.assertTrue(orfao.get("fixado"))
+
 
 class TestReconstrucaoSabeDosFixados(_Base):
     """Sem isso o dossiê passa a dizer a mesma coisa duas vezes: uma com as palavras do

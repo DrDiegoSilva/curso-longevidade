@@ -1734,7 +1734,13 @@ def dossie_editar_bloco(tema, bloco_id, afirmacao):
     Decisão dele (2026-08-13): não existe editar sem fixar. O estado intermediário — texto
     dele num bloco solto — seria apagado pela reconstrução seguinte sem aviso, que é
     exatamente a armadilha que esta fatia fecha.
+
+    `bloco_id` vazio/None devolve False sem procurar: um bloco órfão sem id (achado da
+    revisão da Task 2) teria `b.get("id")` igual a None, e um `bloco_id` vazio/None casaria
+    com ele por acidente — editando o bloco errado em vez de avisar que não achou.
     """
+    if not bloco_id:
+        return False
     from datetime import datetime
     txt = (afirmacao or "").strip()
     if not txt:
@@ -1747,6 +1753,7 @@ def dossie_editar_bloco(tema, bloco_id, afirmacao):
             b["fixado"] = True
             b["editado_em"] = datetime.now().isoformat()
             achou = True
+            break
     if not achou:
         return False
     _gravar_blocos_cru(tema, blocos)
@@ -1755,13 +1762,20 @@ def dossie_editar_bloco(tema, bloco_id, afirmacao):
 
 def dossie_soltar_bloco(tema, bloco_id):
     """Devolve o bloco à máquina. O texto atual fica até a próxima reconstrução
-    substituí-lo — soltar não é desfazer, é parar de proteger."""
+    substituí-lo — soltar não é desfazer, é parar de proteger.
+
+    Mesma guarda do editar: `bloco_id` vazio/None devolve False sem procurar, pra não
+    casar por acidente com um bloco órfão sem id.
+    """
+    if not bloco_id:
+        return False
     blocos = blocos_do_dossie(tema)
     achou = False
     for b in blocos:
         if b.get("id") == bloco_id:
             b["fixado"] = False
             achou = True
+            break
     if not achou:
         return False
     _gravar_blocos_cru(tema, blocos)

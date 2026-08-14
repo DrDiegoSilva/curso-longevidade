@@ -1107,6 +1107,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 aba = "dossie"
                 msg = (f"🧠 Refazendo o dossiê de {tema_alvo} em segundo plano — te aviso "
                        "no WhatsApp quando terminar.")
+            elif acao in ("editar_bloco", "soltar_bloco"):
+                aba = "dossie"
+                tema_b, bloco = g("tema"), g("bloco")
+                try:
+                    if acao == "soltar_bloco":
+                        ok = db.dossie_soltar_bloco(tema_b, bloco)
+                        msg = ("Bloco solto — a próxima reconstrução pode reescrevê-lo."
+                               if ok else "Não achei esse bloco no dossiê.")
+                    else:
+                        ok = db.dossie_editar_bloco(tema_b, bloco, g("afirmacao"))
+                        msg = ("Afirmação salva e bloco fixado — a reconstrução não mexe "
+                               "mais nele." if ok else "Não achei esse bloco no dossiê.")
+                except ValueError:
+                    # Texto vazio. Falha aberta: sem a mensagem ele clica, nada acontece
+                    # e não sabe por quê.
+                    msg = "A afirmação não pode ficar vazia — o bloco não foi alterado."
             elif acao == "regerar_kit":
                 import threading
 
