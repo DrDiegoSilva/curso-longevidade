@@ -56,16 +56,22 @@ class TestCentavos(_Base):
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertAlmostEqual(r["dias"]["2026-08-14"], 1.5)
 
-    def test_dia_sem_custo_nao_aparece_com_lixo(self):
+    def test_dia_com_custo_zero_aparece_na_tabela_com_a_chave(self):
+        """O dia foi lido (a API devolveu o balde, mesmo sem `results`) e custou zero —
+        diferente de um dia que nunca apareceu na fatura. A chave PRECISA existir com 0.0;
+        ausência de chave significaria 'não temos leitura desse dia', que é outra coisa."""
         self.aa._get = lambda url, chave: _resposta([_bucket("2026-08-14")])
         r = self.aa.custo_por_dia("2026-08-01")
-        self.assertEqual(r["dias"].get("2026-08-14", 0.0), 0.0)
+        self.assertIn("2026-08-14", r["dias"])
+        self.assertEqual(r["dias"]["2026-08-14"], 0.0)
 
-    def test_amount_invalido_nao_derruba_o_resto(self):
+    def test_amount_invalido_nao_derruba_o_resto_mas_marca_parcial(self):
         self.aa._get = lambda url, chave: _resposta(
             [_bucket("2026-08-14", "nao-e-numero", "100.00")])
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertAlmostEqual(r["dias"]["2026-08-14"], 1.0)
+        self.assertEqual(r["estado"], "ok")
+        self.assertTrue(r["parcial"], "amount descartado precisa avisar leitura incompleta")
 
 
 class TestPaginacao(_Base):
@@ -84,13 +90,28 @@ class TestPaginacao(_Base):
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertEqual(sorted(r["dias"]), ["2026-08-14", "2026-08-15"])
         self.assertIn("cursor2", vistos[1])
+        self.assertFalse(r["parcial"], "leitura completa (a API disse has_more=False) não é parcial")
+
+    def test_mesmo_dia_em_duas_paginas_soma_em_vez_de_sobrescrever(self):
+        """Improvável pela paginação documentada (bucket_width=1d não deveria repetir dia
+        entre páginas), mas se acontecer, perder o valor da 1ª página é a mesma classe de
+        erro do amount ilegível: número silenciosamente errado."""
+        paginas = [_resposta([_bucket("2026-08-14", "100.00")], has_more=True,
+                             next_page="cursor2"),
+                   _resposta([_bucket("2026-08-14", "50.00")])]
+        self.aa._get = lambda url, chave: paginas.pop(0)
+        r = self.aa.custo_por_dia("2026-08-01")
+        self.assertAlmostEqual(r["dias"]["2026-08-14"], 1.5)
 
     def test_nao_gira_para_sempre_se_a_api_insistir_em_has_more(self):
-        """Defesa contra laço infinito: a página de admin não pode travar o servidor."""
+        """Defesa contra laço infinito: a página de admin não pode travar o servidor. Mas o
+        teto corta uma fatura de verdade quando ela tem mais de MAX_PAGINAS baldes — isso
+        precisa avisar via `parcial`, não sair como se fosse a fatura inteira."""
         self.aa._get = lambda url, chave: _resposta([_bucket("2026-08-14", "1.00")],
                                                     has_more=True, next_page="sempre")
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertEqual(r["estado"], "ok")
+        self.assertTrue(r["parcial"], "teto de páginas com has_more ainda verdadeiro é leitura truncada")
 
 
 class TestEstados(_Base):
@@ -102,12 +123,15 @@ class TestEstados(_Base):
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertEqual(r["estado"], "sem_chave")
         self.assertEqual(r["dias"], {})
+        self.assertFalse(r["parcial"], "sem leitura nenhuma, não houve leitura parcial")
 
     def test_401_vira_recusada(self):
         def _get(url, chave):
             raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
         self.aa._get = _get
-        self.assertEqual(self.aa.custo_por_dia("2026-08-01")["estado"], "recusada")
+        r = self.aa.custo_por_dia("2026-08-01")
+        self.assertEqual(r["estado"], "recusada")
+        self.assertFalse(r["parcial"])
 
     def test_403_tambem_vira_recusada(self):
         def _get(url, chave):
@@ -128,6 +152,7 @@ class TestEstados(_Base):
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertEqual(r["estado"], "erro")
         self.assertEqual(r["dias"], {})
+        self.assertFalse(r["parcial"])
 
     def test_resposta_com_formato_inesperado_vira_erro_em_vez_de_explodir(self):
         """Se o contrato mudar (ou eu tiver lido errado), a tela precisa dizer isso."""
@@ -135,6 +160,7 @@ class TestEstados(_Base):
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertIn(r["estado"], ("ok", "erro"))
         self.assertEqual(r["dias"], {})
+        self.assertFalse(r["parcial"])
 
 
 class TestRequisicao(_Base):
