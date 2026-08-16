@@ -382,6 +382,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
             planos = [visiveis[s] for s in ("mensal", "anual") if s in visiveis]
             return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
                                                       msg=q.get("msg", [""])[0]), 200)
+        if path == "/admin/custos":
+            import config, db, ia_custo, site_web, subscribers
+            from datetime import datetime, timedelta
+            q = up.parse_qs(up.urlparse(self.path).query)
+            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            hoje = datetime.now()
+            mes = hoje.strftime("%Y-%m")
+            linhas = db.resumo_ia_uso(f"{mes}-01")
+            usd = ia_custo.total_usd(linhas)
+            # Últimos 30 dias pro dia a dia: a comparação com a fatura vive aqui, e o mês
+            # corrente sozinho esconderia a virada de mês.
+            desde30 = (hoje - timedelta(days=30)).strftime("%Y-%m-%d")
+            l30 = db.resumo_ia_uso(desde30)
+            nosso = ia_custo.por_dia(l30)
+            fatura = {"estado": "erro", "dias": {}, "parcial": False}
+            try:
+                import anthropic_admin
+                fatura = anthropic_admin.custo_por_dia(desde30)
+            except Exception as e:      # a parte opcional não pode levar a tela junto
+                print(f"[custos] fatura falhou: {e}", flush=True)
+            dias = [{"dia": d, "ledger": nosso.get(d, 0.0),
+                     "fatura": fatura["dias"].get(d)}
+                    for d in sorted(set(nosso) | set(fatura["dias"]), reverse=True)]
+            dados = {"mes": mes, "usd": usd, "brl": ia_custo.em_brl(usd),
+                     "cotacao": config.USD_BRL,
+                     "assinantes": len(subscribers.ativos()),
+                     "por_acao": ia_custo.por_acao(linhas), "dias": dias,
+                     "fatura": fatura["estado"],
+                     "parcial": fatura.get("parcial", False)}
+            return self._html(site_web.pagina_custos(dados, config.ADMIN_TOKEN or "",
+                                                     msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin/trilha/peca/"):
             import config, db as _db, pdf_trilha, trilha as _trilha_mod
             q = up.parse_qs(up.urlparse(self.path).query)

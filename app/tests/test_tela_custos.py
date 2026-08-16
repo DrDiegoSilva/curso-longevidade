@@ -309,5 +309,74 @@ class TestTela(unittest.TestCase):
         self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
 
 
+import io
+
+
+class _RouteStub:
+    def __init__(self, path):
+        self.path = path
+        self.rfile = io.BytesIO(b"")
+        self.headers = {"Content-Length": "0"}
+        self.client_address = ("127.0.0.1", 0)
+
+    def _html(self, s, code=200):
+        return {"code": code, "body": s}
+
+    def _redirect(self, location, token=None, clear=False):
+        return {"redirect": location}
+
+    def _sessao(self):
+        return None
+
+
+class TestRotaCustos(_Base):
+    def setUp(self):
+        super().setUp()
+        self.snap_token = os.environ.get("DSCURSO_ADMIN_TOKEN")
+        os.environ["DSCURSO_ADMIN_TOKEN"] = "tok123"
+        import importlib, config, serve
+        importlib.reload(config)
+        importlib.reload(serve)
+        self.serve = serve
+
+    def tearDown(self):
+        if self.snap_token is None:
+            os.environ.pop("DSCURSO_ADMIN_TOKEN", None)
+        else:
+            os.environ["DSCURSO_ADMIN_TOKEN"] = self.snap_token
+        import importlib, config
+        importlib.reload(config)
+        super().tearDown()
+
+    def _get(self, path):
+        return self.serve.Handler.do_GET(_RouteStub(path))
+
+    def test_sem_token_403(self):
+        self.assertEqual(self._get("/admin/custos")["code"], 403)
+
+    def test_com_token_abre(self):
+        r = self._get("/admin/custos?token=tok123")
+        self.assertEqual(r["code"], 200)
+        self.assertIn("Custo de IA", r["body"])
+
+    def test_abre_mesmo_sem_nenhum_uso_gravado(self):
+        r = self._get("/admin/custos?token=tok123")
+        self.assertEqual(r["code"], 200)
+
+    def test_mostra_o_que_foi_gravado_no_mes(self):
+        from datetime import datetime
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        self._uso(f"{hoje}T10:00:00", "dossie", tin=1_000_000, tout=0)
+        r = self._get("/admin/custos?token=tok123")
+        self.assertIn("dossie", r["body"])
+
+    def test_a_fatura_fora_do_ar_nao_derruba_a_tela(self):
+        import anthropic_admin
+        anthropic_admin.custo_por_dia = lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("explodiu"))
+        r = self._get("/admin/custos?token=tok123")
+        self.assertEqual(r["code"], 200)
+
+
 if __name__ == "__main__":
     unittest.main()
