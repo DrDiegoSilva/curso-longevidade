@@ -370,12 +370,41 @@ class TestRotaCustos(_Base):
         r = self._get("/admin/custos?token=tok123")
         self.assertIn("dossie", r["body"])
 
-    def test_a_fatura_fora_do_ar_nao_derruba_a_tela(self):
+    def _stub_fatura(self, valor):
+        """Substitui `anthropic_admin.custo_por_dia` e restaura com `addCleanup` --
+        mesmo se o teste falhar no meio. Sem isso o stub vaza pros testes seguintes da
+        classe (a ordem do unittest é alfabética, então o vazamento é silencioso: os
+        testes continuam passando, mas deixam de exercitar o caminho que dizem testar)."""
         import anthropic_admin
-        anthropic_admin.custo_por_dia = lambda *a, **k: (_ for _ in ()).throw(
-            RuntimeError("explodiu"))
+        original = anthropic_admin.custo_por_dia
+        self.addCleanup(setattr, anthropic_admin, "custo_por_dia", original)
+        anthropic_admin.custo_por_dia = valor
+
+    def test_a_fatura_fora_do_ar_nao_derruba_a_tela(self):
+        self._stub_fatura(lambda *a, **k: (_ for _ in ()).throw(RuntimeError("explodiu")))
         r = self._get("/admin/custos?token=tok123")
         self.assertEqual(r["code"], 200)
+
+    def test_fatura_parcial_mostra_o_aviso_na_pagina_de_verdade(self):
+        """Prova a fiação: a Task 4 provou o RENDER chamando `pagina_custos` direto com um
+        `dados` montado à mão -- nunca passou pela rota. Aqui `anthropic_admin.custo_por_dia`
+        devolve `parcial=True` de verdade, e é `serve.py` quem precisa repassar a chave."""
+        self._stub_fatura(lambda *a, **k: {
+            "estado": "ok", "dias": {"2026-08-14": 1.23}, "parcial": True})
+        r = self._get("/admin/custos?token=tok123")
+        self.assertEqual(r["code"], 200)
+        self.assertIn("parcial", r["body"].lower())
+
+    def test_fatura_completa_nao_mostra_o_aviso_na_pagina_de_verdade(self):
+        """Espelho do teste acima com `parcial=False`. Âncora em "subestimada" (palavra
+        inteira, sem tag HTML no meio) -- "leitura parcial" nunca aparece como substring
+        contígua no HTML real: o texto emitido é 'Leitura <strong>parcial</strong> da
+        fatura', com a tag partindo a frase. Ver `site_web._FATURA_PARCIAL_AVISO`."""
+        self._stub_fatura(lambda *a, **k: {
+            "estado": "ok", "dias": {"2026-08-14": 1.23}, "parcial": False})
+        r = self._get("/admin/custos?token=tok123")
+        self.assertEqual(r["code"], 200)
+        self.assertNotIn("subestimada", r["body"].lower())
 
 
 if __name__ == "__main__":
