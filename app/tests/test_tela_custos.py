@@ -181,6 +181,19 @@ class TestDinheiro(unittest.TestCase):
         r = self.ia.por_acao([self._linha(modelo="modelo-que-nao-existe")])
         self.assertEqual(r[0]["usd"], 0.0)
 
+    def test_por_dia_com_dia_ausente_nao_levanta(self):
+        """Dia ausente/None cai num balde vazio; resto soma correto. Defensável, precisa
+        estar verificado."""
+        linhas = [self._linha(dia=None), self._linha(dia="2026-08-15")]
+        d = self.ia.por_dia(linhas)
+        p_in, _ = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        # A linha com dia=None vai pro balde ""
+        self.assertAlmostEqual(d.get(""), p_in)
+        # A linha real soma corretamente
+        self.assertAlmostEqual(d["2026-08-15"], p_in)
+        # Total está correto
+        self.assertEqual(len(d), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

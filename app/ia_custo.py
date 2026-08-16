@@ -69,13 +69,20 @@ def por_acao(linhas):
     acc = {}
     for l in (linhas or []):
         usd = custo_usd(l.get("modelo"), l.get("tokens_in"), l.get("tokens_out"))
-        acc[l.get("acao") or "desconhecido"] = acc.get(l.get("acao") or "desconhecido", 0.0) + usd
+        acao = l.get("acao") or "desconhecido"
+        acc[acao] = acc.get(acao, 0.0) + usd
     return [{"acao": a, "usd": u, "brl": em_brl(u)}
             for a, u in sorted(acc.items(), key=lambda kv: kv[1], reverse=True)]
 
 
 def por_dia(linhas):
-    """{'AAAA-MM-DD': US$} — é o lado nosso da comparação com a fatura."""
+    """{'AAAA-MM-DD': US$} — é o lado nosso da comparação com a fatura.
+
+    Nota: diferente de `por_acao`, usamos "" como valor ausente em vez de "desconhecido".
+    Razão: "desconhecido" é um balde legítimo (ação sem rótulo existe e aparece na tela),
+    mas um dia sem data não é um dia — colocá-lo numa tabela de dias reais o contaminaria.
+    Na prática não acontece: `dia` vem de SQL com `substr(quando,1,10)` que sempre devolve algo.
+    """
     acc = {}
     for l in (linhas or []):
         dia = l.get("dia") or ""
