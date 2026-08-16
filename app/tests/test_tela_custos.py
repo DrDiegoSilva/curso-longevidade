@@ -117,5 +117,70 @@ class TestResumoIaUso(_Base):
         self.assertEqual(self.db.resumo_ia_uso("2026-08-01"), [])
 
 
+class TestDinheiro(unittest.TestCase):
+    """As linhas agregadas viram R$. O preço vem de config.PRECOS_IA e o cálculo é na
+    leitura — preço errado é recálculo, não perda."""
+
+    def setUp(self):
+        import importlib, config, ia_custo
+        importlib.reload(config)
+        importlib.reload(ia_custo)
+        self.cfg, self.ia = config, ia_custo
+
+    def _linha(self, dia="2026-08-14", acao="dossie", modelo="claude-sonnet-4-6",
+               tin=1_000_000, tout=0):
+        return {"dia": dia, "acao": acao, "modelo": modelo,
+                "tokens_in": tin, "tokens_out": tout, "chamadas": 1}
+
+    def test_total_soma_as_linhas(self):
+        p_in, _ = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        t = self.ia.total_usd([self._linha(), self._linha()])
+        self.assertAlmostEqual(t, p_in * 2)
+
+    def test_por_acao_soma_dentro_da_acao(self):
+        r = self.ia.por_acao([self._linha(acao="dossie"), self._linha(acao="dossie")])
+        self.assertEqual(len(r), 1)
+        p_in, _ = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        self.assertAlmostEqual(r[0]["usd"], p_in * 2)
+
+    def test_por_acao_ordena_do_maior_gasto_para_o_menor(self):
+        """É o que diz ao Diego o que cortar se achar caro — ordem errada esconde isso."""
+        linhas = [self._linha(acao="barato", tin=1000),
+                  self._linha(acao="caro", tin=5_000_000),
+                  self._linha(acao="medio", tin=100_000)]
+        self.assertEqual([x["acao"] for x in self.ia.por_acao(linhas)],
+                         ["caro", "medio", "barato"])
+
+    def test_por_acao_traz_o_valor_em_reais(self):
+        r = self.ia.por_acao([self._linha()])
+        self.assertAlmostEqual(r[0]["brl"], r[0]["usd"] * self.cfg.USD_BRL)
+
+    def test_modelos_diferentes_na_mesma_acao_somam_com_o_preco_de_cada_um(self):
+        linhas = [self._linha(acao="titulo", modelo="claude-haiku-4-5-20251001"),
+                  self._linha(acao="titulo", modelo="claude-sonnet-4-6")]
+        h_in, _ = self.cfg.PRECOS_IA["claude-haiku-4-5-20251001"]
+        s_in, _ = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        r = self.ia.por_acao(linhas)
+        self.assertEqual(len(r), 1)
+        self.assertAlmostEqual(r[0]["usd"], h_in + s_in)
+
+    def test_por_dia_agrupa_por_data(self):
+        linhas = [self._linha(dia="2026-08-14"), self._linha(dia="2026-08-14"),
+                  self._linha(dia="2026-08-15")]
+        d = self.ia.por_dia(linhas)
+        p_in, _ = self.cfg.PRECOS_IA["claude-sonnet-4-6"]
+        self.assertAlmostEqual(d["2026-08-14"], p_in * 2)
+        self.assertAlmostEqual(d["2026-08-15"], p_in)
+
+    def test_lista_vazia_nao_explode(self):
+        self.assertEqual(self.ia.por_acao([]), [])
+        self.assertEqual(self.ia.por_dia([]), {})
+        self.assertEqual(self.ia.total_usd([]), 0.0)
+
+    def test_modelo_sem_preco_entra_como_zero_e_nao_derruba(self):
+        r = self.ia.por_acao([self._linha(modelo="modelo-que-nao-existe")])
+        self.assertEqual(r[0]["usd"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
