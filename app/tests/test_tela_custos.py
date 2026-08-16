@@ -195,5 +195,115 @@ class TestDinheiro(unittest.TestCase):
         self.assertEqual(len(d), 2)
 
 
+class TestTela(unittest.TestCase):
+    def setUp(self):
+        import importlib, site_web
+        importlib.reload(site_web)
+        self.sw = site_web
+
+    def _dados(self, **kw):
+        d = {"mes": "2026-08", "usd": 12.34, "brl": 67.87, "cotacao": 5.5,
+             "assinantes": 42,
+             "por_acao": [{"acao": "dossie", "usd": 8.0, "brl": 44.0},
+                          {"acao": "kit", "usd": 4.34, "brl": 23.87}],
+             "dias": [{"dia": "2026-08-16", "ledger": 1.2, "fatura": None}],
+             "fatura": "sem_chave"}
+        d.update(kw)
+        return d
+
+    def test_devolve_pagina_completa(self):
+        html = self.sw.pagina_custos(self._dados(), "tok")
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
+
+    def test_mostra_o_gasto_do_mes_em_reais(self):
+        html = self.sw.pagina_custos(self._dados(), "tok")
+        self.assertIn("67,87", html.replace(".", ","))
+
+    def test_mostra_a_cotacao_usada(self):
+        """Número em R$ sem dizer a cotação é número sem procedência."""
+        html = self.sw.pagina_custos(self._dados(), "tok")
+        self.assertIn("5,5", html.replace(".", ","))
+
+    def test_mostra_quantos_assinantes_dividem_a_conta(self):
+        html = self.sw.pagina_custos(self._dados(), "tok")
+        self.assertIn("42", html)
+
+    def test_diz_que_o_custo_e_fixo(self):
+        """Sem essa frase ele olha um número que cai sozinho e tira a conclusão errada
+        sobre o próprio produto."""
+        html = self.sw.pagina_custos(self._dados(), "tok").lower()
+        self.assertIn("fixo", html)
+
+    def test_lista_as_acoes_do_maior_pro_menor_na_ordem_que_recebeu(self):
+        """Busca a partir da seção "Onde o dinheiro vai": o CSS global de `_pagina` tem
+        `-webkit-` (vendor prefix), e "kit" é substring disso — procurar do início do
+        documento faria o teste comparar a posição errada."""
+        html = self.sw.pagina_custos(self._dados(), "tok")
+        inicio = html.index("Onde o dinheiro vai")
+        self.assertLess(html.index("dossie", inicio), html.index("kit", inicio))
+
+    def test_sem_chave_explica_o_que_falta(self):
+        html = self.sw.pagina_custos(self._dados(fatura="sem_chave"), "tok")
+        self.assertIn("DSCURSO_ANTHROPIC_ADMIN_KEY", html)
+
+    def test_chave_recusada_diz_isso(self):
+        html = self.sw.pagina_custos(self._dados(fatura="recusada"), "tok").lower()
+        self.assertIn("recusada", html)
+
+    def test_erro_na_api_diz_isso_sem_derrubar_a_pagina(self):
+        html = self.sw.pagina_custos(self._dados(fatura="erro"), "tok")
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
+        self.assertIn("67,87", html.replace(".", ","))      # o lado nosso continua lá
+
+    def test_com_fatura_mostra_as_tres_colunas(self):
+        d = self._dados(fatura="ok",
+                        dias=[{"dia": "2026-08-16", "ledger": 1.0, "fatura": 1.2}])
+        html = self.sw.pagina_custos(d, "tok").lower()
+        self.assertIn("fatura", html)
+        self.assertIn("diferen", html)          # "diferença"
+
+    def test_avisa_que_a_fatura_e_da_organizacao_inteira(self):
+        """Sem isso a tela mente por omissão: a diferença pode ser uso de outra origem,
+        não preço errado na nossa tabela."""
+        html = self.sw.pagina_custos(self._dados(fatura="ok"), "tok").lower()
+        self.assertIn("organiza", html)
+
+    def test_escapa_o_nome_da_acao(self):
+        d = self._dados(por_acao=[{"acao": "<script>alert(1)</script>", "usd": 1.0,
+                                   "brl": 5.5}])
+        self.assertNotIn("<script>alert(1)</script>", self.sw.pagina_custos(d, "tok"))
+
+    def test_mes_sem_gasto_nenhum_nao_quebra(self):
+        d = self._dados(usd=0.0, brl=0.0, por_acao=[], dias=[])
+        html = self.sw.pagina_custos(d, "tok")
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
+
+    def test_zero_assinantes_nao_divide_por_zero(self):
+        html = self.sw.pagina_custos(self._dados(assinantes=0), "tok")
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
+
+    def test_o_nav_de_admin_ganhou_o_link_de_custos(self):
+        self.assertIn("/admin/custos", self.sw._admin_nav("tok"))
+
+    def test_fatura_parcial_avisa_que_a_leitura_ficou_incompleta(self):
+        """`anthropic_admin.custo_por_dia` devolve `parcial=True` quando descartou algum
+        valor ilegível ou bateu no teto de páginas. Sem esse aviso na tela, uma fatura
+        curta em silêncio faz o Diego concluir que a nossa tabela de preços superestima o
+        gasto — o oposto do que aconteceu."""
+        html = self.sw.pagina_custos(self._dados(fatura="ok", parcial=True), "tok").lower()
+        self.assertIn("parcial", html)
+
+    def test_fatura_completa_nao_mostra_aviso_de_parcial(self):
+        html = self.sw.pagina_custos(self._dados(fatura="ok", parcial=False), "tok").lower()
+        self.assertNotIn("leitura parcial", html)
+
+    def test_parcial_ausente_no_dict_nao_quebra_a_pagina(self):
+        """`dados` sem a chave "parcial" (ex.: fatura sem_chave) não pode levantar."""
+        d = self._dados(fatura="sem_chave")
+        d.pop("parcial", None)
+        html = self.sw.pagina_custos(d, "tok")
+        self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
+
+
 if __name__ == "__main__":
     unittest.main()
