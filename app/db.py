@@ -2012,6 +2012,28 @@ def listar_ia_uso():
                 c.execute("SELECT * FROM ia_uso ORDER BY quando DESC").fetchall()]
 
 
+def resumo_ia_uso(desde, ate=None):
+    """O ledger agregado por dia/ação/modelo, para a tela de custos.
+
+    Agrega em SQL em vez de trazer linha a linha: a tela é de admin e roda pouco, mas o
+    ledger cresce para sempre e a página não pode piorar com o tempo.
+
+    O dia sai de `substr(quando,1,10)` — funções de data divergem entre SQLite e Postgres,
+    e o carimbo já é ISO. `desde` é inclusivo, `ate` exclusivo.
+    """
+    q = ("SELECT substr(quando,1,10) AS dia, acao, modelo, "
+         "SUM(tokens_in) AS tokens_in, SUM(tokens_out) AS tokens_out, "
+         "SUM(chamadas) AS chamadas FROM ia_uso WHERE quando >= ?")
+    params = [desde]
+    if ate:
+        q += " AND quando < ?"
+        params.append(ate)
+    q += (" GROUP BY substr(quando,1,10), acao, modelo"
+          " ORDER BY substr(quando,1,10) DESC, acao")
+    with _conn() as c:
+        return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
 def trilha_listar_pecas():
     """Todas as peças, em ordem. Alimenta a prévia do admin."""
     with _conn() as c:
