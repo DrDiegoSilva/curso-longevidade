@@ -83,9 +83,19 @@ class TestResumoIaUso(_Base):
         self._uso("2026-08-14T11:00:00", "titulo", modelo="claude-opus-4-8")
         self.assertEqual(len(self.db.resumo_ia_uso("2026-08-01")), 2)
 
-    def test_desde_e_inclusivo(self):
+    def test_desde_e_inclusivo_com_carimbo_completo(self):
+        """Prova inclusividade real: carimbo idêntico ao da linha deve ser incluído."""
+        self._uso("2026-08-14T10:00:00", "dossie")
+        # Chamar com carimbo COMPLETO e idêntico: deve incluir a linha
+        self.assertEqual(len(self.db.resumo_ia_uso("2026-08-14T10:00:00")), 1)
+
+    def test_desde_com_data_curta_como_uso_real(self):
+        """Uso real: a tela chama com "2026-08-14" (data curta), esperando tudo aquele dia."""
         self._uso("2026-08-14T00:00:00", "dossie")
-        self.assertEqual(len(self.db.resumo_ia_uso("2026-08-14")), 1)
+        self._uso("2026-08-14T23:59:59", "kit")
+        # Chamar com data curta: deve incluir tudo que começar com "2026-08-14"
+        r = self.db.resumo_ia_uso("2026-08-14")
+        self.assertEqual(len(r), 2)
 
     def test_antes_do_desde_fica_de_fora(self):
         self._uso("2026-08-13T23:59:59", "dossie")

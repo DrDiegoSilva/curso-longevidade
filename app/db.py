@@ -2029,7 +2029,7 @@ def resumo_ia_uso(desde, ate=None):
         q += " AND quando < ?"
         params.append(ate)
     q += (" GROUP BY substr(quando,1,10), acao, modelo"
-          " ORDER BY substr(quando,1,10) DESC, acao")
+          " ORDER BY substr(quando,1,10) DESC, acao, modelo")
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
 
