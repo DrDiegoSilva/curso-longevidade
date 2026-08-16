@@ -294,8 +294,12 @@ class TestTela(unittest.TestCase):
         self.assertIn("parcial", html)
 
     def test_fatura_completa_nao_mostra_aviso_de_parcial(self):
+        """Âncora em "subestimada" (palavra inteira, sem tag no meio) — "leitura parcial"
+        nunca aparece como substring contígua no HTML real: o texto emitido é
+        'Leitura <strong>parcial</strong> da fatura', com a tag `<strong>` partindo a
+        frase. Uma asserção ancorada nela passaria sempre, independente do gate."""
         html = self.sw.pagina_custos(self._dados(fatura="ok", parcial=False), "tok").lower()
-        self.assertNotIn("leitura parcial", html)
+        self.assertNotIn("subestimada", html)
 
     def test_parcial_ausente_no_dict_nao_quebra_a_pagina(self):
         """`dados` sem a chave "parcial" (ex.: fatura sem_chave) não pode levantar."""
