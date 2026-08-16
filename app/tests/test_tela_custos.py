@@ -220,9 +220,13 @@ class TestTela(unittest.TestCase):
         self.assertIn("67,87", html.replace(".", ","))
 
     def test_mostra_a_cotacao_usada(self):
-        """Número em R$ sem dizer a cotação é número sem procedência."""
+        """Número em R$ sem dizer a cotação é número sem procedência.
+
+        Âncora tem que ser a frase inteira: "5,5" sozinho casa com qualquer resto de
+        CSS global (ex.: "font-size:15,5px" da folha de estilo de `_pagina`), e o teste
+        passaria mesmo sem a cotação aparecer na tela — já aconteceu."""
         html = self.sw.pagina_custos(self._dados(), "tok")
-        self.assertIn("5,5", html.replace(".", ","))
+        self.assertIn("cotação R$ 5,50", html.replace(".", ","))
 
     def test_mostra_quantos_assinantes_dividem_a_conta(self):
         html = self.sw.pagina_custos(self._dados(), "tok")
