@@ -116,6 +116,23 @@ class TestResumoIaUso(_Base):
     def test_janela_sem_nada_devolve_lista_vazia(self):
         self.assertEqual(self.db.resumo_ia_uso("2026-08-01"), [])
 
+    def test_filtrar_por_prefixo_do_mes_bate_com_consultar_direto_pelo_mes(self):
+        """Item 5 (Minor): a rota deixa de consultar o mês E os 30 dias -- consulta só os
+        30 dias e deriva o mês filtrando em Python pelo prefixo do dia. Prova que essa
+        derivação devolve exatamente o mesmo conjunto que consultar direto pelo mês (a
+        janela do mês é sempre subconjunto da de 30 dias)."""
+        self._uso("2026-07-20T10:00:00", "dossie", tin=500, tout=0)   # mês anterior
+        self._uso("2026-08-01T10:00:00", "dossie", tin=1000, tout=0)
+        self._uso("2026-08-14T10:00:00", "kit", tin=2000, tout=0)
+        l30 = self.db.resumo_ia_uso("2026-07-17")
+        direto = self.db.resumo_ia_uso("2026-08-01")
+        filtrado = [l for l in l30 if (l.get("dia") or "").startswith("2026-08")]
+
+        def _chave(x):
+            return (x["dia"], x["acao"], x["modelo"])
+
+        self.assertEqual(sorted(filtrado, key=_chave), sorted(direto, key=_chave))
+
 
 class TestDinheiro(unittest.TestCase):
     """As linhas agregadas viram R$. O preço vem de config.PRECOS_IA e o cálculo é na
@@ -202,12 +219,12 @@ class TestTela(unittest.TestCase):
         self.sw = site_web
 
     def _dados(self, **kw):
-        d = {"mes": "2026-08", "usd": 12.34, "brl": 67.87, "cotacao": 5.5,
-             "assinantes": 42,
+        d = {"mes": "2026-08", "ate": "2026-08-16", "usd": 12.34, "brl": 67.87,
+             "cotacao": 5.5, "assinantes": 42,
              "por_acao": [{"acao": "dossie", "usd": 8.0, "brl": 44.0},
                           {"acao": "kit", "usd": 4.34, "brl": 23.87}],
-             "dias": [{"dia": "2026-08-16", "ledger": 1.2, "fatura": None}],
-             "fatura": "sem_chave"}
+             "dias": [{"dia": "2026-08-16", "ledger": 1.2}],
+             "fatura": "sem_chave", "total_ledger": 20.0, "total_fatura": 22.5}
         d.update(kw)
         return d
 
@@ -228,9 +245,31 @@ class TestTela(unittest.TestCase):
         html = self.sw.pagina_custos(self._dados(), "tok")
         self.assertIn("cotação R$ 5,50", html.replace(".", ","))
 
+    def test_titulo_deixa_explicito_que_e_ate_hoje_nao_o_mes_fechado(self):
+        """Item 2 (IMPORTANT): "no mês" sozinho, no dia 2, é ~1/15 do gasto real numa
+        tela de decidir preço. O rótulo precisa dizer até quando."""
+        d = self._dados(mes="2026-08", ate="2026-08-02")
+        html = self.sw.pagina_custos(d, "tok")
+        self.assertIn("até 02/08", html)
+
+    def test_por_assinante_tambem_deixa_explicito_o_ate(self):
+        d = self._dados(mes="2026-08", ate="2026-08-02", assinantes=1, brl=10.0)
+        html = self.sw.pagina_custos(d, "tok")
+        self.assertIn("no mês até 02/08", html)
+
+    def test_o_rotulo_usa_o_dado_recebido_e_nao_chama_datetime_por_conta_propria(self):
+        """Prova que o render não inventa `datetime.now()` internamente: se chamasse,
+        essa data "impossível" (ano 2099) seria ignorada silenciosamente."""
+        html = self.sw.pagina_custos(self._dados(ate="2099-12-31"), "tok")
+        self.assertIn("até 31/12", html)
+
     def test_mostra_quantos_assinantes_dividem_a_conta(self):
-        html = self.sw.pagina_custos(self._dados(), "tok")
-        self.assertIn("42", html)
+        """Âncora na FRASE inteira, não em "42" sozinho: o CSS global de `_pagina` tem
+        `clamp(42px,...)` e `rgba(20,51,42,...)` -- provado por mutação (armadilha nº 5
+        desta entrega): com `assinantes=41` o teste antigo (`assertIn("42", html)`)
+        continuava passando, porque o "42" da folha de estilo global casava sozinho."""
+        html = self.sw.pagina_custos(self._dados(assinantes=42), "tok")
+        self.assertIn("Com <strong>42</strong> assinantes ativos", html)
 
     def test_diz_que_o_custo_e_fixo(self):
         """Sem essa frase ele olha um número que cai sozinho e tira a conclusão errada
@@ -259,12 +298,56 @@ class TestTela(unittest.TestCase):
         self.assertTrue(html.lstrip().lower().startswith("<!doctype html>"))
         self.assertIn("67,87", html.replace(".", ","))      # o lado nosso continua lá
 
-    def test_com_fatura_mostra_as_tres_colunas(self):
-        d = self._dados(fatura="ok",
-                        dias=[{"dia": "2026-08-16", "ledger": 1.0, "fatura": 1.2}])
-        html = self.sw.pagina_custos(d, "tok").lower()
-        self.assertIn("fatura", html)
-        self.assertIn("diferen", html)          # "diferença"
+    def test_dia_a_dia_so_tem_a_nossa_coluna(self):
+        """Item 1 (CRITICAL): comparar dia a dia mistura fusos diferentes -- nós
+        carimbamos em horário de São Paulo, a Anthropic bate em UTC. A tabela "Dia a dia"
+        não pode fingir ter coluna de fatura/diferença nem com a fatura lida ("ok").
+
+        Âncora original (`test_com_fatura_mostra_as_tres_colunas`) casava em "fatura" e
+        "diferen", que também aparecem no PARÁGRAFO de aviso emitido sempre que
+        `estado == "ok"` -- provado por mutação: com `dias=[]` (sem nenhum `<th>` de
+        tabela) o teste antigo continuava passando."""
+        d = self._dados(fatura="ok", dias=[{"dia": "2026-08-16", "ledger": 1.0}])
+        html = self.sw.pagina_custos(d, "tok")
+        inicio = html.index("Dia a dia")
+        fim = html.index("Conferência com a fatura")
+        trecho_tabela = html[inicio:fim]
+        self.assertNotIn("Fatura", trecho_tabela)
+        self.assertNotIn("Diferença", trecho_tabela)
+        self.assertIn("Nosso medidor", trecho_tabela)
+
+    def test_conferencia_mostra_os_dois_totais_e_a_diferenca(self):
+        """Item 1: o bloco novo "Conferência com a fatura" traz os TRÊS números do mesmo
+        período de 30 dias -- nosso total, o da fatura, e a diferença entre eles."""
+        d = self._dados(fatura="ok", total_ledger=20.0, total_fatura=22.5)
+        html = self.sw.pagina_custos(d, "tok")
+        inicio = html.index("Conferência com a fatura")
+        trecho = html[inicio:].replace(".", ",")
+        self.assertIn("20,00", trecho)     # nosso ledger
+        self.assertIn("22,50", trecho)     # fatura
+        self.assertIn("2,50", trecho)      # diferença
+
+    def test_conferencia_explica_a_diferenca_de_fuso(self):
+        """Item 1: sem essa explicação, o Diego veria uma discrepância grande e
+        concluiria que a NOSSA tabela de preços está errada, quando é só o corte do dia
+        em fusos diferentes."""
+        html = self.sw.pagina_custos(self._dados(fatura="ok"), "tok")
+        inicio = html.index("Conferência com a fatura")
+        trecho = html[inicio:].lower()
+        self.assertIn("utc", trecho)
+        self.assertIn("são paulo", trecho)
+        self.assertIn("período", trecho)
+
+    def test_conferencia_sem_fatura_lida_nao_finge_numero(self):
+        """Item 1: nos estados sem_chave/recusada/erro não houve leitura nenhuma pra
+        comparar -- mesmo que a rota (por engano) mande total_ledger/total_fatura, o
+        bloco de conferência não pode fingir ter um número."""
+        for estado in ("sem_chave", "recusada", "erro"):
+            d = self._dados(fatura=estado, total_ledger=999.0, total_fatura=999.0)
+            html = self.sw.pagina_custos(d, "tok")
+            inicio = html.index("Conferência com a fatura")
+            trecho = html[inicio:].replace(".", ",")
+            self.assertNotIn("999,00", trecho, f"estado={estado} não devia ter número")
 
     def test_avisa_que_a_fatura_e_da_organizacao_inteira(self):
         """Sem isso a tela mente por omissão: a diferença pode ser uso de outra origem,
@@ -409,6 +492,56 @@ class TestRotaCustos(_Base):
         r = self._get("/admin/custos?token=tok123")
         self.assertEqual(r["code"], 200)
         self.assertNotIn("subestimada", r["body"].lower())
+
+    def test_a_rota_consulta_o_ledger_uma_unica_vez(self):
+        """Item 5 (Minor): a janela do mês corrente é sempre subconjunto da janela de 30
+        dias (um mês tem no máximo 31 dias) -- bater duas vezes no banco pela mesma
+        tabela é trabalho repetido. Prova por contagem de chamadas a `db.resumo_ia_uso`."""
+        import db
+        chamadas = []
+        original = db.resumo_ia_uso
+
+        def _contando(*a, **k):
+            chamadas.append((a, k))
+            return original(*a, **k)
+
+        self.addCleanup(setattr, db, "resumo_ia_uso", original)
+        db.resumo_ia_uso = _contando
+        self._get("/admin/custos?token=tok123")
+        self.assertEqual(len(chamadas), 1)
+
+    def test_o_gasto_do_mes_bate_com_o_calculo_direto_apos_juntar_as_consultas(self):
+        """Item 5: confere que juntar as duas consultas numa só (mês derivado por
+        filtro em Python) não mudou o número exibido -- é o teste que o item pede."""
+        from datetime import datetime
+        import config, ia_custo, site_web
+        hoje = datetime.now().strftime("%Y-%m-%dT10:00:00")
+        self._uso(hoje, "dossie", tin=1_000_000, tout=0)
+        r = self._get("/admin/custos?token=tok123")
+        usd = ia_custo.custo_usd("claude-sonnet-4-6", 1_000_000, 0)
+        brl = ia_custo.em_brl(usd)
+        self.assertIn(f"R$ {site_web._rs(brl)}", r["body"])
+
+    def test_a_rota_manda_o_dia_de_hoje_pro_rotulo_do_mes(self):
+        """Item 2 (IMPORTANT): a rota precisa mandar até quando o mês foi somado --
+        `site_web.pagina_custos` não pode inventar `datetime.now()` no render."""
+        from datetime import datetime
+        hoje = datetime.now()
+        r = self._get("/admin/custos?token=tok123")
+        self.assertIn(f"até {hoje.strftime('%d/%m')}", r["body"])
+
+    def test_a_rota_monta_o_bloco_de_conferencia_com_fatura_ok(self):
+        """Item 1 (CRITICAL): confere a fiação de ponta a ponta -- com a fatura
+        respondendo "ok" de verdade (via stub), a rota calcula total_ledger/total_fatura
+        e o bloco "Conferência com a fatura" chega à página com os dois números."""
+        from datetime import datetime
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        self._uso(f"{hoje}T10:00:00", "dossie", tin=1_000_000, tout=0)
+        self._stub_fatura(lambda *a, **k: {
+            "estado": "ok", "dias": {hoje: 2.5}, "parcial": False})
+        r = self._get("/admin/custos?token=tok123")
+        self.assertIn("Conferência com a fatura", r["body"])
+        self.assertIn("2,50", r["body"].replace(".", ","))
 
 
 if __name__ == "__main__":
