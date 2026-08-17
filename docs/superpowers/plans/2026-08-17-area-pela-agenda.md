@@ -390,7 +390,12 @@ class TestSlotViewCarregaOEstudo(unittest.TestCase):
     tema/título. Sem estes campos o painel não tem o que mostrar."""
 
     def _slot_view(self, dia, digest):
-        """Roda o GET da /agenda com o banco dublado e devolve o slot daquele dia."""
+        """Roda o GET da /agenda com o banco dublado e devolve o slot daquele dia.
+
+        A janela é dublada com uma data FIXA no passado. Usar "ontem" faria o teste pular
+        sozinho toda segunda-feira (ontem = domingo, não é dia de envio) — teste que não
+        roda é teste que não existe.
+        """
         import serve, config
         capturado = {}
 
@@ -405,20 +410,18 @@ class TestSlotViewCarregaOEstudo(unittest.TestCase):
              mock.patch("daily.materializar_agenda"), \
              mock.patch("daily._dias_envio",
                         return_value={"segunda", "terca", "quarta", "quinta", "sexta"}), \
+             mock.patch("agenda_plan.semanas_do_mes", return_value=[dia]), \
              mock.patch("site_web.pagina_agenda", side_effect=_fake_pagina), \
              mock.patch.object(config, "ADMIN_TOKEN", "tok"):
-            serve.Handler.do_GET(_RotaStub(f"/agenda?token=tok"))
+            serve.Handler.do_GET(_RotaStub("/agenda?token=tok"))
         return [s for s in capturado["slots"] if s["data"] == dia]
 
     def test_dia_passado_carrega_resumo_fonte_doi_e_slug(self):
         digest = {"tema": "Meus estudos", "tema_slug": "meus-estudos",
                   "titulo_pt": "Tirzepatida", "titulo_original": "Tirzepatide",
                   "resumo": "resumo longo", "fonte": "JAMA", "doi": "10.1/x"}
-        from datetime import datetime, timedelta
-        ontem = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        achados = self._slot_view(ontem, digest)
-        if not achados:
-            self.skipTest("ontem caiu em fim de semana — não é dia de envio")
+        achados = self._slot_view("2026-08-10", digest)   # data fixa, sempre no passado
+        self.assertEqual(len(achados), 1)
         s = achados[0]
         self.assertEqual(s["tema_slug"], "meus-estudos")
         self.assertEqual(s["resumo"], "resumo longo")
