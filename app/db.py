@@ -2084,6 +2084,38 @@ def excluir_digest(tema_slug, data, escopo):
                   (e, tema_slug, data))
 
 
+def mover_digest_tema(data, tema_slug, tema_novo):
+    """Muda a ÁREA de um estudo JÁ ENVIADO. Devolve "movido" | "inexistente" | "ocupado"
+    | "mesmo".
+
+    `tema` e `tema_slug` andam JUNTOS: o portal filtra por slug (`listar_por_tema`) e
+    `listar_excluidos` filtra por `tema`. Atualizar só um faz as duas visões discordarem
+    em silêncio — o estudo apareceria na aba nova e continuaria contando como do tema
+    velho na memória do dossiê.
+
+    Como `tema_slug` é metade da chave primária, isto MOVE a linha: a página passa a
+    viver em /artigos/<slug-novo>/<data>. É seguro porque nenhum link profundo desses é
+    enviado por WhatsApp (só a raiz do ARTIGOS_URL e rotas de conta).
+
+    Destino ocupado RECUSA em vez de sobrescrever: dois estudos no mesmo dia é raro, mas
+    perder um estudo pra sempre por causa de um clique não é aceitável.
+    """
+    novo_slug = slug(tema_novo)
+    with _conn() as c:
+        atual = c.execute("SELECT tema FROM digests WHERE data=? AND tema_slug=?",
+                          (data, tema_slug)).fetchone()
+        if not atual:
+            return "inexistente"
+        if novo_slug == tema_slug:
+            return "mesmo"
+        if c.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
+                     (data, novo_slug)).fetchone():
+            return "ocupado"
+        c.execute("UPDATE digests SET tema=?, tema_slug=? WHERE data=? AND tema_slug=?",
+                  (tema_novo, novo_slug, data, tema_slug))
+    return "movido"
+
+
 def listar_excluidos(tema):
     """O que está fora da memória neste tema, das duas fontes, para a lista de devolver."""
     with _conn() as c:
