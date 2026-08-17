@@ -94,7 +94,13 @@ def custo_por_dia(desde, ate=None, chave=None):
             for dia, valor in dias_pagina.items():
                 dias[dia] = dias.get(dia, 0.0) + valor    # soma entre páginas, nunca sobrescreve
             parcial = parcial or descartou
-            if not r.get("has_more") or not r.get("next_page"):
+            if not r.get("has_more"):
+                break
+            if not r.get("next_page"):
+                # anomalia da API: diz que tem mais páginas mas não manda o cursor pra
+                # seguir. Parar aqui em silêncio faria a fatura sair curta como se fosse
+                # a íntegra -- é o único truncamento que ficava sem avisar.
+                parcial = True
                 break
             pagina_cursor = r["next_page"]
         else:

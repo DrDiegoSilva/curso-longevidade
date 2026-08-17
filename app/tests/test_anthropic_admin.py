@@ -103,6 +103,18 @@ class TestPaginacao(_Base):
         r = self.aa.custo_por_dia("2026-08-01")
         self.assertAlmostEqual(r["dias"]["2026-08-14"], 1.5)
 
+    def test_has_more_sem_next_page_marca_parcial(self):
+        """Anomalia da API: diz que tem mais (`has_more=True`) mas não manda o cursor
+        (`next_page=None`) pra seguir. Sem o `parcial=True`, esse é o único jeito de a
+        leitura terminar cortada em silêncio -- a tela mostraria a fatura curta como se
+        fosse a íntegra."""
+        self.aa._get = lambda url, chave: _resposta([_bucket("2026-08-14", "1.00")],
+                                                    has_more=True, next_page=None)
+        r = self.aa.custo_por_dia("2026-08-01")
+        self.assertEqual(r["estado"], "ok")
+        self.assertAlmostEqual(r["dias"]["2026-08-14"], 0.01)
+        self.assertTrue(r["parcial"], "has_more sem next_page é leitura truncada")
+
     def test_nao_gira_para_sempre_se_a_api_insistir_em_has_more(self):
         """Defesa contra laço infinito: a página de admin não pode travar o servidor. Mas o
         teto corta uma fatura de verdade quando ela tem mais de MAX_PAGINAS baldes — isso
