@@ -52,3 +52,40 @@ def registrar(acao, modelo, unidades_in, unidades_out=0, chamadas=1):
                             unidades_out, chamadas)
     except Exception as e:
         print(f"[custo] não registrei o uso ({acao}): {e}", flush=True)
+
+
+def total_usd(linhas):
+    """US$ de um conjunto de linhas agregadas do ledger."""
+    return sum(custo_usd(l.get("modelo"), l.get("tokens_in"), l.get("tokens_out"))
+               for l in (linhas or []))
+
+
+def por_acao(linhas):
+    """Gasto por ação, do que mais pesa para o que menos pesa.
+
+    A ordem é o conteúdo: é ela que diz ao Diego o que cortar se achar caro. Modelos
+    diferentes dentro da mesma ação somam com o preço de cada um.
+    """
+    acc = {}
+    for l in (linhas or []):
+        usd = custo_usd(l.get("modelo"), l.get("tokens_in"), l.get("tokens_out"))
+        acao = l.get("acao") or "desconhecido"
+        acc[acao] = acc.get(acao, 0.0) + usd
+    return [{"acao": a, "usd": u, "brl": em_brl(u)}
+            for a, u in sorted(acc.items(), key=lambda kv: kv[1], reverse=True)]
+
+
+def por_dia(linhas):
+    """{'AAAA-MM-DD': US$} — é o lado nosso da comparação com a fatura.
+
+    Nota: diferente de `por_acao`, usamos "" como valor ausente em vez de "desconhecido".
+    Razão: "desconhecido" é um balde legítimo (ação sem rótulo existe e aparece na tela),
+    mas um dia sem data não é um dia — colocá-lo numa tabela de dias reais o contaminaria.
+    Na prática não acontece: `dia` vem de SQL com `substr(quando,1,10)` que sempre devolve algo.
+    """
+    acc = {}
+    for l in (linhas or []):
+        dia = l.get("dia") or ""
+        acc[dia] = acc.get(dia, 0.0) + custo_usd(l.get("modelo"), l.get("tokens_in"),
+                                                 l.get("tokens_out"))
+    return acc

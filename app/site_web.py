@@ -711,6 +711,7 @@ def _admin_nav(token="", atual=""):
             + lk("/agenda", "📅 Agenda", "agenda")
             + lk("/series", "🎬 Séries", "series")
             + lk("/admin/precos", "💰 Preços", "precos")
+            + lk("/admin/custos", "📊 Custos", "custos")
             + lk("/admin/envio", "🗓️ Dias", "envio")
             + lk("/admin/trilha", "📘 Trilha", "trilha")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
@@ -1967,6 +1968,113 @@ def pagina_precos(planos, token, msg=""):
              f'<p class=hint>O valor editado vale nas vendas novas. Assinantes atuais mantêm o valor '
              f'que contrataram.</p>{linhas}</div>')
     return _pagina("Preços · Admin", corpo, logado=True, atual="precos",
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
+_FATURA_AVISO = {
+    "sem_chave": ('Para comparar com o que a Anthropic cobrou de verdade, configure a '
+                  'variável <code>DSCURSO_ANTHROPIC_ADMIN_KEY</code> com uma chave de '
+                  'ADMIN da organização (é outra, diferente da que o app usa pra gerar '
+                  'conteúdo).'),
+    "recusada": ('A chave de admin foi recusada pela Anthropic — confira se ela é de '
+                 'ADMIN da organização e se não expirou.'),
+    "erro": ('Não consegui falar com a API de custo da Anthropic agora. O gasto medido '
+             'por nós, acima, continua valendo.'),
+    "ok": ('⚠️ A fatura é da <strong>organização inteira</strong> na Anthropic, não só '
+           'deste app: se outra coisa sua usa a mesma conta, ela entra nesse total. '
+           'Diferença aqui não quer dizer automaticamente que a nossa tabela de preços '
+           'está errada.'),
+}
+
+_FATURA_PARCIAL_AVISO = ('⚠️ Leitura <strong>parcial</strong> da fatura: parte dos itens não '
+                          'pôde ser lida, então a coluna da fatura está incompleta — a '
+                          'diferença abaixo tende a estar subestimada.')
+
+
+def _rs(v):
+    """R$ com vírgula, como todo o resto do site."""
+    return f"{(v or 0.0):,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
+
+
+_FUSO_EXPLICACAO = (
+    'Comparamos com a fatura por <strong>período</strong> (30 dias), não dia a dia: nós '
+    'carimbamos o dia em horário de <strong>São Paulo</strong> e a Anthropic bate o dela '
+    'em <strong>UTC</strong> — uma geração perto da meia-noite cai num dia pra nós e no '
+    'dia seguinte pra ela. Dia a dia isso vira uma gangorra sem significado (um dia alto, '
+    'o seguinte baixo, as diferenças se cancelando); num total de 30 dias vira ruído de '
+    'borda.')
+
+
+def pagina_custos(dados, token, msg=""):
+    """Quanto a máquina de conteúdo custa de IA.
+
+    Abre pelo gasto do mês porque o custo é FIXO — o estudo do dia é gerado uma vez e vai
+    pra todo mundo. "Por assinante" é uma divisão que cai sozinha conforme a base cresce;
+    mostrar só ela levaria o Diego a conclusões erradas sobre o próprio produto.
+
+    A comparação com a fatura da Anthropic é por PERÍODO, nunca dia a dia: os dois lados
+    contam o dia em fusos diferentes (nós em horário de São Paulo, ela em UTC), então uma
+    tabela dia a dia com as duas colunas mentiria por uma gangorra que não tem significado
+    nenhum — ver `_FUSO_EXPLICACAO`.
+    """
+    d = dados or {}
+    n = int(d.get("assinantes") or 0)
+    usd, brl = d.get("usd") or 0.0, d.get("brl") or 0.0
+    ate = d.get("ate") or ""
+    ate_fmt = f"{ate[8:10]}/{ate[5:7]}" if len(ate) >= 10 else ""
+    sufixo_ate = f' até {ate_fmt}' if ate_fmt else ''
+    por_cabeca = (f'Com <strong>{n}</strong> assinantes ativos, dá <strong>R$ '
+                  f'{_rs(brl / n)}</strong> por assinante no mês{sufixo_ate}.' if n else
+                  'Nenhum assinante ativo no momento.')
+    acoes = "".join(
+        f'<div class="item"><div class="d">{_esc(a.get("acao"))} — '
+        f'<strong>R$ {_rs(a.get("brl"))}</strong> '
+        f'<span class="hint">(US$ {_rs(a.get("usd"))})</span></div></div>'
+        for a in (d.get("por_acao") or [])) or '<p class="hint">Nada medido neste mês.</p>'
+
+    tem_fatura = d.get("fatura") == "ok"
+    cab = '<tr><th align="left">Dia</th><th align="right">Nosso medidor</th></tr>'
+    linhas = "".join(
+        f'<tr><td>{_esc(x.get("dia"))}</td>'
+        f'<td align="right">US$ {_rs(x.get("ledger") or 0.0)}</td></tr>'
+        for x in (d.get("dias") or []))
+    tabela = (f'<table style="width:100%;border-collapse:collapse">{cab}{linhas}</table>'
+              if linhas else '<p class="hint">Sem dias medidos ainda.</p>')
+    aviso_parcial = (f'<p class="hint">{_FATURA_PARCIAL_AVISO}</p>'
+                      if tem_fatura and d.get("parcial") else '')
+
+    # Números da conferência SÓ aparecem com a fatura lida ("ok"): nos outros estados
+    # (sem_chave/recusada/erro) não há leitura nenhuma pra comparar, e fingir um número
+    # (ex.: 0,00) pareceria "sem diferença" quando na verdade é "sem dado".
+    conferencia_numeros = ""
+    if tem_fatura:
+        tl, tf = d.get("total_ledger") or 0.0, d.get("total_fatura") or 0.0
+        conferencia_numeros = (
+            f'<p style="font-size:16px;margin:10px 0"><strong>Nosso ledger:</strong> '
+            f'US$ {_rs(tl)} &nbsp;·&nbsp; <strong>Fatura da Anthropic:</strong> '
+            f'US$ {_rs(tf)} &nbsp;·&nbsp; <strong>Diferença:</strong> US$ {_rs(tf - tl)}'
+            f'</p>')
+
+    titulo_mes = _esc(d.get("mes")) + (f' (até {ate_fmt})' if ate_fmt else '')
+    corpo = (
+        f'<div class="wrap">{_admin_nav(token, "custos")}'
+        + (f'<div class="infobox">{_esc(msg)}</div>' if msg else '')
+        + f'<div class="panel" style="max-width:none">'
+        f'<h3>Custo de IA — {titulo_mes}</h3>'
+        f'<p style="font-size:26px;margin:6px 0"><strong>R$ {_rs(brl)}</strong> '
+        f'<span class="hint">(US$ {_rs(usd)} · cotação R$ {_rs(d.get("cotacao"))})</span></p>'
+        f'<p>{por_cabeca}</p>'
+        f'<p class="hint">O custo de IA é praticamente <strong>fixo</strong>: o estudo do '
+        f'dia é gerado uma vez e vai pra todos. Crescer a base derruba o valor por '
+        f'assinante — o que sustenta preço é o custo mensal da máquina.</p>'
+        f'<h3 style="margin-top:22px">Onde o dinheiro vai</h3>{acoes}'
+        f'<h3 style="margin-top:22px">Dia a dia</h3>{tabela}'
+        f'<h3 style="margin-top:22px">Conferência com a fatura</h3>'
+        f'<p class="hint">{_FUSO_EXPLICACAO}</p>'
+        f'<p class="hint">{_FATURA_AVISO.get(d.get("fatura"), "")}</p>'
+        f'{aviso_parcial}{conferencia_numeros}'
+        f'</div></div>')
+    return _pagina("Custos de IA · Admin", corpo, logado=True,
                    meta_extra='<meta name="robots" content="noindex">')
 
 

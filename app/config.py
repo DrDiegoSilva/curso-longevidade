@@ -259,6 +259,10 @@ try:
 except ValueError:
     USD_BRL = 5.50
 
+# Chave de ADMIN da organização Anthropic — diferente da que o app usa pra gerar conteúdo.
+# Só serve pra ler a fatura (Admin API). Sem ela, a tela de custos mostra só o nosso ledger.
+ANTHROPIC_ADMIN_KEY = os.environ.get("DSCURSO_ANTHROPIC_ADMIN_KEY") or ""
+
 
 def audio_ligado():
     """Envia áudio junto com o estudo? Precisa da chave OpenAI e não estar desligado."""

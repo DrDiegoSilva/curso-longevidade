@@ -382,6 +382,49 @@ class Handler(http.server.BaseHTTPRequestHandler):
             planos = [visiveis[s] for s in ("mensal", "anual") if s in visiveis]
             return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
                                                       msg=q.get("msg", [""])[0]), 200)
+        if path == "/admin/custos":
+            import config, db, ia_custo, site_web, subscribers
+            from datetime import datetime, timedelta
+            q = up.parse_qs(up.urlparse(self.path).query)
+            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            hoje = datetime.now()
+            mes = hoje.strftime("%Y-%m")
+            # Uma consulta só: a janela do mês corrente (no máximo 31 dias) é sempre um
+            # subconjunto da janela de 30 dias, então derivamos o mês filtrando em Python
+            # em vez de bater no banco duas vezes pela mesma tabela.
+            desde30 = (hoje - timedelta(days=30)).strftime("%Y-%m-%d")
+            l30 = db.resumo_ia_uso(desde30)
+            linhas_mes = [l for l in l30 if (l.get("dia") or "").startswith(mes)]
+            usd = ia_custo.total_usd(linhas_mes)
+            nosso = ia_custo.por_dia(l30)
+            total_ledger = ia_custo.total_usd(l30)
+            fatura = {"estado": "erro", "dias": {}, "parcial": False}
+            try:
+                import anthropic_admin
+                fatura = anthropic_admin.custo_por_dia(desde30)
+            except Exception as e:      # a parte opcional não pode levar a tela junto
+                print(f"[custos] fatura falhou: {e}", flush=True)
+            # Dia a dia mostra só o NOSSO lado: nós carimbamos em horário de São Paulo
+            # (Dockerfile fixa TZ=America/Sao_Paulo) e a Admin API bate em UTC, então uma
+            # geração perto da meia-noite cai num dia pra nós e no dia seguinte pra ela --
+            # comparar dia a dia seria uma gangorra sem significado. A conferência com a
+            # fatura, por isso, é por período (30 dias) — ver `total_fatura` abaixo.
+            dias = [{"dia": d, "ledger": nosso.get(d, 0.0)} for d in sorted(nosso, reverse=True)]
+            total_fatura = (sum(fatura["dias"].values())
+                             if fatura["estado"] == "ok" else None)
+            dados = {"mes": mes, "ate": hoje.strftime("%Y-%m-%d"),
+                     "usd": usd, "brl": ia_custo.em_brl(usd),
+                     "cotacao": config.USD_BRL,
+                     "assinantes": len(subscribers.ativos()),
+                     "por_acao": ia_custo.por_acao(linhas_mes), "dias": dias,
+                     "fatura": fatura["estado"],
+                     "parcial": fatura.get("parcial", False),
+                     "total_ledger": total_ledger,
+                     "total_fatura": total_fatura}
+            return self._html(site_web.pagina_custos(dados, config.ADMIN_TOKEN or "",
+                                                     msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin/trilha/peca/"):
             import config, db as _db, pdf_trilha, trilha as _trilha_mod
             q = up.parse_qs(up.urlparse(self.path).query)
