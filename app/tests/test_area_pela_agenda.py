@@ -274,3 +274,80 @@ class TestJanelaRecuada(unittest.TestCase):
                 pass                      # a janela vazia pode abortar cedo; o que importa
         self.assertTrue(m.called)         # é COMO ela foi pedida
         self.assertEqual(m.call_args.kwargs.get("semanas_atras", 0), 0)
+
+
+class TestPainelDoDiaPassado(unittest.TestCase):
+    """Âncoras com a FRASE INTEIRA — trecho curto casa por acidente (a lição das sete
+    asserções falsas da tela de custos)."""
+
+    def _card(self, **extra):
+        import site_web
+        s = {"data": "2026-08-10", "tipo": "enviado", "tema": "MEUS ESTUDOS",
+             "titulo": "Tirzepatida e massa magra", "fixado": 0, "passado": True,
+             "tema_slug": "meus-estudos", "titulo_original": "Tirzepatide and lean mass",
+             "resumo": "Ensaio randomizado com 342 participantes.",
+             "fonte": "JAMA", "doi": "10.1001/jama.2026.123"}
+        s.update(extra)
+        with mock.patch("area_estudo.areas",
+                        return_value=["Obesidade", "Longevidade", "Performance"]):
+            return site_web._slot_card(s, "tok", "")
+
+    def test_mostra_o_estudo(self):
+        h = self._card()
+        self.assertIn("Ensaio randomizado com 342 participantes.", h)
+        self.assertIn("JAMA", h)
+        self.assertIn("10.1001/jama.2026.123", h)
+        self.assertIn("Tirzepatide and lean mass", h)
+
+    def test_a_area_atual_fora_do_config_vem_selecionada(self):
+        """'MEUS ESTUDOS' não é chave do temas_config. Sem entrar como opção selecionada,
+        o form mandaria uma área diferente sem o curador ter pedido nada."""
+        h = self._card()
+        self.assertIn('<option value="MEUS ESTUDOS" selected>MEUS ESTUDOS</option>', h)
+
+    def test_traz_as_areas_do_config(self):
+        h = self._card()
+        for a in ("Obesidade", "Longevidade", "Performance"):
+            self.assertIn(f'<option value="{a}">{a}</option>', h)
+
+    def test_area_atual_do_config_nao_duplica(self):
+        h = self._card(tema="Obesidade")
+        self.assertEqual(h.count('value="Obesidade"'), 1)
+        self.assertIn('<option value="Obesidade" selected>Obesidade</option>', h)
+
+    def test_a_fiacao_do_form(self):
+        h = self._card()
+        self.assertIn('<input type="hidden" name="acao" value="corrigir_area_digest">', h)
+        self.assertIn('<input type="hidden" name="slug" value="meus-estudos">', h)
+        self.assertIn('<input type="hidden" name="data" value="2026-08-10">', h)
+        self.assertIn('name="area"', h)
+
+    def test_avisa_que_o_pdf_entregue_nao_muda(self):
+        """Aviso que promete efeito que não acontece foi o erro pego na revisão do bloco
+        fixado do dossiê."""
+        h = self._card()
+        self.assertIn("O PDF que já foi enviado não muda", h)
+
+    def test_dia_passado_sem_estudo_nao_ganha_painel(self):
+        h = self._card(titulo="", tema="", tema_slug="", resumo="")
+        self.assertNotIn("corrigir_area_digest", h)
+        self.assertIn('class="slot passado"', h)
+
+    def test_dia_passado_com_titulo_mas_sem_tema_slug_nao_ganha_painel(self):
+        """Correção ao brief: existe dia passado com `titulo` (slot da tabela `agenda`,
+        sem envio confirmado) mas SEM `tema_slug`/resumo/fonte/doi — esse é o caso (b)
+        que a Task 4 não preenche a partir do `digests`. Usar `titulo` como porteiro
+        abriria um painel vazio cujo form posta `slug=""`: um botão Salvar que não faz
+        nada. O porteiro certo é `tema_slug`, que só existe quando o estudo saiu de
+        verdade (caso (a))."""
+        h = self._card(tema_slug="", resumo="", fonte="", doi="")
+        self.assertNotIn("corrigir_area_digest", h)
+        self.assertIn('class="slot passado"', h)
+
+    def test_dia_futuro_continua_sem_painel(self):
+        import site_web
+        s = {"data": "2026-08-20", "tipo": "reserva", "tema": "Obesidade",
+             "titulo": "T", "fixado": 0}
+        h = site_web._slot_card(s, "tok", "")
+        self.assertNotIn("corrigir_area_digest", h)
+        self.assertIn("📌 Fixar", h)
