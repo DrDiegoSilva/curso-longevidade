@@ -59,6 +59,40 @@ class TestSemanasDoMes(unittest.TestCase):
         with self.assertRaises(ValueError):
             ap.semanas_do_mes(datetime(2026, 7, 22), set(), 4)
 
+    def test_semanas_atras_traz_a_semana_anterior(self):
+        """Numa SEGUNDA a janela padrão não tem dia passado nenhum — e era por isso que
+        o estudo de 2026-08-10 ficava fora do alcance da tela."""
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        seg = datetime(2026, 8, 17)                     # segunda-feira
+        padrao = ap.semanas_do_mes(seg, envio, 4)
+        self.assertEqual(padrao[0], "2026-08-17")       # sem passado
+        com_recuo = ap.semanas_do_mes(seg, envio, 4, semanas_atras=1)
+        self.assertEqual(com_recuo[0], "2026-08-10")
+        self.assertIn("2026-08-14", com_recuo)          # sexta da semana passada
+
+    def test_semanas_atras_nao_encurta_o_futuro(self):
+        """Recuar o começo não pode comer as 4 semanas pra frente."""
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        seg = datetime(2026, 8, 17)
+        padrao = ap.semanas_do_mes(seg, envio, 4)
+        com_recuo = ap.semanas_do_mes(seg, envio, 4, semanas_atras=1)
+        self.assertEqual(padrao[-1], com_recuo[-1])
+        self.assertEqual(len(com_recuo), len(padrao) + 5)
+
+    def test_default_zero_preserva_os_chamadores_atuais(self):
+        """`daily.materializar_agenda` usa esta função pra decidir que dias PREENCHER —
+        recuar por default criaria slot no passado."""
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        seg = datetime(2026, 8, 17)
+        self.assertEqual(ap.semanas_do_mes(seg, envio, 4),
+                         ap.semanas_do_mes(seg, envio, 4, semanas_atras=0))
+        self.assertEqual(ap.semanas_do_mes(seg, envio, 4)[0], "2026-08-17")
+
+    def test_ordem_cronologica_preservada_com_recuo(self):
+        envio = {"segunda", "terca", "quarta", "quinta", "sexta"}
+        dias = ap.semanas_do_mes(datetime(2026, 8, 19), envio, 4, semanas_atras=1)
+        self.assertEqual(dias, sorted(dias))
+
 
 class TestPlanejar(unittest.TestCase):
     def _dias(self, datas):
