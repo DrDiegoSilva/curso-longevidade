@@ -8,6 +8,37 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
+class _RotaStub:
+    """Stub mínimo pro `self` de do_GET/do_POST — a rota /agenda vive INLINE no handler,
+    não é método próprio."""
+
+    def __init__(self, path, body=b""):
+        import io
+        self.path = path
+        self.rfile = io.BytesIO(body)
+        self.wfile = io.BytesIO()
+        self.headers = {"Content-Length": str(len(body)),
+                        "Content-Type": "application/x-www-form-urlencoded"}
+
+    def _html(self, s, code=200):
+        return {"code": code, "body": s}
+
+    def _redirect(self, url):
+        return {"code": 302, "location": url}
+
+    def _sessao(self):
+        return None
+
+    def send_response(self, code):
+        self.code = code
+
+    def send_header(self, *a):
+        pass
+
+    def end_headers(self):
+        pass
+
+
 class TestMoverDigestTema(unittest.TestCase):
     """Corrigir a área de um estudo enviado MOVE a linha: `tema_slug` é metade da chave
     primária de `digests`. Banco de verdade, não grep de fonte."""
@@ -162,3 +193,84 @@ class TestAplicarNoDigest(unittest.TestCase):
                  mock.patch("db.mover_digest_tema", return_value=codigo):
                 self.assertEqual(
                     area_estudo.aplicar_no_digest("2026-08-10", "x", "Obesidade"), codigo)
+
+
+class TestSlotViewCarregaOEstudo(unittest.TestCase):
+    """O `digest_do_dia` já faz SELECT * — o `_slot_view` é que jogava fora tudo menos
+    tema/título. Sem estes campos o painel não tem o que mostrar."""
+
+    def _slot_view(self, dia, digest):
+        """Roda o GET da /agenda com o banco dublado e devolve o slot daquele dia.
+
+        A janela é dublada com uma data FIXA no passado. Usar "ontem" faria o teste pular
+        sozinho toda segunda-feira (ontem = domingo, não é dia de envio) — teste que não
+        roda é teste que não existe.
+        """
+        import serve, config
+        capturado = {}
+
+        def _fake_pagina(semanas, estoque, token, msg=""):
+            capturado["slots"] = [s for sem in semanas for s in sem]
+            return "<html></html>"
+
+        with mock.patch("db.init"), \
+             mock.patch("db.digest_do_dia", return_value=digest), \
+             mock.patch("db.agenda_listar", return_value={}), \
+             mock.patch("db.contar_reserva_pronto", return_value=0), \
+             mock.patch("daily.materializar_agenda"), \
+             mock.patch("daily._dias_envio",
+                        return_value={"segunda", "terca", "quarta", "quinta", "sexta"}), \
+             mock.patch("agenda_plan.semanas_do_mes", return_value=[dia]), \
+             mock.patch("site_web.pagina_agenda", side_effect=_fake_pagina), \
+             mock.patch.object(config, "ADMIN_TOKEN", "tok"):
+            serve.Handler.do_GET(_RotaStub("/agenda?token=tok"))
+        return [s for s in capturado["slots"] if s["data"] == dia]
+
+    def test_dia_passado_carrega_resumo_fonte_doi_e_slug(self):
+        digest = {"tema": "Meus estudos", "tema_slug": "meus-estudos",
+                  "titulo_pt": "Tirzepatida", "titulo_original": "Tirzepatide",
+                  "resumo": "resumo longo", "fonte": "JAMA", "doi": "10.1/x"}
+        achados = self._slot_view("2026-08-10", digest)   # data fixa, sempre no passado
+        self.assertEqual(len(achados), 1)
+        s = achados[0]
+        self.assertEqual(s["tema_slug"], "meus-estudos")
+        self.assertEqual(s["resumo"], "resumo longo")
+        self.assertEqual(s["fonte"], "JAMA")
+        self.assertEqual(s["doi"], "10.1/x")
+        self.assertEqual(s["titulo_original"], "Tirzepatide")
+        self.assertTrue(s["passado"])
+
+
+class TestJanelaRecuada(unittest.TestCase):
+    def test_o_get_da_agenda_pede_a_semana_anterior(self):
+        """Sem `semanas_atras=1`, numa segunda-feira a tela não tem dia passado nenhum."""
+        import serve, config
+        with mock.patch("db.init"), \
+             mock.patch("db.digest_do_dia", return_value=None), \
+             mock.patch("db.agenda_listar", return_value={}), \
+             mock.patch("db.contar_reserva_pronto", return_value=0), \
+             mock.patch("daily.materializar_agenda"), \
+             mock.patch("daily._dias_envio",
+                        return_value={"segunda", "terca", "quarta", "quinta", "sexta"}), \
+             mock.patch("site_web.pagina_agenda", return_value="<html></html>"), \
+             mock.patch("agenda_plan.semanas_do_mes",
+                        return_value=["2026-08-10"]) as m_janela, \
+             mock.patch.object(config, "ADMIN_TOKEN", "tok"):
+            serve.Handler.do_GET(_RotaStub("/agenda?token=tok"))
+        self.assertEqual(m_janela.call_args.kwargs.get("semanas_atras"), 1)
+
+    def test_materializar_nao_recua(self):
+        """`daily.materializar_agenda` decide que dias PREENCHER — recuar criaria slot no
+        passado. Teste de comportamento, não grep de fonte: o mesmo trecho aparece em mais
+        de um lugar e o grep passa com uma chamada quebrada."""
+        import daily
+        with mock.patch("agenda_plan.semanas_do_mes", return_value=[]) as m, \
+             mock.patch("daily._dias_envio",
+                        return_value={"segunda", "terca", "quarta", "quinta", "sexta"}), \
+             mock.patch("db.init"):
+            try:
+                daily.materializar_agenda()
+            except Exception:
+                pass                      # a janela vazia pode abortar cedo; o que importa
+        self.assertTrue(m.called)         # é COMO ela foi pedida
+        self.assertEqual(m.call_args.kwargs.get("semanas_atras", 0), 0)

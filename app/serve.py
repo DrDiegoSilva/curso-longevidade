@@ -500,7 +500,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 daily.materializar_agenda()
             except Exception as e:
                 print(f"[agenda] materializar no GET falhou: {e}", flush=True)
-            janela = agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4)
+            # A semana passada fica à vista pra dar onde corrigir a área de um estudo já
+            # enviado. Numa SEGUNDA, sem recuar, não há dia passado nenhum na tela.
+            janela = agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4,
+                                                semanas_atras=1)
             mapa = db.agenda_listar(janela[0], janela[-1]) if janela else {}
             amanha_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             vazio = lambda d: {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}
@@ -509,7 +512,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     dg = db.digest_do_dia(d)
                     if dg:
                         return {"data": d, "tipo": "enviado", "tema": dg.get("tema", ""),
-                                "titulo": dg.get("titulo_pt", ""), "fixado": 0, "passado": True}
+                                "titulo": dg.get("titulo_pt", ""), "fixado": 0, "passado": True,
+                                # o painel do card precisa disto; `digest_do_dia` já faz SELECT *
+                                "tema_slug": dg.get("tema_slug", ""),
+                                "titulo_original": dg.get("titulo_original", ""),
+                                "resumo": dg.get("resumo", ""), "fonte": dg.get("fonte", ""),
+                                "doi": dg.get("doi", "")}
                     s = mapa.get(d)
                     if s and s.get("titulo"):             # sem registro no arquivo, mas há slot
                         return dict(s, passado=True)
