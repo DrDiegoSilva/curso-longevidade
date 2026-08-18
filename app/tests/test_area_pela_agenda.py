@@ -125,3 +125,40 @@ class TestMoverDigestTema(unittest.TestCase):
         # nada foi movido nem sobrescrito por causa da corrida.
         self.assertEqual(self.db.obter("meus-estudos", "2026-08-10")["titulo_pt"], "A")
         self.assertEqual(self.db.obter("obesidade", "2026-08-10")["titulo_pt"], "B")
+
+
+class TestAplicarNoDigest(unittest.TestCase):
+    """A camada de domínio: valida a área e delega. Sem banco — o db é dublê."""
+
+    def test_area_valida_delega_pro_db(self):
+        import area_estudo
+        with mock.patch("area_estudo.areas", return_value=["Obesidade", "Longevidade"]), \
+             mock.patch("db.mover_digest_tema", return_value="movido") as m:
+            got = area_estudo.aplicar_no_digest("2026-08-10", "meus-estudos", "Obesidade")
+        self.assertEqual(got, "movido")
+        self.assertEqual(m.call_args.args, ("2026-08-10", "meus-estudos", "Obesidade"))
+
+    def test_area_fora_do_config_nao_chega_no_banco(self):
+        """Falha fechada, igual ao `valida`: é assim que 'MEUS ESTUDOS' foi parar num PDF."""
+        import area_estudo
+        with mock.patch("area_estudo.areas", return_value=["Obesidade"]), \
+             mock.patch("db.mover_digest_tema") as m:
+            got = area_estudo.aplicar_no_digest("2026-08-10", "meus-estudos", "obesidade")
+        self.assertEqual(got, "invalida")
+        m.assert_not_called()
+
+    def test_area_vazia_nao_chega_no_banco(self):
+        import area_estudo
+        with mock.patch("area_estudo.areas", return_value=["Obesidade"]), \
+             mock.patch("db.mover_digest_tema") as m:
+            self.assertEqual(
+                area_estudo.aplicar_no_digest("2026-08-10", "meus-estudos", ""), "invalida")
+        m.assert_not_called()
+
+    def test_repassa_o_codigo_do_banco_sem_traduzir(self):
+        import area_estudo
+        for codigo in ("ocupado", "inexistente", "mesmo"):
+            with mock.patch("area_estudo.areas", return_value=["Obesidade"]), \
+                 mock.patch("db.mover_digest_tema", return_value=codigo):
+                self.assertEqual(
+                    area_estudo.aplicar_no_digest("2026-08-10", "x", "Obesidade"), codigo)

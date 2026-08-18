@@ -115,3 +115,22 @@ def _gravar_na_reserva(reserva_id, area):
         db.atualizar_reserva(reserva_id, tema=area)
     except Exception as e:
         print(f"[area] gravar área na reserva {reserva_id} falhou: {e}", flush=True)
+
+
+def aplicar_no_digest(data, tema_slug, area):
+    """Corrige a área de um estudo JÁ ENVIADO — o irmão retroativo do
+    `aplicar_no_rascunho`. Devolve o vocabulário de `db.mover_digest_tema`, mais
+    "invalida" quando a área pedida não é chave do `temas_config`.
+
+    Não usa `valida()` porque aqui não existe "área atual" pra cair de volta: o slug é o
+    que se tem. A regra é a mesma — só chave de verdade passa, falha fechada.
+
+    O que esta correção NÃO alcança: o PDF, que já foi entregue no WhatsApp. Alcança a
+    página do portal, as abas do portal e, na próxima reconstrução (🧠), a memória do
+    dossiê.
+    """
+    pedida = (area or "").strip()
+    if pedida not in areas():
+        return "invalida"
+    import db
+    return db.mover_digest_tema(data, tema_slug, pedida)
