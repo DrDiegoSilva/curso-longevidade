@@ -2116,13 +2116,15 @@ def mover_digest_tema(data, tema_slug, tema_novo):
         try:
             c.execute("UPDATE digests SET tema=?, tema_slug=? WHERE data=? AND tema_slug=?",
                       (tema_novo, novo_slug, data, tema_slug))
-        except Exception:
+        except _integrity_error():
             # UPDATE estoura IntegrityError em concorrência: dois cliques simultâneos
-            # miraram a mesma célula `(data, tema_slug_novo)`. Reconferir se de fato
-            # há colisão; se não houver, é erro de outro tipo e relevancia-o.
-            if c.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
-                         (data, novo_slug)).fetchone():
-                return "ocupado"
+            # miraram a mesma célula `(data, tema_slug_novo)`. Reconferir em conexão NOVA
+            # (em Postgres a transação anterior fica abortada até ROLLBACK).
+            with _conn() as c2:
+                if c2.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
+                              (data, novo_slug)).fetchone():
+                    return "ocupado"
+            # Se o destino não existe, é erro de outro tipo — relevancar.
             raise
     return "movido"
 
