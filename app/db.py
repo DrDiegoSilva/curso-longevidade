@@ -2098,7 +2098,9 @@ def mover_digest_tema(data, tema_slug, tema_novo):
     enviado por WhatsApp (só a raiz do ARTIGOS_URL e rotas de conta).
 
     Destino ocupado RECUSA em vez de sobrescrever: dois estudos no mesmo dia é raro, mas
-    perder um estudo pra sempre por causa de um clique não é aceitável.
+    perder um estudo pra sempre por causa de um clique não é aceitável. Dois cliques
+    simultâneos pra mesma célula `(data, tema_slug_novo)` estouram IntegrityError no
+    UPDATE — captura-se e devolve-se "ocupado", honrando o contrato.
     """
     novo_slug = slug(tema_novo)
     with _conn() as c:
@@ -2111,8 +2113,17 @@ def mover_digest_tema(data, tema_slug, tema_novo):
         if c.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
                      (data, novo_slug)).fetchone():
             return "ocupado"
-        c.execute("UPDATE digests SET tema=?, tema_slug=? WHERE data=? AND tema_slug=?",
-                  (tema_novo, novo_slug, data, tema_slug))
+        try:
+            c.execute("UPDATE digests SET tema=?, tema_slug=? WHERE data=? AND tema_slug=?",
+                      (tema_novo, novo_slug, data, tema_slug))
+        except Exception:
+            # UPDATE estoura IntegrityError em concorrência: dois cliques simultâneos
+            # miraram a mesma célula `(data, tema_slug_novo)`. Reconferir se de fato
+            # há colisão; se não houver, é erro de outro tipo e relevancia-o.
+            if c.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
+                         (data, novo_slug)).fetchone():
+                return "ocupado"
+            raise
     return "movido"
 
 

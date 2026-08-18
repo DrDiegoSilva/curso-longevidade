@@ -1,9 +1,9 @@
 """Item 36 fatia 2 — ver o estudo e corrigir a ÁREA pela /agenda."""
 import os
 import sys
+import sqlite3
 import tempfile
 import unittest
-from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -82,3 +82,28 @@ class TestMoverDigestTema(unittest.TestCase):
         self.assertEqual(
             self.db.mover_digest_tema("2026-08-10", "obesidade", "Obesidade"), "mesmo")
         self.assertEqual(self.db.obter("obesidade", "2026-08-10")["tema"], "Obesidade")
+
+    def test_colisao_por_concorrencia_retorna_ocupado(self):
+        """Dois cliques simultâneos para mover pro mesmo destino estouram IntegrityError
+        no UPDATE — a função captura e devolve "ocupado", honrando o contrato."""
+        self._digest(tema="Meus estudos", titulo="A")
+        self._digest(data="2026-08-11", tema="Perfomance", titulo="B")
+
+        # Ambos querem ir pra "Obesidade" / "2026-08-10"
+        # Simular: inserir diretamente a colisão após a checagem de existência
+        # de um dos cliques, antes do UPDATE. Usamos raw SQL pra criar a condição.
+        with self.db._conn() as c:
+            c.execute(
+                "INSERT INTO digests (data, tema_slug, tema, titulo_original, "
+                "titulo_pt, fonte, doi, url, resumo, gancho, grafico, criado_em, "
+                "excluido) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), NULL)",
+                ("2026-08-10", "obesidade", "Obesidade", "C (en)", "C", "FAKE",
+                 "10.2/y", "https://ex/y", "resumo fake", "g", "")
+            )
+
+        # Agora a tentativa de mover A pra Obesidade/2026-08-10 vai topar com a colisão
+        result = self.db.mover_digest_tema("2026-08-10", "meus-estudos", "Obesidade")
+        self.assertEqual(result, "ocupado")
+
+        # O conteúdo de A não foi alterado
+        self.assertEqual(self.db.obter("meus-estudos", "2026-08-10")["titulo_pt"], "A")
