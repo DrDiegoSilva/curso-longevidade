@@ -1023,6 +1023,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.agenda_pular(data, True); msg = "Dia marcado como folga."
             elif acao == "despular":
                 db.agenda_pular(data, False); msg = "Dia reativado."
+            elif acao == "corrigir_area_digest":
+                # Estudo JÁ ENVIADO: a área é gravada no `digests`, não no rascunho. Não
+                # passa pela lista `validos` do `mover` — aquela guarda existe pra manter
+                # o passado imexível, e aqui o passado é justamente o alvo.
+                import area_estudo
+                area = g("area")
+                try:
+                    r = area_estudo.aplicar_no_digest(data, g("slug"), area)
+                    if r == "movido":
+                        msg = f"Área corrigida para {area}."
+                    elif r == "ocupado":
+                        outro = db.obter(db.slug(area), data) or {}
+                        msg = (f"Já existe estudo nesse dia em {area}: "
+                               f"{outro.get('titulo_pt') or 'sem título'}. Não mexi em nada.")
+                    elif r == "invalida":
+                        msg = "Não reconheci essa área."
+                    elif r == "inexistente":
+                        msg = "Não achei o estudo desse dia."
+                    else:
+                        msg = "A área já era essa."
+                except Exception as e:
+                    # Banco fora do ar não pode devolver 500 numa tela que ele abre todo
+                    # dia — a agenda continua servindo pro resto.
+                    print(f"[agenda] corrigir área de {data} falhou: {e}", flush=True)
+                    msg = "Não consegui guardar a área agora — tente de novo."
             elif acao == "rematerializar":
                 n = daily.materializar_agenda(); msg = f"{n} dia(s) preenchido(s)."
             return self._redirect((f"/agenda?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")

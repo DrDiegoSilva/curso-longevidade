@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+import urllib.parse as up
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -351,3 +352,78 @@ class TestPainelDoDiaPassado(unittest.TestCase):
         h = site_web._slot_card(s, "tok", "")
         self.assertNotIn("corrigir_area_digest", h)
         self.assertIn("📌 Fixar", h)
+
+
+class TestRotaCorrigirArea(unittest.TestCase):
+    """A fiação: sem isto, um campo com nome errado passaria em todo teste de unidade e
+    a correção simplesmente não chegaria no banco."""
+
+    def _post(self, campos):
+        """Manda o POST. Os dublês do domínio ficam no `with` de cada teste."""
+        import urllib.parse as up, serve, config
+        with mock.patch("db.init"), mock.patch.object(config, "ADMIN_TOKEN", "tok"), \
+             mock.patch("daily._dias_envio",
+                        return_value={"segunda", "terca", "quarta", "quinta", "sexta"}):
+            return serve.Handler.do_POST(
+                _RotaStub("/agenda", up.urlencode(campos).encode("utf-8")))
+
+    def test_leva_data_slug_e_area_ate_o_dominio(self):
+        with mock.patch("area_estudo.aplicar_no_digest", return_value="movido") as m:
+            out = self._post({"token": "tok", "acao": "corrigir_area_digest",
+                              "data": "2026-08-10", "slug": "meus-estudos",
+                              "area": "Obesidade"})
+        self.assertEqual(m.call_args.args, ("2026-08-10", "meus-estudos", "Obesidade"))
+        self.assertIn("rea%20corrigida", out["location"])
+
+    def test_destino_ocupado_nomeia_o_estudo_que_esta_la(self):
+        with mock.patch("area_estudo.aplicar_no_digest", return_value="ocupado"), \
+             mock.patch("db.slug", return_value="obesidade"), \
+             mock.patch("db.obter", return_value={"titulo_pt": "Semaglutida e sono"}):
+            out = self._post({"token": "tok", "acao": "corrigir_area_digest",
+                              "data": "2026-08-10", "slug": "meus-estudos",
+                              "area": "Obesidade"})
+        self.assertIn("Semaglutida", up.unquote(out["location"]))
+
+    def test_area_invalida_avisa(self):
+        with mock.patch("area_estudo.aplicar_no_digest", return_value="invalida"):
+            out = self._post({"token": "tok", "acao": "corrigir_area_digest",
+                              "data": "2026-08-10", "slug": "x", "area": "lixo"})
+        self.assertIn("reconheci", up.unquote(out["location"]))
+
+    def test_dia_sem_estudo_nao_explode(self):
+        with mock.patch("area_estudo.aplicar_no_digest", return_value="inexistente"):
+            out = self._post({"token": "tok", "acao": "corrigir_area_digest",
+                              "data": "2026-08-10", "slug": "x", "area": "Obesidade"})
+        self.assertEqual(out["code"], 302)
+        self.assertIn("achei", up.unquote(out["location"]))
+
+    def test_sem_token_da_403(self):
+        import urllib.parse as up_, serve, config
+        with mock.patch("db.init"), mock.patch.object(config, "ADMIN_TOKEN", "tok"), \
+             mock.patch("area_estudo.aplicar_no_digest") as m:
+            out = serve.Handler.do_POST(_RotaStub(
+                "/agenda", up_.urlencode({"token": "errado", "acao": "corrigir_area_digest",
+                                          "data": "2026-08-10", "slug": "x",
+                                          "area": "Obesidade"}).encode("utf-8")))
+        self.assertEqual(out["code"], 403)
+        m.assert_not_called()
+
+    def test_banco_fora_do_ar_avisa_em_vez_de_derrubar(self):
+        with mock.patch("area_estudo.aplicar_no_digest",
+                        side_effect=RuntimeError("sem conexão")):
+            out = self._post({"token": "tok", "acao": "corrigir_area_digest",
+                              "data": "2026-08-10", "slug": "x", "area": "Obesidade"})
+        self.assertEqual(out["code"], 302)
+        self.assertIn("guardar", up.unquote(out["location"]))
+
+    def test_mover_continua_recusando_dia_passado(self):
+        """A guarda do `mover` (só dia futuro) não pode ter afrouxado junto com a janela
+        recuada. Comportamento, não grep: mandar um `mover` com data de ontem."""
+        from datetime import datetime, timedelta
+        ontem = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        amanha = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        with mock.patch("db.agenda_mover") as m:
+            out = self._post({"token": "tok", "acao": "mover",
+                              "data": ontem, "dest": amanha})
+        m.assert_not_called()
+        self.assertIn("inv", up.unquote(out["location"]).lower())
