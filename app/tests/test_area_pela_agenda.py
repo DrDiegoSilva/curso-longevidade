@@ -2,9 +2,8 @@
 import os
 import sys
 import tempfile
-import threading
-import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -85,74 +84,44 @@ class TestMoverDigestTema(unittest.TestCase):
         self.assertEqual(self.db.obter("obesidade", "2026-08-10")["tema"], "Obesidade")
 
     def test_colisao_por_concorrencia_retorna_ocupado(self):
-        """Dois cliques simultâneos para mover pro mesmo destino: UPDATE estoura
-        IntegrityError quando outro clique insere entre a checagem e o UPDATE.
-        A função captura em conexão NOVA e devolve "ocupado", honrando o contrato."""
+        """Corrida real entre dois cliques: a checagem prévia de destino livre não
+        vê nada, mas o UPDATE estoura erro de integridade porque OUTRA transação
+        inseriu a linha colidente nesse meio-tempo. `mover_digest_tema` (a função
+        de PRODUÇÃO, sem cópia) precisa reconferir em conexão nova e devolver
+        "ocupado" — sem o `try/except _integrity_error()` em volta do UPDATE em
+        `app/db.py`, a exceção sobe crua e quebra o contrato de 4 estados.
+
+        Reproduz a corrida sem threads (determinístico, sem depender de
+        escalonamento): dublamos só o `execute` da conexão para que, no exato
+        instante em que a função de produção for rodar o UPDATE, uma conexão
+        SEPARADA e real grave a linha destino primeiro — pela própria
+        `registrar_digest`, não por SQL reinventado à mão. O dublê decide QUANDO
+        a segunda escrita acontece; quem decide o que fazer com isso continua
+        sendo `mover_digest_tema` de verdade.
+        """
         self._digest(tema="Meus estudos", titulo="A")
 
-        # Simular dois cliques: thread 1 chama mover_digest_tema, thread 2 insere
-        # a colisão entre a checagem de thread 1 e seu UPDATE. Use event pra sincronizar.
-        resultado = {"r": None}
-        event_apos_checagem = threading.Event()
-        event_apos_insercao = threading.Event()
+        sql_update = "UPDATE digests SET tema=?, tema_slug=? WHERE data=? AND tema_slug=?"
+        real_execute = self.db._Wrap.execute
 
-        def thread_mover():
-            """Thread 1: tenta mover A pra Obesidade."""
-            # Monkey-patch pra sinalizar APÓS checagem, ANTES de UPDATE
-            orig_mover = self.db.mover_digest_tema
-            checou = [False]
+        def execute_dublado(wrap_self, sql, params=()):
+            if sql == sql_update:
+                # É agora — bem antes de deixar o UPDATE prosseguir — que o
+                # "segundo clique" vence a corrida: grava o destino por uma
+                # conexão de verdade, distinta da que mover_digest_tema segura
+                # aberta (senão não haveria erro de integridade nenhum pra pegar).
+                self.db.registrar_digest(
+                    {"tema": "Obesidade", "titulo": "B", "titulo_original": "B (en)",
+                     "doi": "10.2/y", "fonte": "NEJM", "url": "https://ex/y"},
+                    {"titulo_pt": "B", "resumo": "outro resumo", "gancho": "g", "grafico": ""},
+                    data="2026-08-10")
+            return real_execute(wrap_self, sql, params)
 
-            def mover_com_sinal(data, tema_slug, tema_novo):
-                novo_slug = self.db.slug(tema_novo)
-                with self.db._conn() as c:
-                    atual = c.execute("SELECT tema FROM digests WHERE data=? AND tema_slug=?",
-                                      (data, tema_slug)).fetchone()
-                    if not atual:
-                        return "inexistente"
-                    if novo_slug == tema_slug:
-                        return "mesmo"
-                    if c.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
-                                 (data, novo_slug)).fetchone():
-                        return "ocupado"
-                    checou[0] = True
-                    event_apos_checagem.set()  # Sinalizar: checagem pronta
-                    event_apos_insercao.wait()  # Esperar: thread 2 insira colisão
-                    time.sleep(0.01)  # Pequeno delay pra ter certeza da inserção
-                    try:
-                        c.execute("UPDATE digests SET tema=?, tema_slug=? WHERE data=? AND tema_slug=?",
-                                  (tema_novo, novo_slug, data, tema_slug))
-                    except self.db._integrity_error():
-                        with self.db._conn() as c2:
-                            if c2.execute("SELECT 1 FROM digests WHERE data=? AND tema_slug=?",
-                                          (data, novo_slug)).fetchone():
-                                return "ocupado"
-                        raise
-                return "movido"
+        with mock.patch.object(self.db._Wrap, "execute", execute_dublado):
+            resultado = self.db.mover_digest_tema("2026-08-10", "meus-estudos", "Obesidade")
 
-            resultado["r"] = mover_com_sinal("2026-08-10", "meus-estudos", "Obesidade")
-
-        def thread_inserir():
-            """Thread 2: insere colisão APÓS checagem de thread 1."""
-            event_apos_checagem.wait()  # Esperar: thread 1 fez checagem
-            with self.db._conn() as c:
-                c.execute(
-                    "INSERT INTO digests (data, tema_slug, tema, titulo_original, "
-                    "titulo_pt, fonte, doi, url, resumo, gancho, grafico, criado_em, "
-                    "excluido) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), NULL)",
-                    ("2026-08-10", "obesidade", "Obesidade", "C (en)", "C", "FAKE",
-                     "10.2/y", "https://ex/y", "resumo fake", "g", "")
-                )
-            event_apos_insercao.set()  # Sinalizar: colisão inserida
-
-        t1 = threading.Thread(target=thread_mover)
-        t2 = threading.Thread(target=thread_inserir)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        # Resultado: mover_digest_tema deve devolver "ocupado" (capturou IntegrityError)
-        self.assertEqual(resultado["r"], "ocupado")
-
-        # Verificar que não foi movido (origem inalterada)
+        self.assertEqual(resultado, "ocupado")
+        # Origem intacta e destino com o que a "outra transação" gravou —
+        # nada foi movido nem sobrescrito por causa da corrida.
         self.assertEqual(self.db.obter("meus-estudos", "2026-08-10")["titulo_pt"], "A")
+        self.assertEqual(self.db.obter("obesidade", "2026-08-10")["titulo_pt"], "B")
