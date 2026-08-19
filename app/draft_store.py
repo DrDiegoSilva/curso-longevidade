@@ -94,13 +94,17 @@ def aplicar(data_iso, acao, texto=None, area=None, kit=None):
         area_estudo.aplicar_no_rascunho(r, area)
         _guardar_texto(r, texto)
         _guardar_kit(r, kit)
-        r["status"] = "APPROVED"
+        if r.get("status") != "SENT":     # link velho de dia já enviado não "desenvia"
+            r["status"] = "APPROVED"
     elif acao == "editar":
         area_estudo.aplicar_no_rascunho(r, area)
         _guardar_texto(r, texto)
         _guardar_kit(r, kit)
-        r["status"] = "EDITED"
+        if r.get("status") != "SENT":
+            r["status"] = "EDITED"
     elif acao == "nao_enviar":
+        # SEM guarda de propósito: freio de emergência. `enviar_slot` só respeita SKIPPED,
+        # e cortar os slots seguintes depois do primeiro ter saído tem que continuar valendo.
         r["status"] = "SKIPPED"
     else:
         raise ValueError(f"ação inválida: {acao}")

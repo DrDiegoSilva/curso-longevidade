@@ -427,3 +427,43 @@ class TestRotaCorrigirArea(unittest.TestCase):
                               "data": ontem, "dest": amanha})
         m.assert_not_called()
         self.assertIn("inv", up.unquote(out["location"]).lower())
+
+
+class TestStatusEnviadoNaoRegride(unittest.TestCase):
+    """Regressão pré-existente (anotada na fatia 1): `draft_store.aplicar` gravava
+    APPROVED/EDITED sem olhar o status atual. Abrir um link velho do /revisar de um dia
+    JÁ ENVIADO voltava o status pra "aprovado", e o /admin passava a mostrar "✅ aprovado"
+    no lugar de "📤 enviado" — mentira visível pro Diego."""
+
+    def _rascunho(self):
+        return {"data": "2026-08-10", "status": "SENT", "artigo": {"tema": "Obesidade"},
+                "titulo_pt": "T", "texto": "t"}
+
+    def _aplicar(self, acao):
+        import draft_store
+        r = self._rascunho()
+        with mock.patch("draft_store.carregar", return_value=r), \
+             mock.patch("draft_store.salvar"), \
+             mock.patch("area_estudo.aplicar_no_rascunho", return_value=False):
+            return draft_store.aplicar("2026-08-10", acao, texto="t")
+
+    def test_aprovar_nao_desenvia(self):
+        self.assertEqual(self._aplicar("aprovar")["status"], "SENT")
+
+    def test_editar_nao_desenvia(self):
+        self.assertEqual(self._aplicar("editar")["status"], "SENT")
+
+    def test_nao_enviar_ainda_freia_o_dia(self):
+        """Freio de emergência: `enviar_slot` só respeita SKIPPED, e cortar os slots
+        seguintes depois do primeiro ter saído tem que continuar possível."""
+        self.assertEqual(self._aplicar("nao_enviar")["status"], "SKIPPED")
+
+    def test_rascunho_nao_enviado_segue_virando_aprovado(self):
+        import draft_store
+        r = self._rascunho()
+        r["status"] = "DRAFT"
+        with mock.patch("draft_store.carregar", return_value=r), \
+             mock.patch("draft_store.salvar"), \
+             mock.patch("area_estudo.aplicar_no_rascunho", return_value=False):
+            self.assertEqual(
+                draft_store.aplicar("2026-08-10", "aprovar", texto="t")["status"], "APPROVED")
