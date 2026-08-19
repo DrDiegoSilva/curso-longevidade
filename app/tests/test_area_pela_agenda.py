@@ -158,6 +158,24 @@ class TestMoverDigestTema(unittest.TestCase):
         self.assertEqual(self.db.obter("meus-estudos", "2026-08-10")["titulo_pt"], "A")
         self.assertEqual(self.db.obter("obesidade", "2026-08-10")["titulo_pt"], "B")
 
+    def test_checagem_previa_barra_sem_depender_do_except(self):
+        """Achado da bateria de mutação (Task 8): tirar o `if c.execute(...): return
+        "ocupado"` prévio NÃO derruba `test_destino_ocupado_recusa_e_nao_escreve`,
+        porque `tema_slug` é metade da PRIMARY KEY de `digests` — o UPDATE sem a
+        checagem colide na mesma hora e cai no MESMO `except _integrity_error()` que
+        cobre a corrida real, devolvendo "ocupado" por um caminho diferente com o
+        mesmo resultado observável. Só um teste que faz `_integrity_error()` parar de
+        casar com o erro real do driver consegue distinguir os dois caminhos: com a
+        checagem prévia, o UPDATE nunca roda (nem entra no `try`), então o `except`
+        nunca é avaliado — sem ela, o UPDATE roda, estoura `IntegrityError` de
+        verdade, e como o `except` foi feito pra não reconhecer mais essa classe de
+        erro, a exceção sobe crua em vez de virar "ocupado"."""
+        self._digest(tema="Meus estudos", titulo="A")
+        self._digest(tema="Obesidade", titulo="B")
+        with mock.patch.object(self.db, "_integrity_error", return_value=ValueError):
+            resultado = self.db.mover_digest_tema("2026-08-10", "meus-estudos", "Obesidade")
+        self.assertEqual(resultado, "ocupado")
+
 
 class TestAplicarNoDigest(unittest.TestCase):
     """A camada de domínio: valida a área e delega. Sem banco — o db é dublê."""
