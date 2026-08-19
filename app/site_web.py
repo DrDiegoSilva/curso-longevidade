@@ -1926,7 +1926,7 @@ def _painel_estudo(s, token):
             f'<button class="slot-btn" type="submit">Salvar</button>'
             f'</form>'
             f'<p class="pnl-av">O PDF que já foi enviado não muda — isto corrige a página '
-            f'do portal e a memória do dossiê.</p>'
+            f'do portal e, na próxima reconstrução (🧠), a memória do dossiê.</p>'
             f'</div></details>')
 
 
@@ -2128,9 +2128,19 @@ def pagina_agenda(semanas, estoque, token, msg=""):
         f'<option value="{_esc(s["data"])}">{_esc(s["data"][8:10])}/{_esc(s["data"][5:7])}</option>'
         for sem in semanas for s in sem if not s.get("passado"))
     blocos = ""
-    for i, sem in enumerate(semanas):
+    n_atual = 0
+    for sem in semanas:
         cards = "".join(_slot_card(s, token, opcoes) for s in sem)
-        blocos += f'<h3 class="sem-h">Semana {i+1}</h3><div class="sem-row">{cards}</div>'
+        # "Passada" = TODOS os dias do bloco já passaram. A semana atual tem sempre a
+        # segunda-feira (e, "hoje conta como passado", o próprio dia de hoje) marcados
+        # como passado sem estar totalmente no passado — checar só o primeiro slot
+        # rotularia a semana atual de "passada" toda vez que hoje for a própria segunda.
+        if sem and all(x.get("passado") for x in sem):
+            titulo = "Semana passada"
+        else:
+            n_atual += 1
+            titulo = f"Semana {n_atual}"
+        blocos += f'<h3 class="sem-h">{titulo}</h3><div class="sem-row">{cards}</div>'
     aviso = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     rematerializar = (f'<form method="post" action="/agenda" style="display:inline">'
                       f'<input type="hidden" name="token" value="{_esc(token)}">'

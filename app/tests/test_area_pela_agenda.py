@@ -343,9 +343,12 @@ class TestPainelDoDiaPassado(unittest.TestCase):
 
     def test_avisa_que_o_pdf_entregue_nao_muda(self):
         """Aviso que promete efeito que não acontece foi o erro pego na revisão do bloco
-        fixado do dossiê."""
+        fixado do dossiê: a correção move a linha na hora, mas o TEXTO do dossiê só
+        atualiza na próxima reconstrução (🧠) — o aviso tem que dizer isso, frase inteira."""
         h = self._card()
-        self.assertIn("O PDF que já foi enviado não muda", h)
+        self.assertIn(
+            "O PDF que já foi enviado não muda — isto corrige a página "
+            "do portal e, na próxima reconstrução (🧠), a memória do dossiê.", h)
 
     def test_dia_passado_sem_estudo_nao_ganha_painel(self):
         h = self._card(titulo="", tema="", tema_slug="", resumo="")
@@ -445,6 +448,38 @@ class TestRotaCorrigirArea(unittest.TestCase):
                               "data": ontem, "dest": amanha})
         m.assert_not_called()
         self.assertIn("inv", up.unquote(out["location"]).lower())
+
+
+class TestRotuloDaSemanaAtual(unittest.TestCase):
+    """A Task 3 fez a janela recuar uma semana (`semanas_atras=1`): o PRIMEIRO bloco de
+    `semanas` passou a ser a semana PASSADA, não mais a atual. O rótulo "Semana 1" tinha
+    ficado grudado no índice do laço e continuou apontando pro primeiro bloco — ou seja,
+    pra semana ERRADA. O spec desenha "Semana passada" seguida de "Semana 1 (atual)"."""
+
+    def _slot(self, data, passado):
+        return {"data": data, "tipo": "vazio" if not passado else "enviado",
+                "tema": "", "titulo": "", "fixado": 0, "passado": passado}
+
+    def test_semana_passada_e_semana_1_atual_nao_trocam_de_lugar(self):
+        import site_web
+        semana_passada = [self._slot("2026-08-03", True), self._slot("2026-08-04", True)]
+        semana_atual = [self._slot("2026-08-10", True), self._slot("2026-08-11", False)]
+        h = site_web.pagina_agenda([semana_passada, semana_atual], 0, "tok")
+        self.assertIn("Semana passada", h)
+        self.assertIn("Semana 1", h)
+        # "Semana 1" tem que estar depois de "Semana passada" no HTML — ou seja,
+        # associado ao SEGUNDO bloco (a semana atual), não ao primeiro.
+        self.assertLess(h.index("Semana passada"), h.index("Semana 1"))
+
+    def test_semana_totalmente_passada_nao_ganha_numero(self):
+        """"Semana passada" não pode aparecer como "Semana 1 passada" nem coisa parecida
+        — o título é só "Semana passada", sem número."""
+        import site_web
+        semana_passada = [self._slot("2026-08-03", True), self._slot("2026-08-04", True)]
+        semana_atual = [self._slot("2026-08-10", True), self._slot("2026-08-11", False)]
+        h = site_web.pagina_agenda([semana_passada, semana_atual], 0, "tok")
+        self.assertNotIn("Semana passada 1", h)
+        self.assertNotIn("Semana 1 passada", h)
 
 
 class TestStatusEnviadoNaoRegride(unittest.TestCase):
