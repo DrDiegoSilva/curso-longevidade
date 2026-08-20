@@ -1,6 +1,5 @@
 """Testes de app/pdf_trilha.py — a capa nova, o icone DS, e os blocos maiores."""
 import base64
-import io
 import os
 import sys
 import unittest
@@ -33,3 +32,13 @@ class TestIconeDS(unittest.TestCase):
         # width(4) height(4) bitdepth(1) colortype(1) ...
         color_type = bruto[16 + 9]
         self.assertEqual(color_type, 6, "PNG nao e' RGBA (color type 6) — sem alfa")
+
+    def test_constante_e_identica_ao_arquivo_fonte(self):
+        """Valida byte a byte que a constante esta' igual ao arquivo fonte .b64"""
+        caminho = os.path.join(os.path.dirname(__file__), "..", "..",
+                               "docs", "superpowers", "specs", "assets",
+                               "2026-08-19-ds-mark-icone.b64")
+        with open(caminho) as f:
+            fonte = f.read().strip()
+        import pdf_trilha
+        self.assertEqual(pdf_trilha._ICONE_DS_B64, fonte, "constante diverge do arquivo fonte")
