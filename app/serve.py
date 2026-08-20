@@ -500,7 +500,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 daily.materializar_agenda()
             except Exception as e:
                 print(f"[agenda] materializar no GET falhou: {e}", flush=True)
-            janela = agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4)
+            # A semana passada fica à vista pra dar onde corrigir a área de um estudo já
+            # enviado. Numa SEGUNDA, sem recuar, não há dia passado nenhum na tela.
+            janela = agenda_plan.semanas_do_mes(datetime.now(), daily._dias_envio(), 4,
+                                                semanas_atras=1)
             mapa = db.agenda_listar(janela[0], janela[-1]) if janela else {}
             amanha_str = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             vazio = lambda d: {"data": d, "tipo": "vazio", "tema": "", "titulo": "", "fixado": 0}
@@ -509,7 +512,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     dg = db.digest_do_dia(d)
                     if dg:
                         return {"data": d, "tipo": "enviado", "tema": dg.get("tema", ""),
-                                "titulo": dg.get("titulo_pt", ""), "fixado": 0, "passado": True}
+                                "titulo": dg.get("titulo_pt", ""), "fixado": 0, "passado": True,
+                                # o painel do card precisa disto; `digest_do_dia` já faz SELECT *
+                                "tema_slug": dg.get("tema_slug", ""),
+                                "titulo_original": dg.get("titulo_original", ""),
+                                "resumo": dg.get("resumo", ""), "fonte": dg.get("fonte", ""),
+                                "doi": dg.get("doi", "")}
                     s = mapa.get(d)
                     if s and s.get("titulo"):             # sem registro no arquivo, mas há slot
                         return dict(s, passado=True)
@@ -1015,6 +1023,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.agenda_pular(data, True); msg = "Dia marcado como folga."
             elif acao == "despular":
                 db.agenda_pular(data, False); msg = "Dia reativado."
+            elif acao == "corrigir_area_digest":
+                # Estudo JÁ ENVIADO: a área é gravada no `digests`, não no rascunho. Não
+                # passa pela lista `validos` do `mover` — aquela guarda existe pra manter
+                # o passado imexível, e aqui o passado é justamente o alvo.
+                import area_estudo
+                area = g("area")
+                try:
+                    r = area_estudo.aplicar_no_digest(data, g("slug"), area)
+                    if r == "movido":
+                        msg = f"Área corrigida para {area}."
+                    elif r == "ocupado":
+                        outro = db.obter(db.slug(area), data) or {}
+                        msg = (f"Já existe estudo nesse dia em {area}: "
+                               f"{outro.get('titulo_pt') or 'sem título'}. Não mexi em nada.")
+                    elif r == "invalida":
+                        msg = "Não reconheci essa área."
+                    elif r == "inexistente":
+                        msg = "Não achei o estudo desse dia."
+                    else:
+                        msg = "A área já era essa."
+                except Exception as e:
+                    # Banco fora do ar não pode devolver 500 numa tela que ele abre todo
+                    # dia — a agenda continua servindo pro resto.
+                    print(f"[agenda] corrigir área de {data} falhou: {e}", flush=True)
+                    msg = "Não consegui guardar a área agora — tente de novo."
             elif acao == "rematerializar":
                 n = daily.materializar_agenda(); msg = f"{n} dia(s) preenchido(s)."
             return self._redirect((f"/agenda?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")

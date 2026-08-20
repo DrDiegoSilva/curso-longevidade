@@ -38,16 +38,25 @@ def dias_uteis_desde(inicio, n, dias_envio):
     return out
 
 
-def semanas_do_mes(hoje, dias_envio, n_semanas=4):
+def semanas_do_mes(hoje, dias_envio, n_semanas=4, semanas_atras=0):
     """Dias úteis de `n_semanas` semanas CHEIAS (seg–sex), começando na segunda-feira
     da semana de `hoje`. Ex.: 4 semanas seg–sex = 20 dias. Inclui os dias já passados
-    da semana atual (o chamador os marca como histórico). Retorna YYYY-MM-DD em ordem."""
+    da semana atual (o chamador os marca como histórico). Retorna YYYY-MM-DD em ordem.
+
+    `semanas_atras` recua o COMEÇO em semanas cheias sem encurtar o futuro. A `/agenda`
+    usa 1 pra manter a semana passada à vista: numa segunda-feira, sem isso, não há dia
+    passado nenhum na tela — e era por aí que o estudo de 2026-08-10 escapava.
+
+    Default 0 de propósito: `daily.materializar_agenda` chama esta função pra decidir que
+    dias PREENCHER, e recuar ali criaria slot no passado.
+    """
     validos = set(dias_envio) & set(DIAS)
     if not validos:
         raise ValueError("dias_envio não contém nenhum dia útil válido")
     segunda = hoje - timedelta(days=hoje.weekday())   # segunda-feira da semana de hoje
+    inicio = segunda - timedelta(days=7 * semanas_atras)
     fim = segunda + timedelta(days=n_semanas * 7)
-    out, d = [], segunda
+    out, d = [], inicio
     while d < fim:
         if DIAS[d.weekday()] in validos:
             out.append(d.strftime("%Y-%m-%d"))

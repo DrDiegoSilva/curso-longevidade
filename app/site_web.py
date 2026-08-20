@@ -1891,6 +1891,45 @@ _BADGE = {"reserva": "✓ pronto", "fila": "⏳ gera 18h", "pulado": "💤 folga
 _DIA_BR = {0: "seg", 1: "ter", 2: "qua", 3: "qui", 4: "sex", 5: "sáb", 6: "dom"}
 
 
+def _painel_estudo(s, token):
+    """O acordeão do dia passado: o que saiu naquele dia + o <select> pra corrigir a área.
+
+    `<details>` nativo, sem JS — mesmo padrão da Reserva por tema. A área atual entra na
+    lista mesmo quando não é chave do `temas_config` (o caso "MEUS ESTUDOS"), senão o
+    form trocaria a área sozinho no primeiro Salvar.
+
+    O aviso do PDF é literal: o arquivo já foi entregue no WhatsApp e não muda. Prometer
+    mais do que a correção alcança é o erro que a revisão do bloco fixado do dossiê pegou.
+    """
+    import area_estudo
+    atual = s.get("tema") or ""
+    opcoes = list(area_estudo.areas())
+    if atual and atual not in opcoes:
+        opcoes.insert(0, atual)
+    sel = "".join(f'<option value="{_esc(o)}"{" selected" if o == atual else ""}>'
+                  f'{_esc(o)}</option>' for o in opcoes)
+    meta = " · ".join(x for x in (_esc(s.get("fonte") or ""), _esc(s.get("doi") or "")) if x)
+    orig = (f'<div class="pnl-orig">{_esc(s.get("titulo_original"))}</div>'
+            if s.get("titulo_original") else "")
+    return (f'<details class="pnl"><summary class="pnl-s">ver o estudo</summary>'
+            f'<div class="pnl-b">'
+            f'{orig}'
+            f'<div class="pnl-meta">{meta}</div>'
+            f'<div class="pnl-res">{_esc(s.get("resumo") or "")}</div>'
+            f'<form method="post" action="/agenda" class="pnl-f">'
+            f'<input type="hidden" name="token" value="{_esc(token)}">'
+            f'<input type="hidden" name="acao" value="corrigir_area_digest">'
+            f'<input type="hidden" name="data" value="{_esc(s.get("data",""))}">'
+            f'<input type="hidden" name="slug" value="{_esc(s.get("tema_slug",""))}">'
+            f'<label class="pnl-lbl">Área do estudo</label>'
+            f'<select name="area" class="pnl-sel">{sel}</select>'
+            f'<button class="slot-btn" type="submit">Salvar</button>'
+            f'</form>'
+            f'<p class="pnl-av">O PDF que já foi enviado não muda — isto corrige a página '
+            f'do portal e, na próxima reconstrução (🧠), a memória do dossiê.</p>'
+            f'</div></details>')
+
+
 def _slot_card(s, token, opcoes_html):
     """Card de um dia da agenda (com ações). `s` tem data/tipo/tema/titulo/fixado."""
     from datetime import datetime
@@ -1911,8 +1950,14 @@ def _slot_card(s, token, opcoes_html):
            f'<span class="badge badge-{badge_cls}">{badge}</span></div>'
            f'<div class="slot-tema">{tema}</div>'
            f'<div class="slot-tit">{titulo}</div>')
-    if s.get("passado"):        # dia já passado nesta semana: histórico, só leitura
-        return f'<div class="slot passado" data-data="{de}">{cab}</div>'
+    if s.get("passado"):        # dia já passado: histórico + painel do estudo enviado
+        # Porteiro é `tema_slug`, não `titulo`: existe dia passado com só um slot na
+        # tabela `agenda` (sem envio confirmado) — esse tem `titulo` mas NÃO tem
+        # `tema_slug`/resumo/fonte/doi (a Task 4 só os lê do `digests`, quando o estudo
+        # saiu de verdade). Com `titulo` como porteiro esse dia ganharia um painel vazio
+        # cujo form posta `slug=""` — um botão Salvar que não faz nada.
+        painel = _painel_estudo(s, token) if s.get("tema_slug") else ""
+        return f'<div class="slot passado" data-data="{de}">{cab}{painel}</div>'
     def _acao(acao, label):
         return (f'<form method="post" action="/agenda" style="display:inline">'
                 f'<input type="hidden" name="token" value="{_esc(token)}">'
@@ -2083,9 +2128,19 @@ def pagina_agenda(semanas, estoque, token, msg=""):
         f'<option value="{_esc(s["data"])}">{_esc(s["data"][8:10])}/{_esc(s["data"][5:7])}</option>'
         for sem in semanas for s in sem if not s.get("passado"))
     blocos = ""
-    for i, sem in enumerate(semanas):
+    n_atual = 0
+    for sem in semanas:
         cards = "".join(_slot_card(s, token, opcoes) for s in sem)
-        blocos += f'<h3 class="sem-h">Semana {i+1}</h3><div class="sem-row">{cards}</div>'
+        # "Passada" = TODOS os dias do bloco já passaram. A semana atual tem sempre a
+        # segunda-feira (e, "hoje conta como passado", o próprio dia de hoje) marcados
+        # como passado sem estar totalmente no passado — checar só o primeiro slot
+        # rotularia a semana atual de "passada" toda vez que hoje for a própria segunda.
+        if sem and all(x.get("passado") for x in sem):
+            titulo = "Semana passada"
+        else:
+            n_atual += 1
+            titulo = f"Semana {n_atual}"
+        blocos += f'<h3 class="sem-h">{titulo}</h3><div class="sem-row">{cards}</div>'
     aviso = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     rematerializar = (f'<form method="post" action="/agenda" style="display:inline">'
                       f'<input type="hidden" name="token" value="{_esc(token)}">'
@@ -2108,8 +2163,20 @@ def pagina_agenda(semanas, estoque, token, msg=""):
     .slot-mv{display:inline}
     .slot-sel{appearance:none;-webkit-appearance:none}
     .slot.fixado .slot-btn{border-color:rgba(201,162,39,.4)}
-    .slot.passado{opacity:.42;cursor:default;background:rgba(255,255,255,.015);border-style:dashed}
+    .slot.passado{opacity:.62;cursor:default;background:rgba(255,255,255,.015);border-style:dashed}
     .slot.passado .slot-tit{min-height:0}
+    .pnl{margin-top:10px}
+    .pnl-s{cursor:pointer;font-family:var(--ui);font-size:11.5px;letter-spacing:.04em;
+          text-transform:uppercase;color:var(--ouro2);opacity:.9}
+    .pnl-b{margin-top:9px;border-top:1px solid var(--line);padding-top:9px}
+    .pnl-orig{font-size:12px;color:var(--creme);opacity:.72;font-style:italic;margin-bottom:5px}
+    .pnl-meta{font-family:var(--ui);font-size:11px;color:var(--ouro2);margin-bottom:7px}
+    .pnl-res{font-size:12.5px;color:var(--creme);opacity:.85;line-height:1.45;
+            max-height:190px;overflow:auto;margin-bottom:11px}
+    .pnl-lbl{display:block;font-family:var(--ui);font-size:11px;letter-spacing:.05em;
+            text-transform:uppercase;color:var(--creme);opacity:.7;margin-bottom:4px}
+    .pnl-sel{width:100%;margin-bottom:7px}
+    .pnl-av{font-size:11.5px;color:var(--creme);opacity:.6;line-height:1.4;margin:9px 0 0}
     </style>"""
     js = """<script>
     (function(){
