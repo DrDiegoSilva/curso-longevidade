@@ -114,6 +114,16 @@ class TestCapaNova(unittest.TestCase):
         self.assertNotIn("<script>alert(1)</script>", h)
         self.assertIn("&lt;script&gt;", h)
 
+    def test_numero_tambem_vai_escapado(self):
+        """O teste acima so' cobria TRILHA_NOME — o fixture usava numero=1 sempre, entao
+        nunca provava o escape do proprio numero da semana. Este cobre o caminho que o
+        outro deixava passar em branco."""
+        with mock.patch("config.TRILHA_NOME", "X"), mock.patch("config.TRILHA_TOTAL", 12):
+            import pdf_trilha
+            h = pdf_trilha.montar_html(_peca(numero='<script>alert(2)</script>'), "Dr. Diego")
+        self.assertNotIn("<script>alert(2)</script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
 
 class TestTipografiaMaisJusta(unittest.TestCase):
     """Prova a alegacao do spec (secao 4): margem/entrelinha reduzidas, SEM tocar em
@@ -144,3 +154,20 @@ class TestTipografiaMaisJusta(unittest.TestCase):
         regra_body = re.search(r"\bbody\s*\{([^}]*)\}", pdf_trilha._CSS)
         self.assertIsNotNone(regra_body)
         self.assertNotIn("font-size", regra_body.group(1))
+
+    def test_body_sem_margem_propria(self):
+        """Sem isto a banda ganha moldura branca nas laterais e no topo — visto de
+        verdade num render real durante a revisao. Ancora no CONTEUDO da regra `body`
+        (mesma tecnica do teste de font-size acima), nao na formatacao exata do bloco,
+        pra nao quebrar por causa de quebra de linha ou espacamento."""
+        import re
+        import pdf_trilha
+        regra_body = re.search(r"\bbody\s*\{([^}]*)\}", pdf_trilha._CSS)
+        self.assertIsNotNone(regra_body)
+        self.assertIn("margin: 0", regra_body.group(1))
+
+    def test_primeira_pagina_sem_margem_no_topo(self):
+        """Sem isto sobra uma faixa branca de 15mm acima da capa — visto de verdade
+        num render real durante a revisao."""
+        import pdf_trilha
+        self.assertIn("@page :first { margin-top: 0; }", pdf_trilha._CSS)

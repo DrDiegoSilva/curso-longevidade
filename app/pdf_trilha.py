@@ -158,7 +158,7 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
         <img class="capa-icone" src="data:image/png;base64,{_ICONE_DS_B64}" alt="">
         <span class="capa-nome">Dr. Diego Silva</span>
       </div>
-      <span class="capa-selo">Semana {numero} de {config.TRILHA_TOTAL}</span>
+      <span class="capa-selo">Semana {_esc(numero)} de {_esc(config.TRILHA_TOTAL)}</span>
     </div>
     <div class="capa-produto">{_esc(config.TRILHA_NOME)}</div>
   </div>
