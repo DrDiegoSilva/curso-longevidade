@@ -171,3 +171,30 @@ class TestTipografiaMaisJusta(unittest.TestCase):
         num render real durante a revisao."""
         import pdf_trilha
         self.assertIn("@page :first { margin-top: 0; }", pdf_trilha._CSS)
+
+
+class TestBlocosMaiores(unittest.TestCase):
+    def test_bloco_tem_borda_dourada_a_esquerda(self):
+        import pdf_trilha
+        self.assertIn("border-left: 4px solid #c9a227", pdf_trilha._CSS)
+
+    def test_bloco_tem_fundo_creme(self):
+        import pdf_trilha
+        self.assertIn("background: #fdfbf5", pdf_trilha._CSS)
+
+    def test_bloco_tem_padding_maior(self):
+        import pdf_trilha
+        self.assertIn("padding: 22px 26px", pdf_trilha._CSS)
+
+    def test_texto_do_bloco_e_maior_que_o_corpo(self):
+        """O corpo continua no tamanho padrao (sem font-size explicito = herda do body);
+        o texto DENTRO do bloco agora e' explicitamente maior (15px) — e' o oposto de
+        'apertar a letra': aqui a letra de destaque CRESCE."""
+        import pdf_trilha
+        self.assertIn(".bloco p { margin: 0; font-size: 15px; line-height: 1.6; }",
+                      pdf_trilha._CSS.replace("\n", " ").replace("  ", " "))
+
+    def test_o_rotulo_do_bloco_ficou_mais_espacoso(self):
+        import pdf_trilha
+        self.assertIn("letter-spacing: .18em", pdf_trilha._CSS)
+        self.assertIn("font-weight: 700", pdf_trilha._CSS)
