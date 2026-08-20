@@ -1,6 +1,7 @@
 """Testes de app/pdf_trilha.py — a capa nova, o icone DS, e os blocos maiores."""
 import base64
 import os
+import re
 import sys
 import unittest
 from unittest import mock
@@ -83,11 +84,28 @@ class TestCapaNova(unittest.TestCase):
         self.assertIn('<div class="capa-produto">Trilha do Consultório Lucrativo</div>', h)
 
     def test_sem_selo_de_tema(self):
-        """Decisao explicita do Diego — nao existe campo de categoria por peca."""
+        """Decisao explicita do Diego — nao existe campo de categoria por peca.
+
+        A versao antiga deste teste procurava a string literal "Mentalidade</div>",
+        o que nao prova nada: o markup real usa <p>/<span>, nunca uma <div> fechando
+        logo apos "Mentalidade" (o rotulo do bloco fica em <p class="rot">Mentalidade
+        </p>, nao em <div>Mentalidade</div>). Um selo de tema de verdade, tipo
+        <span class="capa-tema">Mentalidade</span>, passava batido.
+
+        A forma robusta e' ancorar no conjunto FECHADO de classes "capa-*" que a capa
+        realmente usa hoje (capa-topo, capa-assinatura, capa-icone, capa-nome,
+        capa-selo, capa-produto — nenhuma delas e' selo de categoria/tema). Qualquer
+        classe nova com esse prefixo — capa-tema, capa-tag, capa-categoria ou outra —
+        quebra este teste, porque o conjunto deixa de bater."""
         h = self._html()
-        self.assertNotIn("Mentalidade</div>", h)  # nao ha' selo generico de categoria
-        # "Mentalidade" so' pode aparecer como ROTULO do bloco (Task 4), nunca como selo
-        # da capa — essa distincao e' o que este teste protege.
+        classes_capa = re.findall(r'class="capa-[a-z-]*"', h)
+        self.assertEqual(
+            set(classes_capa),
+            {'class="capa-topo"', 'class="capa-assinatura"', 'class="capa-icone"',
+             'class="capa-nome"', 'class="capa-selo"', 'class="capa-produto"'},
+            "apareceu uma classe capa-* nova na capa — se for selo de tema, e' a "
+            "regressao que este teste existe pra pegar",
+        )
 
     def test_a_capa_esta_fora_do_wrapper_de_margem(self):
         """A tecnica de sangria exige que .capa fique FORA de .pagina (senao herda a
@@ -198,3 +216,11 @@ class TestBlocosMaiores(unittest.TestCase):
         import pdf_trilha
         self.assertIn("letter-spacing: .18em", pdf_trilha._CSS)
         self.assertIn("font-weight: 700", pdf_trilha._CSS)
+
+    def test_bloco_nao_e_fatiado_pela_quebra_de_pagina(self):
+        """Sem isto, um `.bloco` que cai perto do fim da pagina e' cortado ao meio
+        pela quebra — visto de verdade num render real das 12 pecas da trilha
+        (peca 7, card "Mentalidade"). Com o fundo creme + trilho dourado (Task 4),
+        o corte fica muito mais visivel do que era antes."""
+        import pdf_trilha
+        self.assertIn("break-inside: avoid", pdf_trilha._CSS)
