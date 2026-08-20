@@ -68,8 +68,8 @@ SLOT_DEFAULT = "08h"
 SLOT_TETO_DEFAULT = 100
 
 # Trilha semanal de empreendedorismo médico (sábado, drip por assinante).
-# TRILHA_NOME é provisório: o nome do produto ainda vai ser decidido. Mora aqui,
-# e não espalhado no código, justamente pra troca ser um campo e não uma varredura.
+# TRILHA_NOME: nome do produto. Mora aqui como fonte única (não espalhado no código),
+# justamente pra troca ser um campo e não uma varredura. Env DSCURSO_TRILHA_NOME sobrescreve.
 TRILHA_NOME = os.environ.get("DSCURSO_TRILHA_NOME") or "Trilha do Consultório Lucrativo"
 TRILHA_DIA = "sabado"
 TRILHA_TOTAL = 12
