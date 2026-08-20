@@ -3,6 +3,7 @@ import base64
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -42,3 +43,104 @@ class TestIconeDS(unittest.TestCase):
             fonte = f.read().strip()
         import pdf_trilha
         self.assertEqual(pdf_trilha._ICONE_DS_B64, fonte, "constante diverge do arquivo fonte")
+
+
+def _peca(numero=1, titulo="O custo real da sua hora", eixo="Saber onde você está",
+          corpo="Texto do corpo.", micro_resultado="A tarefa.", mentalidade="A mentalidade.",
+          ferramenta_slug="planilha-x"):
+    return {"numero": numero, "titulo": titulo, "eixo": eixo, "corpo": corpo,
+            "micro_resultado": micro_resultado, "mentalidade": mentalidade,
+            "ferramenta_slug": ferramenta_slug}
+
+
+class TestCapaNova(unittest.TestCase):
+    def _html(self, **kw):
+        import pdf_trilha
+        with mock.patch("config.TRILHA_NOME", "Trilha do Consultório Lucrativo"), \
+             mock.patch("config.TRILHA_TOTAL", 12):
+            return pdf_trilha.montar_html(_peca(**kw), "Dr. Diego",
+                                          link_ferramenta="https://ex.com/f")
+
+    def test_tem_a_banda_verde(self):
+        h = self._html()
+        self.assertIn("linear-gradient(120deg,#0e211a,#1e5045)", h)
+
+    def test_tem_o_icone_embutido(self):
+        import pdf_trilha
+        h = self._html()
+        self.assertIn(f'src="data:image/png;base64,{pdf_trilha._ICONE_DS_B64}"', h)
+
+    def test_tem_o_nome_do_medico(self):
+        h = self._html()
+        self.assertIn('<span class="capa-nome">Dr. Diego Silva</span>', h)
+
+    def test_tem_o_selo_da_semana(self):
+        h = self._html(numero=3)
+        self.assertIn('<span class="capa-selo">Semana 3 de 12</span>', h)
+
+    def test_tem_o_nome_do_produto_embaixo(self):
+        h = self._html()
+        self.assertIn('<div class="capa-produto">Trilha do Consultório Lucrativo</div>', h)
+
+    def test_sem_selo_de_tema(self):
+        """Decisao explicita do Diego — nao existe campo de categoria por peca."""
+        h = self._html()
+        self.assertNotIn("Mentalidade</div>", h)  # nao ha' selo generico de categoria
+        # "Mentalidade" so' pode aparecer como ROTULO do bloco (Task 4), nunca como selo
+        # da capa — essa distincao e' o que este teste protege.
+
+    def test_a_capa_esta_fora_do_wrapper_de_margem(self):
+        """A tecnica de sangria exige que .capa fique FORA de .pagina (senao herda a
+        margem lateral e para de bater de ponta a ponta)."""
+        h = self._html()
+        pos_capa = h.index('<div class="capa">')
+        pos_pagina = h.index('<div class="pagina">')
+        self.assertLess(pos_capa, pos_pagina)
+        # o </div> que fecha .capa tem que vir ANTES da abertura de .pagina
+        fim_capa = h.index("</div>", h.index('<div class="capa-produto">'))
+        self.assertLess(fim_capa, pos_pagina)
+
+    def test_titulo_e_corpo_continuam_depois_da_capa(self):
+        h = self._html(titulo="Título Teste")
+        self.assertIn("<h1>Título Teste</h1>", h)
+
+    def test_numero_e_nome_vao_escapados(self):
+        """Defesa em profundidade: TRILHA_NOME e' hoje um valor de config, nao entrada
+        de usuario por requisicao — mas continua indo por _esc, como todo campo aqui."""
+        with mock.patch("config.TRILHA_NOME", '<script>alert(1)</script>'), \
+             mock.patch("config.TRILHA_TOTAL", 12):
+            import pdf_trilha
+            h = pdf_trilha.montar_html(_peca(), "Dr. Diego")
+        self.assertNotIn("<script>alert(1)</script>", h)
+        self.assertIn("&lt;script&gt;", h)
+
+
+class TestTipografiaMaisJusta(unittest.TestCase):
+    """Prova a alegacao do spec (secao 4): margem/entrelinha reduzidas, SEM tocar em
+    nenhum font-size de texto de leitura. font-size do body continua ausente de proposito
+    (herda o padrao do navegador) — se algum dia alguem adicionar um font-size aqui pra
+    'resolver' a pagina 2, e' a troca errada que o Diego recusou; este teste segura isso."""
+
+    def test_pagina_sem_margem_lateral_no_page_rule(self):
+        import pdf_trilha
+        self.assertIn("margin: 15mm 0 13mm", pdf_trilha._CSS)
+
+    def test_entrelinha_do_corpo_e_1_5(self):
+        import pdf_trilha
+        self.assertIn("line-height: 1.5;", pdf_trilha._CSS)
+
+    def test_paragrafo_do_corpo_tem_margem_reduzida(self):
+        import pdf_trilha
+        self.assertIn(".corpo p { margin: 0 0 9px; }", pdf_trilha._CSS)
+
+    def test_item_de_lista_tem_margem_reduzida(self):
+        import pdf_trilha
+        self.assertIn("li { margin: 0 0 4px; }", pdf_trilha._CSS)
+
+    def test_body_nao_declara_font_size_proprio(self):
+        """O corpo continua no tamanho padrao do navegador — nenhuma letra encolheu."""
+        import re
+        import pdf_trilha
+        regra_body = re.search(r"\bbody\s*\{([^}]*)\}", pdf_trilha._CSS)
+        self.assertIsNotNone(regra_body)
+        self.assertNotIn("font-size", regra_body.group(1))
