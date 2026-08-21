@@ -224,3 +224,17 @@ class TestBlocosMaiores(unittest.TestCase):
         o corte fica muito mais visivel do que era antes."""
         import pdf_trilha
         self.assertIn("break-inside: avoid", pdf_trilha._CSS)
+
+    def test_margem_entre_blocos_e_enxuta(self):
+        """Renderizando as 12 pecas reais com Chromium: com a margem antiga (26px
+        entre blocos + 24px antes do rodape), as pecas 04 e 07 tinham o bloco
+        "Mentalidade" cabendo certinho na pagina 2, mas so' a LINHA do rodape
+        vazava pra uma pagina 3 quase inteira em branco (~97% vazia). Encolher
+        essa margem devolve as 2 pecas pra 2 paginas sem tocar em nenhum
+        font-size nem no padding interno do bloco (que continuam intocados)."""
+        import pdf_trilha
+        self.assertIn("margin: 8px 0 0", pdf_trilha._CSS)
+
+    def test_margem_do_rodape_e_enxuta(self):
+        import pdf_trilha
+        self.assertIn(".rodape { margin-top: 4px", pdf_trilha._CSS)

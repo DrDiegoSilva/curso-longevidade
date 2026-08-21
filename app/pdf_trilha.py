@@ -56,14 +56,14 @@ _CSS = """
        background: #f7f4ec; font-weight: 600; }
   td.num { text-align: right; }
   .bloco { border: 1px solid #e2dccc; border-left: 4px solid #c9a227; border-radius: 8px;
-           padding: 22px 26px; margin: 26px 0 0; background: #fdfbf5;
+           padding: 22px 26px; margin: 8px 0 0; background: #fdfbf5;
            break-inside: avoid; }
   .bloco .rot { font-family: system-ui, sans-serif; font-size: 11px; letter-spacing: .18em;
                 text-transform: uppercase; color: #8a6a2f; font-weight: 700; margin: 0 0 10px; }
   .bloco p { margin: 0; font-size: 15px; line-height: 1.6; }
   .ferramenta { margin: 26px 0 0; }
   .ferramenta a { font-family: system-ui, sans-serif; font-size: 13px; color: #8a6a2f; }
-  .rodape { margin-top: 24px; font-family: system-ui, sans-serif; font-size: 11px; color: #8a8a8a; }
+  .rodape { margin-top: 4px; font-family: system-ui, sans-serif; font-size: 11px; color: #8a8a8a; }
 """
 
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
