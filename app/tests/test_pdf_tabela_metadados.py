@@ -176,7 +176,8 @@ class TestMetadadosVazios(unittest.TestCase):
     def test_kit_com_revista_continua_mostrando(self):
         import pdf
         h = pdf.montar_html(ART, {"titulo_pt": "T", "resumo": "x", "gancho": ""}, TEMA)
-        self.assertIn('<div class="paper-rev">NEJM · 2026-08-04</div>', h)
+        self.assertIn('<p class="paper-rev">NEJM</p>', h)
+        self.assertIn('<p class="paper-doi">2026-08-04 &middot; DOI 10.1056/x</p>', h)
 
     def test_site_tambem_omite_o_que_nao_existe(self):
         import site_web

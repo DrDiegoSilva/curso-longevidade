@@ -347,6 +347,82 @@ class TestMontarHtmlKit(unittest.TestCase):
             self.assertIn(f".{classe}", h, f"{classe} sem regra no CSS do PDF")
             self.assertIn(f".{classe}", site_web._CSS, f"{classe} sem regra no CSS do site")
 
+    def test_css_do_masthead_existe(self):
+        html = self.pdf.montar_html(self.artigo, self.conteudo, self.tema)
+        self.assertIn(".paper-rule {", html)
+        self.assertIn(".kit-frase {", html)
+
+
+class TestCartaoDoEstudoSemRotulo(unittest.TestCase):
+    """O cartao "1 O estudo" e a "2 A frase" perderam a numeracao e ganharam cara de
+    masthead de periodico -- pensados pra print recortado, sem marca do Diego (item 42
+    do backlog). Ver docs/superpowers/specs/2026-08-21-bloco-printavel-item42-design.md."""
+
+    def setUp(self):
+        import pdf
+        self.pdf = pdf
+        self.artigo = {"titulo_original": "Effects of Intermittent Fasting",
+                       "fonte": "New England Journal of Medicine", "data": "2026-08-15",
+                       "doi": "10.1056/NEJMoa2026123"}
+
+    def test_rotulos_1_e_2_nao_aparecem_mais(self):
+        h = self.pdf._kit_html('{"frase": "Jejum emagrece igual."}', self.artigo)
+        self.assertNotIn("1 &middot; O estudo", h)
+        self.assertNotIn("2 &middot; A frase", h)
+
+    def test_rotulos_3_e_4_continuam(self):
+        gancho = '{"frase": "F", "limites": ["L"], "reels": [{"gancho": "g"}]}'
+        h = self.pdf._kit_html(gancho, self.artigo)
+        self.assertIn("3 &middot; Reels que saem deste estudo", h)
+        self.assertIn("4 &middot; O que n&atilde;o d&aacute; pra afirmar", h)
+
+    def test_masthead_tem_revista_regua_e_titulo(self):
+        h = self.pdf._kit_html("", self.artigo)
+        self.assertIn('<p class="paper-rev">New England Journal of Medicine</p>', h)
+        self.assertIn('<hr class="paper-rule">', h)
+        self.assertIn("Effects of Intermittent Fasting", h)
+
+    def test_rodape_combina_data_e_doi(self):
+        h = self.pdf._kit_html("", self.artigo)
+        self.assertIn('<p class="paper-doi">2026-08-15 &middot; DOI 10.1056/NEJMoa2026123</p>', h)
+
+    def test_sem_revista_nao_sobra_masthead_vazio(self):
+        art = dict(self.artigo, fonte="")
+        h = self.pdf._kit_html("", art)
+        self.assertNotIn('<p class="paper-rev">', h)
+        self.assertNotIn('<hr class="paper-rule">', h)
+        self.assertIn("Effects of Intermittent Fasting", h)
+
+    def test_sem_data_e_sem_doi_nao_sobra_rodape_vazio(self):
+        art = dict(self.artigo, data="", doi="")
+        h = self.pdf._kit_html("", art)
+        self.assertNotIn('<p class="paper-doi">', h)
+
+    def test_rodape_so_com_data_sem_doi(self):
+        art = dict(self.artigo, doi="")
+        h = self.pdf._kit_html("", art)
+        self.assertIn('<p class="paper-doi">2026-08-15</p>', h)
+
+    def test_rodape_so_com_doi_sem_data(self):
+        art = dict(self.artigo, data="")
+        h = self.pdf._kit_html("", art)
+        self.assertIn('<p class="paper-doi">DOI 10.1056/NEJMoa2026123</p>', h)
+
+    def test_revista_e_titulo_escapam_html(self):
+        art = dict(self.artigo, fonte="<script>alert(1)</script>",
+                   titulo_original="<script>alert(2)</script>")
+        h = self.pdf._kit_html("", art)
+        self.assertNotIn("<script>alert(1)</script>", h)
+        self.assertNotIn("<script>alert(2)</script>", h)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", h)
+        self.assertIn("&lt;script&gt;alert(2)&lt;/script&gt;", h)
+
+    def test_doi_escapa_html(self):
+        art = dict(self.artigo, doi="<script>alert(3)</script>")
+        h = self.pdf._kit_html("", art)
+        self.assertNotIn("<script>alert(3)</script>", h)
+        self.assertIn("&lt;script&gt;alert(3)&lt;/script&gt;", h)
+
 
 class TestPromptGancho(unittest.TestCase):
     def setUp(self):

@@ -259,11 +259,13 @@ def _kit_html(gancho_bruto, artigo):
     limites do CFM.
 
     Os dois primeiros blocos sao pensados para PRINT RECORTADO -- o medico ja fazia
-    isso na mao, printando o PDF do artigo. Por isso nao levam a marca do Diego: quem
-    posta e o assinante. O terceiro e briefing pra equipe de marketing, e por isso e
-    visualmente diferente: se parecesse com os outros, alguem recortaria a instrucao
-    junto e postaria. O quarto sao os limites daquele estudo -- fica por ESTUDO e nao
-    por pauta, porque a evidencia e a mesma pras tres.
+    isso na mao, printando o PDF do artigo. Por isso nao levam a marca do Diego (quem
+    posta e o assinante) NEM rotulo "1·"/"2·" -- isso e' numeracao do kit inteiro, e
+    apareceria no print de quem capturar so' os 2. O terceiro e briefing pra equipe de
+    marketing, e por isso e visualmente diferente E numerado: se parecesse com os
+    outros, alguem recortaria a instrucao junto e postaria. O quarto sao os limites
+    daquele estudo -- fica por ESTUDO e nao por pauta, porque a evidencia e a mesma
+    pras tres.
     """
     import content
     esc = _html.escape
@@ -272,23 +274,20 @@ def _kit_html(gancho_bruto, artigo):
     blocos = []
 
     if titulo:
-        revista = " · ".join(x for x in [(artigo.get("fonte") or "").strip(),
-                                         (artigo.get("data") or "").strip()] if x)
-        doi = (artigo.get("doi") or "").strip()
+        revista = (artigo.get("fonte") or "").strip()
+        rodape = _data_doi_linha(artigo.get("data"), artigo.get("doi"))
         blocos.append(
-            f'<div class="kit-paper"><div class="kit-rot">1 &middot; O estudo</div>'
-            f'<div class="paper-box">'
-            # Estudo subido na mao nao tem fonte/data: sem a guarda sobra um div
-            # vazio so com o margin, abrindo um vao acima do titulo do paper.
-            + (f'<div class="paper-rev">{esc(revista)}</div>' if revista else "")
+            '<div class="kit-paper"><div class="paper-box">'
+            # Estudo subido na mao nao tem fonte: sem a guarda sobra o topo do
+            # masthead vazio (nome + regua) acima do titulo.
+            + (f'<p class="paper-rev">{esc(revista)}</p><hr class="paper-rule">' if revista else "")
             + f'<p class="paper-tit">{esc(titulo)}</p>'
-            + (f'<div class="paper-doi">DOI {esc(doi)}</div>' if doi else "")
+            + (f'<p class="paper-doi">{rodape}</p>' if rodape else "")
             + '</div></div>')
 
     if dados["frase"]:
         blocos.append(
-            f'<div class="kit-frase"><div class="kit-rot">2 &middot; A frase</div>'
-            f'<div class="frase-box"><p>{esc(dados["frase"])}</p></div></div>')
+            f'<div class="kit-frase"><div class="frase-box"><p>{esc(dados["frase"])}</p></div></div>')
 
     if dados["reels"]:
         cards = []
@@ -337,6 +336,20 @@ def _meta_linha(fonte, data, doi):
     esc = _html.escape
     partes = [esc(x) for x in ((fonte or "").strip(), (data or "").strip()) if x]
     doi = (doi or "").strip()
+    if doi:
+        partes.append(f"DOI {esc(doi)}")
+    return " &middot; ".join(partes)
+
+
+def _data_doi_linha(data, doi):
+    """`data · DOI x`, só com o que existe -- mesma regra do `_meta_linha`, mas sem a
+    revista (que no masthead do paper já aparece sozinha, acima do título)."""
+    esc = _html.escape
+    data = (data or "").strip()
+    doi = (doi or "").strip()
+    partes = []
+    if data:
+        partes.append(esc(data))
     if doi:
         partes.append(f"DOI {esc(doi)}")
     return " &middot; ".join(partes)
@@ -439,12 +452,14 @@ def montar_html(artigo, conteudo, tema_meta):
   .kit-rot {{ font-family:system-ui,sans-serif; font-size:13px; letter-spacing:.08em;
            text-transform:uppercase; color:#8a6a06; font-weight:700; margin-bottom:7px;
            break-after:avoid; }}
-  .paper-box {{ border:1px solid #d8ddd7; border-top:3px solid #14332a; background:#fcfdfc;
-           padding:14px 17px; break-inside:avoid; }}
-  .paper-rev {{ font-family:system-ui,sans-serif; font-size:11.5px; letter-spacing:.13em;
-           text-transform:uppercase; color:#14332a; font-weight:700; margin-bottom:9px; }}
-  .paper-tit {{ margin:0 0 9px; font-size:17px; line-height:1.28; color:#16211c; }}
-  .paper-doi {{ font-family:ui-monospace,Menlo,monospace; font-size:13px; color:#6f7d78; }}
+  .paper-box {{ border-top:2.5px solid #14332a; border-bottom:1px solid #14332a; background:#fcfdfc;
+           padding:16px 20px 18px; break-inside:avoid; }}
+  .paper-rev {{ text-align:center; font-style:italic; font-size:14px; letter-spacing:.02em;
+           color:#14332a; margin:0 0 10px; }}
+  .paper-rule {{ border:none; border-top:1px solid #c7cec8; margin:0 0 12px; }}
+  .paper-tit {{ text-align:center; margin:0 0 10px; font-size:17.5px; line-height:1.32; color:#16211c; }}
+  .paper-doi {{ text-align:center; font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:#6f7d78; }}
+  .kit-frase {{ margin-top:8px; }}
   .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:17px 20px;
            background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}
   .frase-box p {{ margin:0; font-size:18.5px; line-height:1.4; color:#3a2f10; }}
