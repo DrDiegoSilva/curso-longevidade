@@ -458,7 +458,8 @@ def montar_html(artigo, conteudo, tema_meta):
            color:#14332a; margin:0 0 10px; }}
   .paper-rule {{ border:none; border-top:1px solid #c7cec8; margin:0 0 12px; }}
   .paper-tit {{ text-align:center; margin:0 0 10px; font-size:17.5px; line-height:1.32; color:#16211c; }}
-  .paper-doi {{ text-align:center; font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:#6f7d78; }}
+  .paper-doi {{ text-align:center; font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:#6f7d78; margin:0; }}
+  .paper-box > :last-child {{ margin-bottom:0; }}
   .kit-frase {{ margin-top:8px; }}
   .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:17px 20px;
            background:linear-gradient(180deg,#fff9e9,#fbf3d9); break-inside:avoid; }}

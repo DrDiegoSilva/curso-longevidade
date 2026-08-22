@@ -164,13 +164,13 @@ class TestMetadadosVazios(unittest.TestCase):
         self.assertEqual(_meta(self._pdf()), "NEJM &middot; 2026-08-04 &middot; DOI 10.1056/x")
 
     def test_kit_nao_deixa_rotulo_de_revista_vazio(self):
-        """Mesma classe do `· · DOI —`, no bloco "1 · O estudo": sem fonte nem data
-        sobrava um `<div class="paper-rev"></div>` só com o margin, abrindo um vão
-        acima do título do paper."""
+        """Sem fonte nem data, o masthead nao pode sobrar com um <p class="paper-rev">
+        vazio nem uma <hr> orfa acima do titulo -- o topo vira o titulo direto."""
         import pdf
         h = pdf.montar_html(dict(ART, fonte="", data=""),
                             {"titulo_pt": "T", "resumo": "x", "gancho": ""}, TEMA)
-        self.assertNotIn('<div class="paper-rev"></div>', h)
+        self.assertNotIn('<p class="paper-rev">', h)
+        self.assertNotIn('<hr class="paper-rule">', h)
         self.assertIn("T EN", h)                 # o bloco em si continua saindo
 
     def test_kit_com_revista_continua_mostrando(self):
