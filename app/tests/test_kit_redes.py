@@ -503,7 +503,8 @@ class TestKitNoSite(unittest.TestCase):
              "doi": "x", "url": "https://x", "resumo": "r", "grafico": None,
              "gancho": '{"frase": "F", "reels": [{"angulo": "A"}]}'}
         html = site_web.pagina_digest({"rotulo": "Obesidade", "emoji": "", "slug": "obesidade", "cor": "#14332a"}, d)
-        for classe in (".paper-box{", ".frase-box{", ".reel-cards{", ".reel-card{", ".reel-n{"):
+        for classe in (".paper-box{", ".paper-rule{", ".kit-frase{", ".frase-box{",
+                       ".reel-cards{", ".reel-card{", ".reel-n{"):
             self.assertIn(classe, html, classe)
 
 

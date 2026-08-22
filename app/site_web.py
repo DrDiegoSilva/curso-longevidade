@@ -268,10 +268,12 @@ button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:non
    do CSS do PDF, entao as classes precisam existir aqui tambem. */
 .kit{margin:24px 0 6px;display:flex;flex-direction:column;gap:20px}
 .kit-rot{font-family:system-ui,sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a6a06;font-weight:700;margin-bottom:8px}
-.paper-box{border:1px solid #d8ddd7;border-top:3px solid #14332a;background:#fcfdfc;padding:16px 18px}
-.paper-rev{font-family:system-ui,sans-serif;font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#14332a;font-weight:700;margin-bottom:8px}
-.paper-tit{margin:0 0 10px;font-size:19px;line-height:1.28;color:#16211c}
-.paper-doi{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#6f7d78;word-break:break-word}
+.paper-box{border-top:2.5px solid #14332a;border-bottom:1px solid #14332a;background:#fcfdfc;padding:18px 22px 20px}
+.paper-rev{text-align:center;font-style:italic;font-size:15px;letter-spacing:.02em;color:#14332a;margin:0 0 11px}
+.paper-rule{border:none;border-top:1px solid #c7cec8;margin:0 0 13px}
+.paper-tit{text-align:center;margin:0 0 11px;font-size:19px;line-height:1.32;color:#16211c}
+.paper-doi{text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#6f7d78;word-break:break-word}
+.kit-frase{margin-top:9px}
 .frase-box{border:2px solid var(--ouro);border-radius:12px;padding:20px 22px;background:linear-gradient(180deg,#fff9e9,#fbf3d9)}
 .frase-box p{margin:0;font-size:20px;line-height:1.4;color:#3a2f10}
 .kit-brief .kit-rot{color:#6f7d78}
