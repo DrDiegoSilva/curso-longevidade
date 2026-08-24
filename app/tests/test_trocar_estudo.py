@@ -10,6 +10,55 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("DSCURSO_DATA", tempfile.mkdtemp())
 
 
+class TestMarcarJaEnviados(unittest.TestCase):
+    def setUp(self):
+        import daily
+        importlib.reload(daily)
+        self.daily = daily
+
+    def test_casa_por_doi(self):
+        import db
+        digests = [{"data": "2026-07-14", "doi": "10.1/X", "titulo_original": "", "titulo_pt": ""}]
+        with mock.patch.object(db, "listar_digests", return_value=digests):
+            alts = self.daily.marcar_ja_enviados([{"titulo": "Y", "doi": "10.1/x"}])
+        self.assertEqual(alts[0]["ja_enviado_em"], "2026-07-14")
+
+    def test_casa_por_titulo_original_quando_falta_doi(self):
+        import db
+        digests = [{"data": "2026-07-14", "doi": "", "titulo_original": "Effects of X", "titulo_pt": ""}]
+        with mock.patch.object(db, "listar_digests", return_value=digests):
+            alts = self.daily.marcar_ja_enviados([{"titulo": "effects of x", "doi": ""}])
+        self.assertEqual(alts[0]["ja_enviado_em"], "2026-07-14")
+
+    def test_casa_por_titulo_pt_quando_falta_doi(self):
+        import db
+        digests = [{"data": "2026-07-14", "doi": "", "titulo_original": "", "titulo_pt": "Efeitos de X"}]
+        with mock.patch.object(db, "listar_digests", return_value=digests):
+            alts = self.daily.marcar_ja_enviados([{"titulo": "Efeitos de X", "doi": ""}])
+        self.assertEqual(alts[0]["ja_enviado_em"], "2026-07-14")
+
+    def test_guarda_a_data_mais_antiga(self):
+        import db
+        digests = [{"data": "2026-08-01", "doi": "10.1/x", "titulo_original": "", "titulo_pt": ""},
+                   {"data": "2026-06-01", "doi": "10.1/x", "titulo_original": "", "titulo_pt": ""}]
+        with mock.patch.object(db, "listar_digests", return_value=digests):
+            alts = self.daily.marcar_ja_enviados([{"titulo": "Y", "doi": "10.1/X"}])
+        self.assertEqual(alts[0]["ja_enviado_em"], "2026-06-01")
+
+    def test_sem_casamento_fica_none(self):
+        import db
+        with mock.patch.object(db, "listar_digests", return_value=[]):
+            alts = self.daily.marcar_ja_enviados([{"titulo": "Nunca saiu", "doi": ""}])
+        self.assertIsNone(alts[0]["ja_enviado_em"])
+
+    def test_doi_e_titulo_vazios_nao_casam_a_toa(self):
+        import db
+        digests = [{"data": "2026-07-14", "doi": "", "titulo_original": "", "titulo_pt": ""}]
+        with mock.patch.object(db, "listar_digests", return_value=digests):
+            alts = self.daily.marcar_ja_enviados([{"titulo": "", "doi": ""}])
+        self.assertIsNone(alts[0]["ja_enviado_em"])
+
+
 class TestMontarAlternativas(unittest.TestCase):
     def setUp(self):
         import daily
@@ -19,7 +68,8 @@ class TestMontarAlternativas(unittest.TestCase):
     def _db(self, reserva, candidatos):
         import db
         return (mock.patch.object(db, "listar_reserva", return_value=reserva),
-                mock.patch.object(db, "listar_candidatos", return_value=candidatos))
+                mock.patch.object(db, "listar_candidatos", return_value=candidatos),
+                mock.patch.object(db, "listar_digests", return_value=[]))
 
     def test_reserva_primeiro_e_exclui_atual_e_ordena(self):
         daily = self.daily
@@ -34,8 +84,8 @@ class TestMontarAlternativas(unittest.TestCase):
             {"id": "c_horm", "titulo": "Cand Hormonal", "fonte": "JCEM", "tema": "Hormonal", "score": 8},
             {"id": "c_obe", "titulo": "Cand Obesidade", "fonte": "Obesity", "tema": "Obesidade", "score": 3},
         ]
-        p1, p2 = self._db(reserva, candidatos)
-        with p1, p2:
+        p1, p2, p3 = self._db(reserva, candidatos)
+        with p1, p2, p3:
             alts = daily.montar_alternativas(r)
         ids = [(a["tipo"], a["id"]) for a in alts]
         # atual excluído; uploads/reserva no topo (prioridade=1 primeiro, depois score);
@@ -53,22 +103,36 @@ class TestMontarAlternativas(unittest.TestCase):
             {"id": "c_atual", "titulo": "Atual", "fonte": "X", "tema": "Performance", "score": 5},
             {"id": "c_ok", "titulo": "Outro", "fonte": "Sports Med", "tema": "Performance", "score": 7},
         ]
-        p1, p2 = self._db([], candidatos)
-        with p1, p2:
+        p1, p2, p3 = self._db([], candidatos)
+        with p1, p2, p3:
             alts = daily.montar_alternativas(r)
         self.assertEqual([a["id"] for a in alts], ["c_ok"])
         self.assertEqual(alts[0], {"tipo": "candidato", "id": "c_ok",
                                    "titulo": "Outro", "fonte": "Sports Med",
-                                   "tema": "Performance", "score": 7})
+                                   "tema": "Performance", "score": 7,
+                                   "doi": "", "ja_enviado_em": None})
 
     def test_alternativa_valida(self):
         daily = self.daily
         r = {"reserva_id": None, "candidato_id": None, "artigo": {"tema": "Obesidade"}}
-        p1, p2 = self._db([{"id": "res1", "titulo_pt": "R", "fonte": "", "tema": "Obesidade", "prioridade": 0, "score": 1}], [])
-        with p1, p2:
+        p1, p2, p3 = self._db([{"id": "res1", "titulo_pt": "R", "fonte": "", "tema": "Obesidade", "prioridade": 0, "score": 1}], [])
+        with p1, p2, p3:
             self.assertTrue(daily.alternativa_valida(r, "reserva", "res1"))
             self.assertFalse(daily.alternativa_valida(r, "candidato", "res1"))
             self.assertFalse(daily.alternativa_valida(r, "reserva", "nope"))
+
+    def test_doi_passa_para_a_alternativa(self):
+        daily = self.daily
+        r = {"reserva_id": None, "candidato_id": None, "artigo": {"tema": "Obesidade"}}
+        reserva = [{"id": "res1", "titulo_pt": "R", "fonte": "X", "tema": "Obesidade",
+                    "prioridade": 0, "score": 1, "doi": "10.1/res"}]
+        candidatos = [{"id": "c1", "titulo": "C", "fonte": "Y", "tema": "Obesidade",
+                       "score": 2, "doi": "10.1/cand"}]
+        p1, p2, p3 = self._db(reserva, candidatos)
+        with p1, p2, p3:
+            alts = daily.montar_alternativas(r)
+        dois = {a["id"]: a["doi"] for a in alts}
+        self.assertEqual(dois, {"res1": "10.1/res", "c1": "10.1/cand"})
 
 
 class TestReviewWebTrocar(unittest.TestCase):

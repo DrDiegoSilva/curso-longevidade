@@ -44,7 +44,8 @@ class TestPickerSoOfereceVarredura(unittest.TestCase):
         with mock.patch.object(db, "listar_reserva", return_value=[]), \
              mock.patch.object(db, "listar_candidatos",
                                side_effect=lambda *a, **k: [c for c in candidatos
-                                                           if not k.get("tipo") or c["tipo"] == k["tipo"]]):
+                                                           if not k.get("tipo") or c["tipo"] == k["tipo"]]), \
+             mock.patch.object(db, "listar_digests", return_value=[]):
             return self.daily.montar_alternativas(r)
 
     def test_candidato_de_backfill_nao_aparece_no_picker(self):
@@ -79,7 +80,8 @@ class TestGuardaDeValidacao(unittest.TestCase):
         with mock.patch.object(db, "listar_reserva", return_value=[]), \
              mock.patch.object(db, "listar_candidatos",
                                side_effect=lambda *a, **k: [_cand("bk", "corpus")]
-                               if not k.get("tipo") else []):
+                               if not k.get("tipo") else []), \
+             mock.patch.object(db, "listar_digests", return_value=[]):
             self.assertFalse(self.daily.alternativa_valida(r, "candidato", "bk"))
 
 

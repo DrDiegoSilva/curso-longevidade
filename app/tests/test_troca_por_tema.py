@@ -139,7 +139,8 @@ class TestOCorteNaoEscondeMaisOsCandidatos(unittest.TestCase):
                   "tema": "Hormonal", "score": 9}]
         r = {"reserva_id": None, "candidato_id": None, "artigo": {"tema": "Obesidade"}}
         with mock.patch.object(db, "listar_reserva", return_value=reserva), \
-             mock.patch.object(db, "listar_candidatos", return_value=cands):
+             mock.patch.object(db, "listar_candidatos", return_value=cands), \
+             mock.patch.object(db, "listar_digests", return_value=[]):
             alts = self.daily.montar_alternativas(r)
         self.assertIn("c1", [a["id"] for a in alts])
 
@@ -149,7 +150,8 @@ class TestOCorteNaoEscondeMaisOsCandidatos(unittest.TestCase):
                     "prioridade": 0, "score": 5} for i in range(999)]
         r = {"reserva_id": None, "candidato_id": None, "artigo": {"tema": "Obesidade"}}
         with mock.patch.object(db, "listar_reserva", return_value=reserva), \
-             mock.patch.object(db, "listar_candidatos", return_value=[]):
+             mock.patch.object(db, "listar_candidatos", return_value=[]), \
+             mock.patch.object(db, "listar_digests", return_value=[]):
             alts = self.daily.montar_alternativas(r)
         self.assertLess(len(alts), 999)
 

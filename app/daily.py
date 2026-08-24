@@ -15,6 +15,7 @@ resumo_diario são lazy (efeitos de import: log/stdout).
 """
 import os
 import json
+import re
 from datetime import datetime, timedelta
 import config
 import sources
@@ -435,6 +436,35 @@ def _preparar_de_classico(classico_id):
 ALTERNATIVAS_MAX = 300
 
 
+def _normalizar_titulo(t):
+    return re.sub(r"\s+", " ", (t or "").strip().lower())
+
+
+def marcar_ja_enviados(alts):
+    """Anota cada alternativa com `ja_enviado_em` (data ISO mais antiga em que aquele
+    estudo já saiu) ou None. Casa por DOI primeiro (sem risco de traducao); sem DOI dos
+    dois lados, cai pro titulo normalizado contra titulo_original OU titulo_pt do digest
+    -- a reserva guarda titulo em PT, o candidato em EN, entao um so' dos dois campos
+    erraria metade dos casos."""
+    import db
+    por_doi, por_titulo = {}, {}
+    for d in db.listar_digests():
+        data = d.get("data", "")
+        doi = (d.get("doi") or "").strip().lower()
+        if doi and (doi not in por_doi or data < por_doi[doi]):
+            por_doi[doi] = data
+        for campo in ("titulo_original", "titulo_pt"):
+            t = _normalizar_titulo(d.get(campo))
+            if t and (t not in por_titulo or data < por_titulo[t]):
+                por_titulo[t] = data
+    for a in alts:
+        doi = (a.get("doi") or "").strip().lower()
+        a["ja_enviado_em"] = por_doi.get(doi) if doi else None
+        if not a["ja_enviado_em"]:
+            a["ja_enviado_em"] = por_titulo.get(_normalizar_titulo(a.get("titulo")))
+    return alts
+
+
 def montar_alternativas(r):
     """Lista de estudos p/ trocar o de amanhã: reserva (uploads no topo) + candidatos
     (tema de amanhã primeiro). Exclui o estudo atual. Normalizado e cortado em ALTERNATIVAS_MAX."""
@@ -453,13 +483,15 @@ def montar_alternativas(r):
     cand_rows.sort(key=lambda x: (1 if x.get("tema") == tema_amanha else 0, x.get("score", 0) or 0), reverse=True)
     alts = (
         [{"tipo": "reserva", "id": x["id"], "titulo": x.get("titulo_pt", ""),
-          "fonte": x.get("fonte", ""), "tema": x.get("tema", ""), "score": x.get("score", 0) or 0}
+          "fonte": x.get("fonte", ""), "tema": x.get("tema", ""), "score": x.get("score", 0) or 0,
+          "doi": x.get("doi", "")}
          for x in res_rows]
         + [{"tipo": "candidato", "id": x["id"], "titulo": x.get("titulo", ""),
-            "fonte": x.get("fonte", ""), "tema": x.get("tema", ""), "score": x.get("score", 0) or 0}
+            "fonte": x.get("fonte", ""), "tema": x.get("tema", ""), "score": x.get("score", 0) or 0,
+            "doi": x.get("doi", "")}
            for x in cand_rows]
     )
-    return alts[:ALTERNATIVAS_MAX]
+    return marcar_ja_enviados(alts[:ALTERNATIVAS_MAX])
 
 
 def alternativa_valida(r, tipo, cid):
