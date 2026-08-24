@@ -146,12 +146,14 @@ def pagina_admin(assinantes, token=""):
 
 def _item_troca(a, tok):
     esc = _html.escape
+    aviso = (f'<br><small style="color:#9c3226">⚠️ já enviado em {esc(a["ja_enviado_em"])}</small>'
+              if a.get("ja_enviado_em") else "")
     return (f'<li style="margin:12px 0">'
             f'<form method="post" action="/revisar/{tok}" '
             f'style="display:flex;gap:10px;align-items:center;justify-content:space-between">'
             f'<span><b>{esc(a["titulo"])}</b><br>'
             f'<small style="color:#6b7a76">{esc(a["fonte"])} · '
-            f'nota {esc(str(a["score"]))} · {esc(a["tipo"])}</small></span>'
+            f'nota {esc(str(a["score"]))} · {esc(a["tipo"])}</small>{aviso}</span>'
             f'<input type="hidden" name="acao" value="trocar_confirmar">'
             f'<input type="hidden" name="tipo" value="{esc(a["tipo"])}">'
             f'<input type="hidden" name="id" value="{esc(str(a["id"]))}">'
@@ -184,9 +186,20 @@ def pagina_trocar_estudo(alternativas, r, token, areas=()):
         cards = []
         for t in temas:
             itens = por_tema.get(t, [])
-            corpo_card = (f'<ul style="list-style:none;padding:0">'
-                          + "".join(_item_troca(a, tok) for a in itens) + "</ul>"
-                          ) if itens else '<p style="color:#6b7a76">Nada neste tema.</p>'
+            if not itens:
+                corpo_card = '<p style="color:#6b7a76">Nada neste tema.</p>'
+            else:
+                disponiveis = [a for a in itens if not a.get("ja_enviado_em")]
+                enviados = [a for a in itens if a.get("ja_enviado_em")]
+                corpo_card = (f'<ul style="list-style:none;padding:0">'
+                              + "".join(_item_troca(a, tok) for a in disponiveis) + "</ul>"
+                              ) if disponiveis else '<p style="color:#6b7a76">Nada disponível neste tema.</p>'
+                if enviados:
+                    corpo_card += (
+                        '<p style="color:#9c3226;font-weight:600;margin:14px 0 4px">'
+                        '⚠️ Já enviados</p>'
+                        '<ul style="list-style:none;padding:0">'
+                        + "".join(_item_troca(a, tok) for a in enviados) + "</ul>")
             aberto = " open" if t == tema_amanha else ""
             cards.append(
                 f'<details name="troca-tema"{aberto} style="border:1px solid #d8ddd7;'
