@@ -89,7 +89,7 @@ def aplicar(data_iso, acao, texto=None, area=None, kit=None):
     if not r:
         raise ValueError("rascunho não encontrado")
     # A área ANTES do status: a guarda de "já enviado" mora em `area_estudo.pode_corrigir`
-    # e lê `r["status"]` — sobrescrever o status primeiro apagaria o SENT que ela procura.
+    # e lé `r["status"]` — sobrescrever o status primeiro apagaria o SENT que ela procura.
     if acao == "aprovar":
         area_estudo.aplicar_no_rascunho(r, area)
         _guardar_texto(r, texto)
@@ -111,3 +111,39 @@ def aplicar(data_iso, acao, texto=None, area=None, kit=None):
     r["decidido_em"] = datetime.now().isoformat()
     salvar(r)
     return r
+
+
+def status_troca(token_antigo, data):
+    """Estado de uma troca de estudo em andamento (ver `daily.trocar_estudo_amanha`).
+
+    O rascunho antigo (`token_antigo`) SUMIR é o sinal de sucesso: `trocar_estudo_amanha`
+    sobrescreve o registro do dia com um token novo (upsert por `data`), então o antigo
+    para de casar com qualquer linha. Enquanto o rascunho antigo ainda existe, ou está
+    "andamento" (sem erro) ou "erro" (campo `erro_troca` preenchido). `data` só entra em
+    jogo no caminho de sucesso, pra achar o registro novo — o token antigo sozinho não
+    basta depois que ele deixou de existir."""
+    r = por_token(token_antigo)
+    if r:
+        erro = r.get("erro_troca")
+        if erro:
+            return {"status": "erro", "msg": erro, "voltar": f"/revisar/{token_antigo}"}
+        return {"status": "andamento"}
+    atual = carregar(data) if data else None
+    if atual and atual.get("review_token") and atual["review_token"] != token_antigo:
+        return {"status": "pronto", "link": f"/revisar/{atual['review_token']}"}
+    return {"status": "andamento"}     # nunca finge saber o que não sabe
+
+
+def iniciar_troca(r):
+    """Limpa `erro_troca` de uma tentativa de troca anterior antes de começar uma nova
+    (o mesmo token pode ser reusado se a troca de antes falhou) — sem isto, um erro
+    velho "vazaria" pra tentativa nova em `status_troca`."""
+    r["erro_troca"] = ""
+    salvar(r)
+
+
+def falhar_troca(r, msg):
+    """Grava o erro de uma troca que falhou no MESMO rascunho (token antigo) — é o que
+    `status_troca` consulta pra dizer "erro" em vez de ficar "andamento" pra sempre."""
+    r["erro_troca"] = msg
+    salvar(r)
