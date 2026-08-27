@@ -245,13 +245,21 @@ WhatsApp o estudo novo (com PDF, áudio e um link de revisão novo). Pode fechar
       .then(tratar)
       .catch(function(){{}});
   }}
+  function mostrarResultado(destaque, rotuloLink, href){{
+    el.innerHTML = '';
+    var b = document.createElement('b'); b.textContent = destaque;
+    el.appendChild(b);
+    el.appendChild(document.createElement('br'));
+    var a = document.createElement('a'); a.href = href; a.textContent = rotuloLink;
+    el.appendChild(a);
+  }}
   function tratar(j){{
     if (j.status === 'pronto'){{
       clearInterval(timer);
-      el.innerHTML = '<b>✅ Troca concluída!</b><br><a href="' + j.link + '">Ver a revisão nova</a>';
+      mostrarResultado('✅ Troca concluída!', 'Ver a revisão nova', j.link);
     }} else if (j.status === 'erro'){{
       clearInterval(timer);
-      el.innerHTML = '<b>⚠️ ' + j.msg + '</b><br><a href="' + j.voltar + '">← Voltar pra revisão</a>';
+      mostrarResultado('⚠️ ' + j.msg, '← Voltar pra revisão', j.voltar);
     }} else if (Date.now() - t0 > 75000){{
       var esp = el.querySelector('.troca-espera');
       if (esp) esp.textContent = 'Ainda trabalhando nisso — mais que o esperado. O aviso ' +

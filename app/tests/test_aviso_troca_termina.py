@@ -135,13 +135,14 @@ global.Date = { now: function(){ return agora; } };
 function avancarRelogio(ms){ agora += ms; }
 
 function El(tag, attrs){
-  this.tagName = tag; this.attrs = attrs || {}; this._texto = '';
+  this.tagName = tag; this.attrs = attrs || {}; this._texto = ''; this.children = [];
 }
 Object.defineProperty(El.prototype, 'textContent', {
   get: function(){ return this._texto; },
   set: function(v){ this._texto = String(v); }
 });
 El.prototype.getAttribute = function(k){ return this.attrs[k] === undefined ? null : this.attrs[k]; };
+El.prototype.appendChild = function(no){ this.children.push(no); return no; };
 
 var espera = new El('span', {});
 espera.textContent = 'O novo resumo esta sendo gerado. Em ~1-2 min voce recebe no WhatsApp ' +
@@ -152,7 +153,7 @@ statusEl._html = '';
 statusEl._substituido = false;
 Object.defineProperty(statusEl, 'innerHTML', {
   get: function(){ return this._html; },
-  set: function(v){ this._html = v; this._substituido = true; }
+  set: function(v){ this._html = v; this._substituido = true; this.children = []; }
 });
 statusEl.querySelector = function(sel){
   return (sel === '.troca-espera' && !this._substituido) ? espera : null;
@@ -162,7 +163,10 @@ var mapa = {'troca-status': statusEl};
 function removerElemento(){ mapa['troca-status'] = null; }
 function removerAtributos(){ statusEl.attrs = {}; }
 
-global.document = { getElementById: function(id){ return mapa[id] || null; } };
+global.document = {
+  getElementById: function(id){ return mapa[id] || null; },
+  createElement: function(tag){ return new El(tag); }
+};
 
 var timers = [];
 global.setInterval = function(fn){ timers.push({fn: fn, vivo: true}); return timers.length; };
@@ -178,10 +182,17 @@ function fetchPadrao(){
 global.fetch = fetchPadrao;
 global.window = { fetch: fetchPadrao };
 
+function resumoFilhos(){
+  return statusEl.children.map(function(c){
+    if (c.tagName === 'a') return 'LINK(' + c.textContent + ',' + c.href + ')';
+    if (c.tagName === 'b') return 'B(' + c.textContent + ')';
+    return c.tagName || '';
+  }).join('|');
+}
 function relatarDepois(){
   setTimeout(function(){
     console.log(JSON.stringify({
-      html: statusEl._html,
+      resumo: resumoFilhos(),
       esperaTexto: espera.textContent,
       timerVivo: timers.length ? timers[0].vivo : null
     }));
@@ -218,21 +229,29 @@ class TestComportamentoDoJs(unittest.TestCase):
 
     def test_pronto_mostra_o_link_novo(self):
         r = self._rodar("enfileirar({status:'pronto', link:'/revisar/novo'}); tick(); relatarDepois();")
-        self.assertIn("Troca conclu", r["html"])
-        self.assertIn("/revisar/novo", r["html"])
+        self.assertIn("Troca conclu", r["resumo"])
+        self.assertIn("/revisar/novo", r["resumo"])
         self.assertFalse(r["timerVivo"])
 
     def test_erro_mostra_mensagem_e_link_de_volta(self):
         r = self._rodar(
             "enfileirar({status:'erro', msg:'Não consegui trocar', voltar:'/revisar/velho'});"
             " tick(); relatarDepois();")
-        self.assertIn("Não consegui trocar", r["html"])
-        self.assertIn("/revisar/velho", r["html"])
+        self.assertIn("Não consegui trocar", r["resumo"])
+        self.assertIn("/revisar/velho", r["resumo"])
         self.assertFalse(r["timerVivo"])
+
+    def test_mensagem_de_erro_maliciosa_nao_vira_html(self):
+        """A mensagem de erro entra como TEXTO (textContent), nunca como HTML — sem
+        isso, um erro com conteúdo controlável (ex: mensagem de exceção) viraria XSS."""
+        r = self._rodar(
+            "enfileirar({status:'erro', msg:'<img src=x onerror=alert(1)>', voltar:'/revisar/velho'});"
+            " tick(); relatarDepois();")
+        self.assertIn("<img src=x onerror=alert(1)>", r["resumo"])
 
     def test_andamento_nao_mexe_na_pagina_antes_do_prazo(self):
         r = self._rodar("enfileirar({status:'andamento'}); tick(); relatarDepois();")
-        self.assertEqual(r["html"], "")
+        self.assertEqual(r["resumo"], "")
         self.assertIn("Pode fechar esta p", r["esperaTexto"])
         self.assertTrue(r["timerVivo"])
 
@@ -240,13 +259,13 @@ class TestComportamentoDoJs(unittest.TestCase):
         r = self._rodar(
             "avancarRelogio(76000); enfileirar({status:'andamento'}); tick(); relatarDepois();")
         self.assertIn("Ainda trabalhando", r["esperaTexto"])
-        self.assertEqual(r["html"], "")
+        self.assertEqual(r["resumo"], "")
 
     def test_erro_de_rede_nao_trava_tenta_de_novo_depois(self):
         r = self._rodar(
             "global.fetch = function(){ return Promise.reject(new Error('rede')); };"
             " tick(); relatarDepois();")
-        self.assertEqual(r["html"], "")
+        self.assertEqual(r["resumo"], "")
         self.assertTrue(r["timerVivo"])
 
     def test_sem_o_elemento_no_dom_o_js_nao_explode(self):
