@@ -89,7 +89,7 @@ def aplicar(data_iso, acao, texto=None, area=None, kit=None):
     if not r:
         raise ValueError("rascunho não encontrado")
     # A área ANTES do status: a guarda de "já enviado" mora em `area_estudo.pode_corrigir`
-    # e lé `r["status"]` — sobrescrever o status primeiro apagaria o SENT que ela procura.
+    # e lê `r["status"]` — sobrescrever o status primeiro apagaria o SENT que ela procura.
     if acao == "aprovar":
         area_estudo.aplicar_no_rascunho(r, area)
         _guardar_texto(r, texto)
