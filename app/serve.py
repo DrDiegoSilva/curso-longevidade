@@ -281,7 +281,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             q = up.parse_qs(up.urlparse(self.path).query)
             tok = (q.get("token") or [""])[0]
             data = (q.get("data") or [""])[0]
-            return self._json(draft_store.status_troca(tok, data))
+            # a resposta "pronto" carrega o review_token real dentro do link — não pode
+            # ficar em cache de navegador/proxy, e sem isso um "andamento" em cache faz
+            # o polling nunca mais checar de novo.
+            return self._json(draft_store.status_troca(tok, data),
+                               headers={"Cache-Control": "no-store"})
         if path.startswith("/pdf/"):
             import config, draft_store
             parts = [p for p in path.split("/pdf/", 1)[1].split("/") if p]
@@ -743,12 +747,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(s.encode("utf-8"))
 
-    def _json(self, obj, code=200):
+    def _json(self, obj, code=200, headers=None):
         import json
         corpo = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(corpo)))
+        for nome, valor in (headers or {}).items():
+            self.send_header(nome, valor)
         self.end_headers()
         self.wfile.write(corpo)
 

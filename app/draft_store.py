@@ -129,7 +129,13 @@ def status_troca(token_antigo, data):
             return {"status": "erro", "msg": erro, "voltar": f"/revisar/{token_antigo}"}
         return {"status": "andamento"}
     atual = carregar(data) if data else None
-    if atual and atual.get("review_token") and atual["review_token"] != token_antigo:
+    # `token_anterior` amarra o rascunho novo ao token que ele substituiu: sem essa
+    # checagem, QUALQUER token (forjado, vazio, de outro dia) que não resolvesse via
+    # `por_token` "casava" com o rascunho atual só por diferir do review_token dele —
+    # vazando o token de revisão real pra quem só precisa adivinhar a data de amanhã.
+    if (token_antigo and atual and atual.get("review_token")
+            and atual["review_token"] != token_antigo
+            and atual.get("token_anterior") == token_antigo):
         return {"status": "pronto", "link": f"/revisar/{atual['review_token']}"}
     return {"status": "andamento"}     # nunca finge saber o que não sabe
 

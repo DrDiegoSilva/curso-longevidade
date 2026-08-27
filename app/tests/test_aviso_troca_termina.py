@@ -42,11 +42,22 @@ class TestStatusTroca(unittest.TestCase):
                              "voltar": "/revisar/tok-velho"})
 
     def test_pronto_quando_rascunho_antigo_sumiu_e_ha_um_novo_na_data(self):
-        atual = {"review_token": "tok-novo", "data": "2026-08-27"}
+        atual = {"review_token": "tok-novo", "token_anterior": "tok-velho", "data": "2026-08-27"}
         with mock.patch.object(self.ds, "por_token", return_value=None), \
              mock.patch.object(self.ds, "carregar", return_value=atual):
             r = self.ds.status_troca("tok-velho", "2026-08-27")
         self.assertEqual(r, {"status": "pronto", "link": "/revisar/tok-novo"})
+
+    def test_token_forjado_nao_vaza_o_token_novo(self):
+        """Sem a checagem de `token_anterior`, QUALQUER token que não resolvesse via
+        `por_token` (forjado, vazio, de outro dia) "casava" com o rascunho atual só
+        por diferir do review_token dele — vazando o token de revisão real, que é a
+        ÚNICA credencial que protege /revisar/<tok>."""
+        atual = {"review_token": "tok-novo", "token_anterior": "tok-velho", "data": "2026-08-27"}
+        with mock.patch.object(self.ds, "por_token", return_value=None), \
+             mock.patch.object(self.ds, "carregar", return_value=atual):
+            self.assertEqual(self.ds.status_troca("forjado", "2026-08-27"), {"status": "andamento"})
+            self.assertEqual(self.ds.status_troca("", "2026-08-27"), {"status": "andamento"})
 
     def test_andamento_quando_nao_ha_rascunho_nenhum_ainda(self):
         """Caso extremo, praticamente inatingível pelo fluxo real (serve.py só chega

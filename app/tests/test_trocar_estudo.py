@@ -234,6 +234,7 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         novo = {"review_token": "novo", "data": "2026-07-28",
                 "artigo": {"tema": "Obesidade", "titulo": "Ret"}, "titulo_pt": "Ret PT"}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(daily.draft_store, "salvar") as m_salvar, \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
              mock.patch.object(db, "marcar_reserva_pronto") as m_res_pool, \
              mock.patch.object(db, "agenda_upsert") as m_up, \
@@ -251,6 +252,8 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         m_res_pool.assert_not_called()
         m_cur.assert_not_called()
         self.assertEqual(out["review_token"], "novo")
+        self.assertEqual(novo["token_anterior"], "tok")    # amarra o novo rascunho ao token antigo
+        m_salvar.assert_called_once_with(novo)
 
     def test_reserva_atual_volta_ao_pool_e_grava_slot_do_candidato(self):
         daily = self.daily
@@ -259,6 +262,7 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         novo = {"review_token": "n", "data": "2026-07-28",
                 "artigo": {"tema": "Perf", "titulo": "Cand"}, "titulo_pt": ""}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(daily.draft_store, "salvar") as m_salvar, \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
              mock.patch.object(db, "marcar_reserva_pronto") as m_res_pool, \
              mock.patch.object(db, "agenda_upsert") as m_up, \
@@ -273,6 +277,8 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         m_cand_ag.assert_called_once_with("c_escolhido")
         m_res_pool.assert_called_once_with("res_velha")
         m_pool.assert_not_called()
+        self.assertEqual(novo["token_anterior"], "tok")    # amarra o novo rascunho ao token antigo
+        m_salvar.assert_called_once_with(novo)
 
     def test_preparo_falha_avisa_curador_e_grava_erro_no_rascunho(self):
         daily = self.daily
@@ -299,6 +305,7 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         novo = {"review_token": "n", "data": "2026-07-28",
                 "artigo": {"tema": "Obesidade", "titulo": "T"}, "titulo_pt": "T"}
         with mock.patch.object(daily.draft_store, "por_token", return_value=r), \
+             mock.patch.object(daily.draft_store, "salvar"), \
              mock.patch.object(db, "agenda_upsert", side_effect=RuntimeError("db lock")), \
              mock.patch.object(db, "marcar_reserva_agendado"), \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \

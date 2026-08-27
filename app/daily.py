@@ -527,6 +527,8 @@ def trocar_estudo_amanha(token, tipo, cid):
         draft_store.falhar_troca(r, msg)
         deliver.enviar_curador(f"⚠️ {msg}")
         return None
+    novo["token_anterior"] = token     # amarra este rascunho ao token que a troca substituiu:
+    draft_store.salvar(novo)           # status_troca só devolve "pronto" pra quem começou ESTA troca
     try:            # grava o slot de amanhã no escolhido, consome e devolve o atual ao pool (igual ao materialize; guarda p/ observabilidade — roda em thread)
         art = novo.get("artigo", {})
         tema = art.get("tema", "")
