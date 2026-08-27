@@ -99,5 +99,164 @@ class TestFalharTroca(unittest.TestCase):
         m_salvar.assert_called_once_with(r)
 
 
+def _extrair_script(html, marca="troca-status"):
+    for corpo in re.findall(r"<script>(.*?)</script>", html, re.S):
+        if marca in corpo:
+            return corpo
+    raise AssertionError("o <script> da troca não está na página")
+
+
+class TestPaginaTrocando(unittest.TestCase):
+    def test_traz_os_ganchos_que_o_js_procura(self):
+        import review_web
+        h = review_web.pagina_trocando("tok-velho", "2026-08-27")
+        self.assertIn('id="troca-status"', h)
+        self.assertIn('data-token="tok-velho"', h)
+        self.assertIn('data-data="2026-08-27"', h)
+        self.assertIn('class="troca-espera"', h)
+        self.assertIn("troca-status", _extrair_script(h))
+
+    def test_escapa_token_no_atributo(self):
+        import review_web
+        h = review_web.pagina_trocando('tok"malicioso', "2026-08-27")
+        self.assertIn('data-token="tok&quot;malicioso"', h)
+
+    def test_sem_js_mostra_o_texto_estatico_de_hoje(self):
+        import review_web
+        h = review_web.pagina_trocando("tok", "2026-08-27")
+        self.assertIn("Pode fechar esta página", h)
+
+
+_SHIM = r"""
+'use strict';
+// -- shim de DOM minimo: so o que o script de troca-status usa --------------
+var agora = 0;                                    // relogio falso (Date.now)
+global.Date = { now: function(){ return agora; } };
+function avancarRelogio(ms){ agora += ms; }
+
+function El(tag, attrs){
+  this.tagName = tag; this.attrs = attrs || {}; this._texto = '';
+}
+Object.defineProperty(El.prototype, 'textContent', {
+  get: function(){ return this._texto; },
+  set: function(v){ this._texto = String(v); }
+});
+El.prototype.getAttribute = function(k){ return this.attrs[k] === undefined ? null : this.attrs[k]; };
+
+var espera = new El('span', {});
+espera.textContent = 'O novo resumo esta sendo gerado. Em ~1-2 min voce recebe no WhatsApp ' +
+  'o estudo novo (com PDF, audio e um link de revisao novo). Pode fechar esta pagina.';
+
+var statusEl = new El('div', {'data-token': 'tok-velho', 'data-data': '2026-08-27'});
+statusEl._html = '';
+statusEl._substituido = false;
+Object.defineProperty(statusEl, 'innerHTML', {
+  get: function(){ return this._html; },
+  set: function(v){ this._html = v; this._substituido = true; }
+});
+statusEl.querySelector = function(sel){
+  return (sel === '.troca-espera' && !this._substituido) ? espera : null;
+};
+
+var mapa = {'troca-status': statusEl};
+function removerElemento(){ mapa['troca-status'] = null; }
+function removerAtributos(){ statusEl.attrs = {}; }
+
+global.document = { getElementById: function(id){ return mapa[id] || null; } };
+
+var timers = [];
+global.setInterval = function(fn){ timers.push({fn: fn, vivo: true}); return timers.length; };
+global.clearInterval = function(id){ if (timers[id - 1]) timers[id - 1].vivo = false; };
+function tick(){ timers.forEach(function(t){ if (t.vivo) t.fn(); }); }
+
+var filaRespostas = [];
+function enfileirar(j){ filaRespostas.push(j); }
+function fetchPadrao(){
+  var resp = filaRespostas.length ? filaRespostas.shift() : {status: 'andamento'};
+  return Promise.resolve({ json: function(){ return Promise.resolve(resp); } });
+}
+global.fetch = fetchPadrao;
+global.window = { fetch: fetchPadrao };
+
+function relatarDepois(){
+  setTimeout(function(){
+    console.log(JSON.stringify({
+      html: statusEl._html,
+      esperaTexto: espera.textContent,
+      timerVivo: timers.length ? timers[0].vivo : null
+    }));
+  }, 0);
+}
+"""
+
+
+@unittest.skipUnless(_NODE, "node não está no PATH — teste de comportamento do JS")
+class TestComportamentoDoJs(unittest.TestCase):
+    """Roda o JS DA PÁGINA (extraído, não copiado) sobre um shim de DOM — mesmo método
+    de `test_upload_progresso.py` (item 34) / `test_cupom_previa_js.py`."""
+
+    @classmethod
+    def setUpClass(cls):
+        import review_web
+        cls.script = _extrair_script(review_web.pagina_trocando("tok-velho", "2026-08-27"))
+        cls.tmp = tempfile.mkdtemp()
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _rodar(self, roteiro, prelude=""):
+        src = _SHIM + "\n" + prelude + "\n" + self.script + "\n" + roteiro
+        caminho = os.path.join(self.tmp, "t.js")
+        with open(caminho, "w", encoding="utf-8") as f:
+            f.write(src)
+        out = subprocess.run([_NODE, caminho], capture_output=True, text=True, timeout=30)
+        if out.returncode != 0:
+            self.fail(f"node falhou: {out.stderr[:900]}")
+        import json
+        return json.loads(out.stdout.strip().splitlines()[-1])
+
+    def test_pronto_mostra_o_link_novo(self):
+        r = self._rodar("enfileirar({status:'pronto', link:'/revisar/novo'}); tick(); relatarDepois();")
+        self.assertIn("Troca conclu", r["html"])
+        self.assertIn("/revisar/novo", r["html"])
+        self.assertFalse(r["timerVivo"])
+
+    def test_erro_mostra_mensagem_e_link_de_volta(self):
+        r = self._rodar(
+            "enfileirar({status:'erro', msg:'Não consegui trocar', voltar:'/revisar/velho'});"
+            " tick(); relatarDepois();")
+        self.assertIn("Não consegui trocar", r["html"])
+        self.assertIn("/revisar/velho", r["html"])
+        self.assertFalse(r["timerVivo"])
+
+    def test_andamento_nao_mexe_na_pagina_antes_do_prazo(self):
+        r = self._rodar("enfileirar({status:'andamento'}); tick(); relatarDepois();")
+        self.assertEqual(r["html"], "")
+        self.assertIn("Pode fechar esta p", r["esperaTexto"])
+        self.assertTrue(r["timerVivo"])
+
+    def test_demora_troca_o_texto_em_vez_de_mentir(self):
+        r = self._rodar(
+            "avancarRelogio(76000); enfileirar({status:'andamento'}); tick(); relatarDepois();")
+        self.assertIn("Ainda trabalhando", r["esperaTexto"])
+        self.assertEqual(r["html"], "")
+
+    def test_erro_de_rede_nao_trava_tenta_de_novo_depois(self):
+        r = self._rodar(
+            "global.fetch = function(){ return Promise.reject(new Error('rede')); };"
+            " tick(); relatarDepois();")
+        self.assertEqual(r["html"], "")
+        self.assertTrue(r["timerVivo"])
+
+    def test_sem_o_elemento_no_dom_o_js_nao_explode(self):
+        r = self._rodar("relatarDepois();", prelude="removerElemento();")
+        self.assertIsNone(r["timerVivo"])
+
+    def test_sem_os_atributos_o_js_nao_explode(self):
+        r = self._rodar("relatarDepois();", prelude="removerAtributos();")
+        self.assertIsNone(r["timerVivo"])
+
+
 if __name__ == "__main__":
     unittest.main()

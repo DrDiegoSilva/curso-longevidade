@@ -162,7 +162,7 @@ class TestReviewWebTrocar(unittest.TestCase):
 
     def test_pagina_trocando(self):
         import review_web
-        self.assertIn("Trocando", review_web.pagina_trocando())
+        self.assertIn("Trocando", review_web.pagina_trocando("tok-velho", "2026-08-27"))
 
     def test_item_com_aviso_de_ja_enviado(self):
         import review_web

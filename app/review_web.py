@@ -218,10 +218,47 @@ def pagina_trocar_estudo(alternativas, r, token, areas=()):
 </body>"""
 
 
-def pagina_trocando():
-    return ('<!doctype html><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width,initial-scale=1">'
-            '<body style="font-family:system-ui;max-width:600px;margin:40px auto;padding:0 16px;color:#1a2b28">'
-            '<h3>🔄 Trocando…</h3>'
-            '<p>O novo resumo está sendo gerado. Em ~1-2 min você recebe no WhatsApp o estudo novo '
-            '(com PDF, áudio e um link de revisão novo). Pode fechar esta página.</p></body>')
+def pagina_trocando(token, data):
+    """Tela pós-troca: consulta /revisar-status a cada ~3s e mostra sozinha quando
+    terminou (sucesso com link novo, ou erro) — sem precisar checar o WhatsApp. Sem
+    JS/fetch, cai pro texto estático (nunca quebra). Ver `draft_store.status_troca`
+    (formato da resposta) e `daily.trocar_estudo_amanha` (quem faz a troca de verdade)."""
+    esc = _html.escape
+    return f"""<!doctype html><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<body style="font-family:system-ui;max-width:600px;margin:40px auto;padding:0 16px;color:#1a2b28">
+<h3>🔄 Trocando…</h3>
+<div id="troca-status" data-token="{esc(token)}" data-data="{esc(data)}">
+<p><span class="troca-espera">O novo resumo está sendo gerado. Em ~1-2 min você recebe no
+WhatsApp o estudo novo (com PDF, áudio e um link de revisão novo). Pode fechar esta página.</span></p>
+</div>
+<script>
+(function(){{
+  var el = document.getElementById('troca-status');
+  if (!el || !window.fetch) return;
+  var token = el.getAttribute('data-token'), data = el.getAttribute('data-data');
+  if (!token || !data) return;
+  var t0 = Date.now(), timer = setInterval(consultar, 3000);
+  function consultar(){{
+    fetch('/revisar-status?token=' + encodeURIComponent(token) + '&data=' + encodeURIComponent(data))
+      .then(function(r){{ return r.json(); }})
+      .then(tratar)
+      .catch(function(){{}});
+  }}
+  function tratar(j){{
+    if (j.status === 'pronto'){{
+      clearInterval(timer);
+      el.innerHTML = '<b>✅ Troca concluída!</b><br><a href="' + j.link + '">Ver a revisão nova</a>';
+    }} else if (j.status === 'erro'){{
+      clearInterval(timer);
+      el.innerHTML = '<b>⚠️ ' + j.msg + '</b><br><a href="' + j.voltar + '">← Voltar pra revisão</a>';
+    }} else if (Date.now() - t0 > 75000){{
+      var esp = el.querySelector('.troca-espera');
+      if (esp) esp.textContent = 'Ainda trabalhando nisso — mais que o esperado. O aviso ' +
+        'também chega no seu WhatsApp assim que terminar.';
+    }}
+  }}
+  consultar();
+}})();
+</script>
+</body>"""
