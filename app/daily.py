@@ -502,7 +502,11 @@ def alternativa_valida(r, tipo, cid):
 def trocar_estudo_amanha(token, tipo, cid):
     """Refaz o rascunho de amanhã a partir do estudo escolhido (roda em thread).
     Grava o slot de amanhã no escolhido (consome, igual ao materialize) e devolve o
-    estudo atual ao pool. Fail-safe: exceção no preparo -> avisa o curador, o antigo fica."""
+    estudo atual ao pool. Fail-safe: exceção no preparo -> avisa o curador, o antigo fica.
+
+    Quando o preparo falha, grava a mensagem em `erro_troca` no MESMO rascunho (token
+    antigo) além do aviso por WhatsApp — é o que `pagina_trocando` mostra sozinha via
+    `draft_store.status_troca`, sem precisar checar o WhatsApp."""
     import db
     r = draft_store.por_token(token)
     if not r:
@@ -519,7 +523,9 @@ def trocar_estudo_amanha(token, tipo, cid):
         print(f"[trocar] preparo do escolhido falhou: {e}", flush=True)
         novo = None
     if not novo:
-        deliver.enviar_curador("⚠️ Não consegui trocar o estudo; o anterior segue valendo.")
+        msg = "Não consegui trocar o estudo; o anterior segue valendo."
+        draft_store.falhar_troca(r, msg)
+        deliver.enviar_curador(f"⚠️ {msg}")
         return None
     try:            # grava o slot de amanhã no escolhido, consome e devolve o atual ao pool (igual ao materialize; guarda p/ observabilidade — roda em thread)
         art = novo.get("artigo", {})

@@ -274,7 +274,7 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         m_res_pool.assert_called_once_with("res_velha")
         m_pool.assert_not_called()
 
-    def test_preparo_falha_avisa_curador_sem_tocar_agenda(self):
+    def test_preparo_falha_avisa_curador_e_grava_erro_no_rascunho(self):
         daily = self.daily
         import db
         r = {"candidato_id": "c_velho", "data": "2026-07-28", "artigo": {"tema": "Obesidade"}}
@@ -282,9 +282,12 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
              mock.patch.object(db, "agenda_upsert") as m_up, \
              mock.patch.object(db, "marcar_candidato_pronto") as m_pool, \
              mock.patch.object(daily, "_preparar_da_reserva", side_effect=RuntimeError("boom")), \
+             mock.patch.object(daily.draft_store, "falhar_troca") as m_falhar, \
              mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
             out = daily.trocar_estudo_amanha("tok", "reserva", "res_x")
         self.assertIsNone(out)
+        m_falhar.assert_called_once_with(
+            r, "Não consegui trocar o estudo; o anterior segue valendo.")
         m_cur.assert_called_once()
         m_up.assert_not_called()
         m_pool.assert_not_called()
