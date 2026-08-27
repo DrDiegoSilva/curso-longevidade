@@ -276,6 +276,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Link inválido/expirado</h3>", 404)
             return self._html(review_web.pagina_revisao(r, audio_on=config.audio_ligado(),
                                                         areas=area_estudo.areas()), 200)
+        if path == "/revisar-status":
+            import draft_store
+            q = up.parse_qs(up.urlparse(self.path).query)
+            tok = (q.get("token") or [""])[0]
+            data = (q.get("data") or [""])[0]
+            return self._json(draft_store.status_troca(tok, data))
         if path.startswith("/pdf/"):
             import config, draft_store
             parts = [p for p in path.split("/pdf/", 1)[1].split("/") if p]
@@ -795,9 +801,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     return self._html(review_web.pagina_revisao(
                         r, aviso="Esse estudo saiu da lista — escolha outro.",
                         audio_on=config.audio_ligado(), areas=areas))
+                draft_store.iniciar_troca(r)
                 threading.Thread(target=daily.trocar_estudo_amanha,
                                  args=(tok, tipo, cid), daemon=True).start()
-                return self._html(review_web.pagina_trocando())
+                return self._html(review_web.pagina_trocando(tok, r["data"]))
             if area_estudo.correcao_bloqueada(r, g("area")):
                 # "Feito ✅" numa correção que não corrige é a armadilha que criou o item 36.
                 return self._html(review_web.pagina_revisao(
