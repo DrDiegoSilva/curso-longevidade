@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__easypanel__inspect_app|mcp__easypanel__inspect_compose|mcp__easypanel__inspect_database|mcp__easypanel__trpc_raw",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/block-easypanel-inspect.py\"",
+            "statusMessage": "Checando vazamento de credenciais do EasyPanel..."
+          }
+        ]
+      }
+    ]
+  }
+}

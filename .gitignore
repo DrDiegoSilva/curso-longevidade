@@ -4,7 +4,10 @@ __pycache__/
 app/logs/
 app/Curso_Longevidade_DrDiego.html
 app/resumos_enviados.jsonl
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/**
 .playwright-mcp/
 .serena/
 
