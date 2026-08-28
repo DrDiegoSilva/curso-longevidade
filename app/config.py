@@ -259,6 +259,13 @@ try:
 except ValueError:
     USD_BRL = 5.50
 
+# Teto diário de gasto de IA (R$) que dispara alerta por WhatsApp pro admin -- ver
+# ia_custo._checar_alerta_do_dia. Corrigível sem deploy via DSCURSO_LIMIAR_CUSTO_DIA.
+try:
+    LIMIAR_CUSTO_DIA_BRL = float(os.environ.get("DSCURSO_LIMIAR_CUSTO_DIA") or 20.0)
+except ValueError:
+    LIMIAR_CUSTO_DIA_BRL = 20.0
+
 # Chave de ADMIN da organização Anthropic — diferente da que o app usa pra gerar conteúdo.
 # Só serve pra ler a fatura (Admin API). Sem ela, a tela de custos mostra só o nosso ledger.
 ANTHROPIC_ADMIN_KEY = os.environ.get("DSCURSO_ANTHROPIC_ADMIN_KEY") or ""
