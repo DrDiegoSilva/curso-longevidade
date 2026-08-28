@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -179,6 +180,97 @@ class TestRegistrarNuncaLevanta(unittest.TestCase):
             self.ia.registrar("kit", "claude-sonnet-4-6", 100, 10, 1)  # não pode levantar
         finally:
             self.db.registrar_ia_uso = original
+
+
+class TestAlertaDeCustoAbusivo(unittest.TestCase):
+    """Segunda camada depois do vazamento de credenciais via EasyPanel (2026-08-27):
+    se o gasto de HOJE passar do teto, avisa o Diego por WhatsApp -- só uma vez por
+    dia, nunca derruba a geração. Mesmo isolamento de banco de TestRegistrarNuncaLevanta."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.snap = (os.environ.get("DSCURSO_ARTIGOS_DB"), os.environ.get("DATABASE_URL"),
+                     os.environ.get("DSCURSO_LIMIAR_CUSTO_DIA"))
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ.pop("DATABASE_URL", None)
+
+    def tearDown(self):
+        artigos, database_url, limiar = self.snap
+        for k, v in (("DSCURSO_ARTIGOS_DB", artigos), ("DATABASE_URL", database_url),
+                     ("DSCURSO_LIMIAR_CUSTO_DIA", limiar)):
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        import config, db
+        importlib.reload(config)
+        importlib.reload(db)
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _modulos(self, limiar):
+        os.environ["DSCURSO_LIMIAR_CUSTO_DIA"] = str(limiar)
+        import config, db, ia_custo
+        importlib.reload(config)
+        importlib.reload(db)
+        importlib.reload(ia_custo)
+        return config, db, ia_custo
+
+    def test_abaixo_do_teto_nao_avisa(self):
+        cfg, db, ia = self._modulos(1_000_000)  # teto altíssimo -- 1 chamada não estoura
+        with mock.patch("deliver.enviar_admin") as m_env:
+            ia.registrar("kit", "claude-sonnet-4-6", 100, 10, 1)
+        m_env.assert_not_called()
+        self.assertEqual(db.get_config("custo_alerta_ultimo_dia"), "")
+
+    def test_acima_do_teto_avisa_uma_vez_e_marca_o_dia(self):
+        cfg, db, ia = self._modulos(0.001)  # teto baixíssimo -- 1 chamada já estoura
+        with mock.patch("deliver.enviar_admin") as m_env:
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)
+        m_env.assert_called_once()
+        from datetime import datetime
+        self.assertEqual(db.get_config("custo_alerta_ultimo_dia"),
+                         datetime.now().strftime("%Y-%m-%d"))
+
+    def test_segunda_chamada_no_mesmo_dia_nao_avisa_de_novo(self):
+        cfg, db, ia = self._modulos(0.001)
+        with mock.patch("deliver.enviar_admin") as m_env:
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)
+        m_env.assert_called_once()
+
+    def test_dia_diferente_volta_a_poder_avisar(self):
+        cfg, db, ia = self._modulos(0.001)
+        db.init()
+        db.set_config("custo_alerta_ultimo_dia", "2000-01-01")
+        with mock.patch("deliver.enviar_admin") as m_env:
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)
+        m_env.assert_called_once()
+
+    def test_falha_no_envio_nao_propaga(self):
+        cfg, db, ia = self._modulos(0.001)
+        with mock.patch("deliver.enviar_admin", side_effect=RuntimeError("whatsapp caiu")):
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)  # não pode levantar
+
+    def test_dia_e_marcado_mesmo_se_o_envio_falhar(self):
+        """O dia tem que ser marcado ANTES de tentar enviar: senão, uma falha de envio
+        deixa o dia sem marca e a PRÓXIMA chamada de `registrar` (um job de conteúdo
+        sozinho faz dezenas no mesmo dia) reenvia o mesmo aviso -- exatamente o spam que
+        a marca de "uma vez por dia" existe pra evitar."""
+        cfg, db, ia = self._modulos(0.001)
+        with mock.patch("deliver.enviar_admin", side_effect=RuntimeError("whatsapp caiu")):
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)  # não pode levantar
+        from datetime import datetime
+        self.assertEqual(db.get_config("custo_alerta_ultimo_dia"),
+                         datetime.now().strftime("%Y-%m-%d"))
+
+    def test_falha_ao_ler_o_resumo_nao_propaga(self):
+        cfg, db, ia = self._modulos(0.001)
+        with mock.patch.object(db, "resumo_ia_uso", side_effect=RuntimeError("banco caiu")):
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)  # não pode levantar
+
+    def test_override_de_env_muda_o_teto(self):
+        cfg, db, ia = self._modulos(5)
+        self.assertEqual(cfg.LIMIAR_CUSTO_DIA_BRL, 5.0)
 
 
 class TestVocabularioDeRotulos(unittest.TestCase):

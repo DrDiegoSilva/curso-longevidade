@@ -52,6 +52,37 @@ def registrar(acao, modelo, unidades_in, unidades_out=0, chamadas=1):
                             unidades_out, chamadas)
     except Exception as e:
         print(f"[custo] não registrei o uso ({acao}): {e}", flush=True)
+        return
+    _checar_alerta_do_dia()
+
+
+def _checar_alerta_do_dia():
+    """Se o gasto de HOJE passar do teto (`config.LIMIAR_CUSTO_DIA_BRL`) e ainda não
+    tiver avisado hoje, manda WhatsApp pro admin (não pros curadores convidados -- é
+    assunto de conta, não de curadoria) e marca o dia como avisado em `settings`
+    (chave/valor já existente -- nunca `/data`, que é apagado a cada deploy/restart).
+    Dispara só uma vez por dia: um job de conteúdo sozinho já gera dezenas de chamadas
+    de IA, e sem essa marca viraria spam de WhatsApp a cada uma delas. NUNCA levanta --
+    mesma garantia de `registrar`."""
+    try:
+        import config, db, deliver
+        from datetime import datetime
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        if db.get_config("custo_alerta_ultimo_dia") == hoje:
+            return
+        gasto_brl = em_brl(total_usd(db.resumo_ia_uso(hoje)))
+        if gasto_brl > config.LIMIAR_CUSTO_DIA_BRL:
+            # Marca ANTES de enviar: `enviar_admin` nunca levanta (engole falha de envio
+            # por número), então não há "retry" a proteger deixando o dia sem marca --
+            # só o risco de reenviar a cada uma das dezenas de chamadas que um job de
+            # conteúdo faz no mesmo dia, se o set_config vier depois e algo interromper
+            # entre as duas chamadas.
+            db.set_config("custo_alerta_ultimo_dia", hoje)
+            deliver.enviar_admin(
+                f"⚠️ Gasto de IA hoje já passou de R$ {config.LIMIAR_CUSTO_DIA_BRL:.0f}: "
+                f"R$ {gasto_brl:.2f}. Abra Custos no painel.")
+    except Exception as e:
+        print(f"[custo] checagem de alerta falhou: {e}", flush=True)
 
 
 def total_usd(linhas):
