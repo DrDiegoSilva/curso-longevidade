@@ -220,6 +220,7 @@ class TestAlertaDeCustoAbusivo(unittest.TestCase):
         with mock.patch("deliver.enviar_admin") as m_env:
             ia.registrar("kit", "claude-sonnet-4-6", 100, 10, 1)
         m_env.assert_not_called()
+        self.assertEqual(db.get_config("custo_alerta_ultimo_dia"), "")
 
     def test_acima_do_teto_avisa_uma_vez_e_marca_o_dia(self):
         cfg, db, ia = self._modulos(0.001)  # teto baixíssimo -- 1 chamada já estoura
@@ -249,6 +250,18 @@ class TestAlertaDeCustoAbusivo(unittest.TestCase):
         cfg, db, ia = self._modulos(0.001)
         with mock.patch("deliver.enviar_admin", side_effect=RuntimeError("whatsapp caiu")):
             ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)  # não pode levantar
+
+    def test_dia_e_marcado_mesmo_se_o_envio_falhar(self):
+        """O dia tem que ser marcado ANTES de tentar enviar: senão, uma falha de envio
+        deixa o dia sem marca e a PRÓXIMA chamada de `registrar` (um job de conteúdo
+        sozinho faz dezenas no mesmo dia) reenvia o mesmo aviso -- exatamente o spam que
+        a marca de "uma vez por dia" existe pra evitar."""
+        cfg, db, ia = self._modulos(0.001)
+        with mock.patch("deliver.enviar_admin", side_effect=RuntimeError("whatsapp caiu")):
+            ia.registrar("kit", "claude-sonnet-4-6", 1_000_000, 0, 1)  # não pode levantar
+        from datetime import datetime
+        self.assertEqual(db.get_config("custo_alerta_ultimo_dia"),
+                         datetime.now().strftime("%Y-%m-%d"))
 
     def test_falha_ao_ler_o_resumo_nao_propaga(self):
         cfg, db, ia = self._modulos(0.001)

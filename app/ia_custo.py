@@ -72,10 +72,15 @@ def _checar_alerta_do_dia():
             return
         gasto_brl = em_brl(total_usd(db.resumo_ia_uso(hoje)))
         if gasto_brl > config.LIMIAR_CUSTO_DIA_BRL:
+            # Marca ANTES de enviar: `enviar_admin` nunca levanta (engole falha de envio
+            # por número), então não há "retry" a proteger deixando o dia sem marca --
+            # só o risco de reenviar a cada uma das dezenas de chamadas que um job de
+            # conteúdo faz no mesmo dia, se o set_config vier depois e algo interromper
+            # entre as duas chamadas.
+            db.set_config("custo_alerta_ultimo_dia", hoje)
             deliver.enviar_admin(
                 f"⚠️ Gasto de IA hoje já passou de R$ {config.LIMIAR_CUSTO_DIA_BRL:.0f}: "
-                f"R$ {gasto_brl:.2f}. Detalhe: {config.PUBLIC_URL}/admin/custos?token={config.ADMIN_TOKEN}")
-            db.set_config("custo_alerta_ultimo_dia", hoje)
+                f"R$ {gasto_brl:.2f}. Abra Custos no painel.")
     except Exception as e:
         print(f"[custo] checagem de alerta falhou: {e}", flush=True)
 
