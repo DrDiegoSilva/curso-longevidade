@@ -1964,100 +1964,128 @@ def obter(s, data):
 
 
 # ---------------------------------------------------------------- trilha
-def trilha_upsert_peca(numero, eixo, titulo, corpo, micro_resultado,
-                       mentalidade, ferramenta_slug=""):
-    """Grava (ou atualiza) a peça `numero`. É upsert de propósito: editar o arquivo
-    em seed/trilha/ e redeployar tem que propagar o texto novo, não criar duplicata."""
+def trilha_upsert_peca(produto, numero, eixo, titulo, corpo, micro_resultado,
+                       mentalidade, aviso="", ferramenta_slug=""):
+    """Grava (ou atualiza) a peça `numero` do `produto`. Upsert de propósito: editar
+    o arquivo em seed/<produto>/ e redeployar propaga o texto novo, não duplica."""
     from datetime import datetime
     with _conn() as c:
         c.execute(
             "INSERT INTO trilha_pecas "
-            "(numero,eixo,titulo,corpo,micro_resultado,mentalidade,ferramenta_slug,ativa,atualizado_em) "
-            "VALUES (?,?,?,?,?,?,?,1,?) "
-            "ON CONFLICT (numero) DO UPDATE SET eixo=excluded.eixo, titulo=excluded.titulo, "
-            "corpo=excluded.corpo, micro_resultado=excluded.micro_resultado, "
-            "mentalidade=excluded.mentalidade, ferramenta_slug=excluded.ferramenta_slug, "
+            "(produto,numero,eixo,titulo,corpo,micro_resultado,mentalidade,aviso,"
+            "ferramenta_slug,ativa,atualizado_em) "
+            "VALUES (?,?,?,?,?,?,?,?,?,1,?) "
+            "ON CONFLICT (produto,numero) DO UPDATE SET eixo=excluded.eixo, "
+            "titulo=excluded.titulo, corpo=excluded.corpo, "
+            "micro_resultado=excluded.micro_resultado, mentalidade=excluded.mentalidade, "
+            "aviso=excluded.aviso, ferramenta_slug=excluded.ferramenta_slug, "
             "atualizado_em=excluded.atualizado_em",
-            (int(numero), eixo or "", titulo or "", corpo or "", micro_resultado or "",
-             mentalidade or "", ferramenta_slug or "", datetime.now().isoformat()))
+            (produto, int(numero), eixo or "", titulo or "", corpo or "",
+             micro_resultado or "", mentalidade or "", aviso or "", ferramenta_slug or "",
+             datetime.now().isoformat()))
 
 
 def trilha_peca(produto, numero):
     with _conn() as c:
         r = c.execute("SELECT * FROM trilha_pecas WHERE produto=? AND numero=? AND ativa=1",
-                      (produto or "empreendedorismo", int(numero))).fetchone()
+                      (produto, int(numero))).fetchone()
     return dict(r) if r else None
 
 
-def trilha_posicao(sub_id):
-    """Posição do assinante na trilha. Quem nunca recebeu nasce em 1."""
+def trilha_posicao(sub_id, produto):
+    """Posição do assinante nesse produto. Quem nunca recebeu nasce em 1 (cria a
+    linha). Para checar sem criar, ver `trilha_posicao_leitura`."""
     with _conn() as c:
-        c.execute("INSERT INTO trilha_progresso (subscriber_id,proxima_peca,ultimo_envio) "
-                  "VALUES (?,1,'') ON CONFLICT (subscriber_id) DO NOTHING", (sub_id or "",))
-        r = c.execute("SELECT proxima_peca FROM trilha_progresso WHERE subscriber_id=?",
-                      (sub_id or "",)).fetchone()
+        c.execute("INSERT INTO trilha_progresso (subscriber_id,produto,proxima_peca,ultimo_envio) "
+                  "VALUES (?,?,1,'') ON CONFLICT (subscriber_id,produto) DO NOTHING",
+                  (sub_id or "", produto))
+        r = c.execute("SELECT proxima_peca FROM trilha_progresso "
+                      "WHERE subscriber_id=? AND produto=?", (sub_id or "", produto)).fetchone()
     return int(r["proxima_peca"]) if r else 1
 
 
-def trilha_registrar_envio(sub_id, numero):
-    """Claim atômico do envio de UMA peça a UM assinante. True só na 1ª vez.
-    Mesma defesa de `registrar_envio_assinante`: mata reenvio em restart/retry."""
+def trilha_posicao_leitura(sub_id, produto):
+    """Posição do assinante nesse produto, ou None se ele NUNCA começou (não cria
+    linha). Usado só pra decidir qual produto ele está fazendo agora
+    (`trilha.produto_do_assinante`) -- chamar `trilha_posicao` aqui inscreveria
+    todo mundo em todo produto do catálogo só de perguntar."""
+    with _conn() as c:
+        r = c.execute("SELECT proxima_peca FROM trilha_progresso "
+                      "WHERE subscriber_id=? AND produto=?", (sub_id or "", produto)).fetchone()
+    return int(r["proxima_peca"]) if r else None
+
+
+def trilha_registrar_envio(sub_id, produto, numero):
+    """Claim atômico do envio de UMA peça a UM assinante. True só na 1ª vez."""
     from datetime import datetime
     with _conn() as c:
-        cur = c.execute("INSERT INTO trilha_envios (subscriber_id,numero,enviado_em,feito_em) "
-                        "VALUES (?,?,?,NULL) ON CONFLICT (subscriber_id,numero) DO NOTHING",
-                        (sub_id or "", int(numero), datetime.now().isoformat()))
+        # Cria a linha de progresso se não existir (assinante "entra" no produto ao receber)
+        c.execute("INSERT INTO trilha_progresso (subscriber_id,produto,proxima_peca,ultimo_envio) "
+                  "VALUES (?,?,1,'') ON CONFLICT (subscriber_id,produto) DO NOTHING",
+                  (sub_id or "", produto))
+        cur = c.execute(
+            "INSERT INTO trilha_envios (subscriber_id,produto,numero,enviado_em,feito_em) "
+            "VALUES (?,?,?,?,NULL) ON CONFLICT (subscriber_id,produto,numero) DO NOTHING",
+            (sub_id or "", produto, int(numero), datetime.now().isoformat()))
         return cur.rowcount > 0
 
 
-def trilha_avancar(sub_id, numero):
+def trilha_avancar(sub_id, produto, numero):
     """Move a posição para `numero`+1. Chamado SÓ depois do envio dar certo."""
     from datetime import datetime
     agora = datetime.now().isoformat()
     with _conn() as c:
-        c.execute("INSERT INTO trilha_progresso (subscriber_id,proxima_peca,ultimo_envio) "
-                  "VALUES (?,?,?) ON CONFLICT (subscriber_id) DO UPDATE SET "
+        c.execute("INSERT INTO trilha_progresso (subscriber_id,produto,proxima_peca,ultimo_envio) "
+                  "VALUES (?,?,?,?) ON CONFLICT (subscriber_id,produto) DO UPDATE SET "
                   "proxima_peca=excluded.proxima_peca, ultimo_envio=excluded.ultimo_envio",
-                  (sub_id or "", int(numero) + 1, agora))
+                  (sub_id or "", produto, int(numero) + 1, agora))
 
 
-def trilha_marcar_feito(sub_id, numero):
-    """Marca o '✅ fiz'. False se a peça não foi enviada a ele ou já estava marcada
-    (o botão é idempotente: 2º clique não duplica nem mente pro usuário)."""
+def trilha_marcar_feito(sub_id, produto, numero):
     from datetime import datetime
     with _conn() as c:
         cur = c.execute("UPDATE trilha_envios SET feito_em=? "
-                        "WHERE subscriber_id=? AND numero=? AND feito_em IS NULL",
-                        (datetime.now().isoformat(), sub_id or "", int(numero)))
+                        "WHERE subscriber_id=? AND produto=? AND numero=? AND feito_em IS NULL",
+                        (datetime.now().isoformat(), sub_id or "", produto, int(numero)))
         return cur.rowcount > 0
 
 
-def trilha_fez(sub_id, numero):
+def trilha_fez(sub_id, produto, numero):
     with _conn() as c:
-        r = c.execute("SELECT 1 FROM trilha_envios WHERE subscriber_id=? AND numero=? "
-                      "AND feito_em IS NOT NULL", (sub_id or "", int(numero))).fetchone()
+        r = c.execute("SELECT 1 FROM trilha_envios WHERE subscriber_id=? AND produto=? "
+                      "AND numero=? AND feito_em IS NOT NULL",
+                      (sub_id or "", produto, int(numero))).fetchone()
     return r is not None
 
 
-def trilha_historico(sub_id):
+def trilha_historico(sub_id, produto):
     with _conn() as c:
         rows = c.execute("SELECT numero, enviado_em, feito_em FROM trilha_envios "
-                         "WHERE subscriber_id=? ORDER BY numero DESC", (sub_id or "",)).fetchall()
+                         "WHERE subscriber_id=? AND produto=? ORDER BY numero DESC",
+                         (sub_id or "", produto)).fetchall()
     return [dict(r) for r in rows]
 
 
-def trilha_painel():
-    """Uma linha por assinante que já entrou na trilha: posição, quantas recebeu e
-    quantas marcou como feitas. Alimenta /admin/trilha."""
+def trilha_painel(produto):
+    """Uma linha por assinante que já entrou nesse produto: posição, quantas
+    recebeu e quantas marcou como feitas. Alimenta /admin/trilha."""
     with _conn() as c:
         rows = c.execute(
             "SELECT p.subscriber_id AS subscriber_id, p.proxima_peca AS proxima_peca, "
-            "COUNT(e.numero) AS enviadas, "
-            "COUNT(e.feito_em) AS feitas "
+            "COUNT(e.numero) AS enviadas, COUNT(e.feito_em) AS feitas "
             "FROM trilha_progresso p LEFT JOIN trilha_envios e "
-            "ON e.subscriber_id = p.subscriber_id "
+            "ON e.subscriber_id = p.subscriber_id AND e.produto = p.produto "
+            "WHERE p.produto=? "
             "GROUP BY p.subscriber_id, p.proxima_peca "
-            "ORDER BY p.proxima_peca DESC").fetchall()
+            "ORDER BY p.proxima_peca DESC", (produto,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def trilha_listar_pecas(produto):
+    """Todas as peças do produto, em ordem. Alimenta a prévia do admin."""
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM trilha_pecas WHERE produto=? ORDER BY numero",
+                         (produto,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -2101,13 +2129,6 @@ def resumo_ia_uso(desde, ate=None):
           " ORDER BY substr(quando,1,10) DESC, acao, modelo")
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
-
-
-def trilha_listar_pecas():
-    """Todas as peças, em ordem. Alimenta a prévia do admin."""
-    with _conn() as c:
-        rows = c.execute("SELECT * FROM trilha_pecas ORDER BY numero").fetchall()
-    return [dict(r) for r in rows]
 
 
 # ---------------------------------------------------------------- exclusão do corpus

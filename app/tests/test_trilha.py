@@ -27,66 +27,103 @@ class TestBancoTrilha(unittest.TestCase):
         self.tmp = tempfile.mkdtemp()
         self.cfg, self.db, self.subs = _recarregar(self.tmp)
 
-    def _peca(self, numero=1):
-        self.db.trilha_upsert_peca(numero, "Saber onde você está", f"Peça {numero}",
-                                   "corpo", "micro", "mentalidade", "")
+    def _peca(self, produto="empreendedorismo", numero=1):
+        self.db.trilha_upsert_peca(produto, numero, "Saber onde você está", f"Peça {numero}",
+                                   "corpo", "micro", "mentalidade", "", "")
 
     def test_upsert_peca_grava_e_le(self):
-        self._peca(1)
-        p = self.db.trilha_peca(1)
+        self._peca()
+        p = self.db.trilha_peca("empreendedorismo", 1)
         self.assertEqual(p["titulo"], "Peça 1")
         self.assertEqual(p["micro_resultado"], "micro")
+        self.assertEqual(p["produto"], "empreendedorismo")
 
     def test_upsert_peca_atualiza_em_vez_de_duplicar(self):
-        self._peca(1)
-        self.db.trilha_upsert_peca(1, "eixo novo", "Título novo", "c", "m", "t", "")
-        self.assertEqual(self.db.trilha_peca(1)["titulo"], "Título novo")
+        self._peca()
+        self.db.trilha_upsert_peca("empreendedorismo", 1, "eixo novo", "Título novo",
+                                   "c", "m", "t", "", "")
+        self.assertEqual(self.db.trilha_peca("empreendedorismo", 1)["titulo"], "Título novo")
+
+    def test_dois_produtos_podem_usar_o_mesmo_numero(self):
+        # a razão de existir do `produto` na chave: sem ele, a peça 1 de
+        # "peptideos" pisaria na peça 1 de "empreendedorismo".
+        self._peca("empreendedorismo", 1)
+        self.db.trilha_upsert_peca("peptideos", 1, "eixo", "Peça peptídeo 1",
+                                   "corpo p", "", "", "aviso p", "")
+        self.assertEqual(self.db.trilha_peca("empreendedorismo", 1)["titulo"], "Peça 1")
+        self.assertEqual(self.db.trilha_peca("peptideos", 1)["titulo"], "Peça peptídeo 1")
+        self.assertEqual(self.db.trilha_peca("peptideos", 1)["aviso"], "aviso p")
 
     def test_peca_inexistente_devolve_none(self):
-        self.assertIsNone(self.db.trilha_peca(13))
+        self.assertIsNone(self.db.trilha_peca("empreendedorismo", 13))
 
     def test_posicao_nasce_em_1(self):
-        self.assertEqual(self.db.trilha_posicao("sub-a"), 1)
+        self.assertEqual(self.db.trilha_posicao("sub-a", "empreendedorismo"), 1)
+
+    def test_posicao_leitura_nao_cria_linha_quando_nunca_comecou(self):
+        self.assertIsNone(self.db.trilha_posicao_leitura("sub-a", "peptideos"))
+        # confirma que NÃO criou linha (senão a próxima leitura devolveria 1, não None)
+        self.assertIsNone(self.db.trilha_posicao_leitura("sub-a", "peptideos"))
+
+    def test_posicao_leitura_reflete_avanco(self):
+        self.db.trilha_avancar("sub-a", "empreendedorismo", 1)
+        self.assertEqual(self.db.trilha_posicao_leitura("sub-a", "empreendedorismo"), 2)
 
     def test_registrar_envio_e_idempotente(self):
-        self.assertTrue(self.db.trilha_registrar_envio("sub-a", 1))    # 1ª vez
-        self.assertFalse(self.db.trilha_registrar_envio("sub-a", 1))   # repetido
-        self.assertTrue(self.db.trilha_registrar_envio("sub-a", 2))    # outra peça
-        self.assertTrue(self.db.trilha_registrar_envio("sub-b", 1))    # outro assinante
+        self.assertTrue(self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1))
+        self.assertFalse(self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1))
+        self.assertTrue(self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 2))
+        self.assertTrue(self.db.trilha_registrar_envio("sub-b", "empreendedorismo", 1))
+        # mesmo numero, produto diferente -- não é a mesma linha
+        self.assertTrue(self.db.trilha_registrar_envio("sub-a", "peptideos", 1))
 
     def test_avancar_move_a_posicao(self):
-        self.db.trilha_avancar("sub-a", 1)
-        self.assertEqual(self.db.trilha_posicao("sub-a"), 2)
+        self.db.trilha_avancar("sub-a", "empreendedorismo", 1)
+        self.assertEqual(self.db.trilha_posicao("sub-a", "empreendedorismo"), 2)
 
     def test_marcar_feito_e_idempotente(self):
-        self.db.trilha_registrar_envio("sub-a", 1)
-        self.assertFalse(self.db.trilha_fez("sub-a", 1))
-        self.assertTrue(self.db.trilha_marcar_feito("sub-a", 1))
-        self.assertTrue(self.db.trilha_fez("sub-a", 1))
-        self.assertFalse(self.db.trilha_marcar_feito("sub-a", 1))   # 2º clique não duplica
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        self.assertFalse(self.db.trilha_fez("sub-a", "empreendedorismo", 1))
+        self.assertTrue(self.db.trilha_marcar_feito("sub-a", "empreendedorismo", 1))
+        self.assertTrue(self.db.trilha_fez("sub-a", "empreendedorismo", 1))
+        self.assertFalse(self.db.trilha_marcar_feito("sub-a", "empreendedorismo", 1))
 
     def test_marcar_feito_em_peca_nao_enviada_nao_grava(self):
-        self.assertFalse(self.db.trilha_marcar_feito("sub-a", 7))
-        self.assertFalse(self.db.trilha_fez("sub-a", 7))
+        self.assertFalse(self.db.trilha_marcar_feito("sub-a", "empreendedorismo", 7))
+        self.assertFalse(self.db.trilha_fez("sub-a", "empreendedorismo", 7))
 
     def test_historico_vem_do_mais_recente(self):
-        self.db.trilha_registrar_envio("sub-a", 1)
-        self.db.trilha_registrar_envio("sub-a", 2)
-        h = self.db.trilha_historico("sub-a")
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 2)
+        h = self.db.trilha_historico("sub-a", "empreendedorismo")
         self.assertEqual([x["numero"] for x in h], [2, 1])
 
+    def test_historico_nao_mistura_produtos(self):
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        self.db.trilha_registrar_envio("sub-a", "peptideos", 1)
+        self.assertEqual(len(self.db.trilha_historico("sub-a", "empreendedorismo")), 1)
+        self.assertEqual(len(self.db.trilha_historico("sub-a", "peptideos")), 1)
+
     def test_painel_conta_enviadas_e_feitas(self):
-        self.db.trilha_registrar_envio("sub-a", 1)
-        self.db.trilha_registrar_envio("sub-a", 2)
-        self.db.trilha_marcar_feito("sub-a", 1)
-        self.db.trilha_avancar("sub-a", 2)
-        linha = [l for l in self.db.trilha_painel() if l["subscriber_id"] == "sub-a"][0]
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 2)
+        self.db.trilha_marcar_feito("sub-a", "empreendedorismo", 1)
+        self.db.trilha_avancar("sub-a", "empreendedorismo", 2)
+        linha = [l for l in self.db.trilha_painel("empreendedorismo")
+                if l["subscriber_id"] == "sub-a"][0]
         self.assertEqual(linha["enviadas"], 2)
         self.assertEqual(linha["feitas"], 1)
         self.assertEqual(linha["proxima_peca"], 3)
 
+    def test_painel_nao_mistura_produtos(self):
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        self.db.trilha_registrar_envio("sub-a", "peptideos", 1)
+        self.db.trilha_registrar_envio("sub-a", "peptideos", 2)
+        linha_pep = [l for l in self.db.trilha_painel("peptideos")
+                    if l["subscriber_id"] == "sub-a"][0]
+        self.assertEqual(linha_pep["enviadas"], 2)
+
     def test_tabelas_novas_estao_na_lista_de_rls(self):
-        # fora de _TABELAS, a tabela fica exposta na Data API pública do Supabase
         for t in ("trilha_pecas", "trilha_progresso", "trilha_envios"):
             self.assertIn(t, self.db._TABELAS)
 
