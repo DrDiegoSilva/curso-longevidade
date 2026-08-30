@@ -47,6 +47,32 @@
 - Produces: `config.TRILHAS` (dict, chave = id do produto: `"empreendedorismo"`, `"peptideos"`; valores: `nome`, `total`, `dir`, `pecas_por_envio`, `exige_aviso`), `config.TRILHA_DIA` (str, inalterado).
 - Produces: `db._tem_coluna(c, tabela, coluna) -> bool`, `db._migrar_trilha_multiproduto()` (chamada de dentro de `db.init()`).
 
+**⚠️ Achado durante a execução (revisão da Task 1):** `TRILHA_NOME`/`TRILHA_TOTAL`/`TRILHA_DIR`
+NÃO viram aliases de compatibilidade — o catálogo os SUBSTITUI, ponto. A 1ª tentativa de
+implementação adicionou aliases não pedidos pelo brief; a revisão pegou porque isso mascarava o
+raio de impacto real da mudança. Consequência direta e necessária de remover esses 3 nomes:
+- `app/tests/test_pdf_trilha.py`, classe `TestCapaNova` — usa `mock.patch("config.TRILHA_NOME", ...)`
+  e `mock.patch("config.TRILHA_TOTAL", ...)`, que quebram na hora (mock.patch exige o atributo
+  existir). Corrigir: `_peca()` ganha `"produto": "empreendedorismo"` no dict devolvido (e como
+  parâmetro, mesmo padrão dos demais); `_html()` para de fazer `mock.patch` das constantes (os
+  valores reais de `config.TRILHAS["empreendedorismo"]` já são "Trilha do Consultório Lucrativo"/12,
+  iguais ao que era mockado); `test_numero_e_nome_vao_escapados` troca o
+  `mock.patch("config.TRILHA_NOME", '<script>...')` por
+  `mock.patch.dict(config.TRILHAS["empreendedorismo"], {"nome": '<script>alert(1)</script>'})`;
+  `test_numero_tambem_vai_escapado` só remove os dois `mock.patch` (não precisa de substituto —
+  o teste não depende do valor de nome/total, só do escape de `numero`).
+- `app/tests/test_trilha_nome_propaga.py` (arquivo inteiro) — todos os 5 testes checam
+  `config.TRILHA_NOME` diretamente ou inspecionam (`inspect.getsource`) o código-fonte de
+  `trilha.enviar_para`/`site_web.pagina_trilha`/`pdf_trilha.montar_html` procurando o literal
+  `"config.TRILHA_NOME"`/`"_cfg.TRILHA_NOME"` — que deixa de existir nessas funções assim que as
+  Tasks 6/7/10 rodarem (elas passam a ler `config.TRILHAS[produto]["nome"]`). **Apagar o arquivo
+  inteiro nesta Task 1** (não esperar as Tasks 6/7/10): a cobertura dele fica estritamente
+  superada pelos testes produto-aware que essas tasks já adicionam (`TestPdfTrilha.
+  test_nome_e_total_vem_do_catalogo_do_produto` na Task 7, `TestPaginaTrilha.
+  test_nome_e_total_vem_do_produto_certo` na Task 10, as legendas de `TestLoteDePecas`/`TestEnvio`
+  na Task 6) — todos verificam o valor REAL propagado pro produto certo, o que prova mais do que
+  checar se uma string aparece no código-fonte de uma função.
+
 - [ ] **Step 1: Write the failing test**
 
 ```python
