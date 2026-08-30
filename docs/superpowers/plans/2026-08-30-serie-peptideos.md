@@ -637,7 +637,7 @@ class TestParseESeed(unittest.TestCase):
         importlib.reload(config)
         importlib.reload(self.t)
         try:
-            with self.assertLogs() if False else _CapturaPrint() as saida:
+            with _CapturaPrint() as saida:
                 self.t.semear()
             self.assertIn("sem `aviso`", saida.texto)
             self.assertIn("1", saida.texto)
@@ -652,19 +652,12 @@ class _CapturaPrint:
         import io, contextlib
         self._redirect = contextlib.redirect_stdout(io.StringIO())
         self._buf = self._redirect.__enter__()
+        self.texto = ""
         return self
 
     def __exit__(self, *exc):
         self.texto = self._buf.getvalue()
         self._redirect.__exit__(*exc)
-
-    @property
-    def texto(self):
-        return self._texto
-
-    @texto.setter
-    def texto(self, v):
-        self._texto = v
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
