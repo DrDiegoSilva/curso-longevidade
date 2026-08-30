@@ -158,52 +158,100 @@ class TestParseESeed(unittest.TestCase):
         self.assertIn("Segundo parágrafo.", p["corpo"])
         self.assertEqual(p["micro_resultado"], "Calcule o custo da sua hora.")
         self.assertEqual(p["mentalidade"], "Empenho é diferente de desempenho.")
+        self.assertEqual(p["aviso"], "")
+
+    def test_parse_le_secao_aviso(self):
+        p = self.t.parse_peca(
+            "titulo: GHK-Cu\neixo: Reparo de pele\n\n"
+            "## corpo\ntexto\n\n"
+            "## aviso\n"
+            "A Anvisa nomeou o GHK-Cu injetável como ilegal para qualquer uso em saúde.\n")
+        self.assertIn("ilegal", p["aviso"])
 
     def test_parse_sem_ferramenta_devolve_vazio(self):
         p = self.t.parse_peca("titulo: X\neixo: Y\n\n## corpo\nz\n")
         self.assertEqual(p["ferramenta"], "")
         self.assertEqual(p["micro_resultado"], "")
 
-    def test_semear_grava_as_pecas_do_diretorio(self):
+    def test_semear_produto_grava_as_pecas_do_diretorio(self):
         d = os.path.join(self.tmp, "trilha")
         os.makedirs(d)
         with open(os.path.join(d, "01-um.md"), "w", encoding="utf-8") as f:
             f.write("titulo: Um\neixo: A\n\n## corpo\ncorpo um\n")
         with open(os.path.join(d, "02-dois.md"), "w", encoding="utf-8") as f:
             f.write("titulo: Dois\neixo: A\n\n## corpo\ncorpo dois\n")
-        self.assertEqual(self.t.semear(d), 2)
-        self.assertEqual(self.db.trilha_peca(1)["titulo"], "Um")
-        self.assertEqual(self.db.trilha_peca(2)["titulo"], "Dois")
+        self.assertEqual(self.t.semear_produto("empreendedorismo", d), 2)
+        self.assertEqual(self.db.trilha_peca("empreendedorismo", 1)["titulo"], "Um")
+        self.assertEqual(self.db.trilha_peca("empreendedorismo", 2)["titulo"], "Dois")
 
-    def test_semear_e_idempotente_e_atualiza_texto_editado(self):
+    def test_semear_produto_e_idempotente_e_atualiza_texto_editado(self):
         d = os.path.join(self.tmp, "trilha")
         os.makedirs(d)
         caminho = os.path.join(d, "01-um.md")
         with open(caminho, "w", encoding="utf-8") as f:
             f.write("titulo: Um\neixo: A\n\n## corpo\nversao 1\n")
-        self.t.semear(d)
+        self.t.semear_produto("empreendedorismo", d)
         with open(caminho, "w", encoding="utf-8") as f:
             f.write("titulo: Um\neixo: A\n\n## corpo\nversao 2\n")
-        self.t.semear(d)
-        self.assertIn("versao 2", self.db.trilha_peca(1)["corpo"])
+        self.t.semear_produto("empreendedorismo", d)
+        self.assertIn("versao 2", self.db.trilha_peca("empreendedorismo", 1)["corpo"])
 
-    def test_semear_ignora_arquivo_sem_numero_no_nome(self):
+    def test_semear_produto_ignora_arquivo_sem_numero_no_nome(self):
         d = os.path.join(self.tmp, "trilha")
         os.makedirs(d)
         with open(os.path.join(d, "leiame.md"), "w", encoding="utf-8") as f:
             f.write("titulo: X\n\n## corpo\ny\n")
-        self.assertEqual(self.t.semear(d), 0)
+        self.assertEqual(self.t.semear_produto("empreendedorismo", d), 0)
 
-    def test_semear_diretorio_inexistente_nao_quebra(self):
-        self.assertEqual(self.t.semear(os.path.join(self.tmp, "nao-existe")), 0)
+    def test_semear_produto_diretorio_inexistente_nao_quebra(self):
+        self.assertEqual(self.t.semear_produto("empreendedorismo",
+                                               os.path.join(self.tmp, "nao-existe")), 0)
+
+    def test_semear_roda_todos_os_produtos_do_catalogo(self):
+        contagens = self.t.semear()
+        self.assertEqual(contagens["empreendedorismo"], self.cfg.TRILHAS["empreendedorismo"]["total"])
+        # "peptideos" ainda não tem conteúdo escrito -- 0 é o resultado correto,
+        # não um erro (mesmo comportamento de diretório vazio/ausente).
+        self.assertEqual(contagens.get("peptideos", 0), 0)
 
     def test_as_12_pecas_do_repo_carregam(self):
-        # o diretório real do repo tem que estar parseável e completo
-        self.assertEqual(self.t.semear(), self.cfg.TRILHA_TOTAL)
-        for n in range(1, self.cfg.TRILHA_TOTAL + 1):
-            p = self.db.trilha_peca(n)
+        contagens = self.t.semear()
+        for n in range(1, self.cfg.TRILHAS["empreendedorismo"]["total"] + 1):
+            p = self.db.trilha_peca("empreendedorismo", n)
             self.assertIsNotNone(p, f"peça {n} não carregou")
             self.assertTrue(p["titulo"].strip(), f"peça {n} sem título")
+
+    def test_semear_avisa_quando_produto_exige_aviso_e_peca_nao_tem(self):
+        d = os.path.join(self.tmp, "peptideos")
+        os.makedirs(d)
+        with open(os.path.join(d, "01-um.md"), "w", encoding="utf-8") as f:
+            f.write("titulo: Sem aviso\neixo: A\n\n## corpo\ntexto\n")
+        os.environ["DSCURSO_PEPTIDEOS_DIR"] = d
+        import config
+        importlib.reload(config)
+        importlib.reload(self.t)
+        try:
+            with _CapturaPrint() as saida:
+                self.t.semear()
+            self.assertIn("sem `aviso`", saida.texto)
+            self.assertIn("1", saida.texto)
+        finally:
+            os.environ.pop("DSCURSO_PEPTIDEOS_DIR", None)
+
+
+class _CapturaPrint:
+    """Captura stdout pra checar o aviso de log de `semear()` sem depender de
+    `logging` (o repo usa `print(..., flush=True)` em toda parte)."""
+    def __enter__(self):
+        import io, contextlib
+        self._redirect = contextlib.redirect_stdout(io.StringIO())
+        self._buf = self._redirect.__enter__()
+        self.texto = ""
+        return self
+
+    def __exit__(self, *exc):
+        self.texto = self._buf.getvalue()
+        self._redirect.__exit__(*exc)
 
 
 class TestDrip(unittest.TestCase):

@@ -14,7 +14,7 @@ import config
 import db
 
 _SECOES = {"corpo": "corpo", "micro-resultado": "micro_resultado",
-           "mentalidade": "mentalidade"}
+           "mentalidade": "mentalidade", "aviso": "aviso"}
 
 
 def parse_peca(texto):
@@ -48,14 +48,15 @@ def parse_peca(texto):
         "corpo": "\n".join(secoes.get("corpo", [])).strip(),
         "micro_resultado": "\n".join(secoes.get("micro_resultado", [])).strip(),
         "mentalidade": "\n".join(secoes.get("mentalidade", [])).strip(),
+        "aviso": "\n".join(secoes.get("aviso", [])).strip(),
     }
 
 
-def semear(diretorio=None):
-    """Lê `seed/trilha/NN-*.md` e grava no banco. Idempotente por número: editar o
-    texto e redeployar propaga a versão nova (o upsert atualiza a linha).
+def semear_produto(produto, diretorio=None):
+    """Lê `seed/<produto>/NN-*.md` e grava no banco desse produto. Idempotente por
+    (produto, numero): editar o texto e redeployar propaga a versão nova.
     Retorna quantas peças gravou."""
-    d = diretorio or config.TRILHA_DIR
+    d = diretorio if diretorio is not None else config.TRILHAS[produto]["dir"]
     if not os.path.isdir(d):
         return 0
     n = 0
@@ -65,10 +66,31 @@ def semear(diretorio=None):
             continue
         with open(os.path.join(d, nome), encoding="utf-8") as f:
             p = parse_peca(f.read())
-        db.trilha_upsert_peca(int(m.group(1)), p["eixo"], p["titulo"], p["corpo"],
-                              p["micro_resultado"], p["mentalidade"], p["ferramenta"])
+        db.trilha_upsert_peca(produto, int(m.group(1)), p["eixo"], p["titulo"], p["corpo"],
+                              p["micro_resultado"], p["mentalidade"], p["aviso"], p["ferramenta"])
         n += 1
     return n
+
+
+def semear():
+    """Semeia TODOS os produtos do catálogo. Produto sem diretório de conteúdo
+    ainda (ex.: peptideos antes da redação das peças) conta 0, sem quebrar --
+    mesma tolerância que `semear_produto` já tinha pra diretório ausente.
+
+    Produtos com `exige_aviso=True` (a série de peptídeos) têm suas peças
+    conferidas: cada uma sem o campo `aviso` preenchido vira uma linha no log de
+    deploy -- sinal visível, não bloqueio duro (a peça de abertura pode
+    legitimamente não precisar)."""
+    contagens = {}
+    for produto, info in config.TRILHAS.items():
+        contagens[produto] = semear_produto(produto)
+        if info.get("exige_aviso"):
+            sem_aviso = [p["numero"] for p in db.trilha_listar_pecas(produto)
+                        if not (p.get("aviso") or "").strip()]
+            if sem_aviso:
+                print(f"[trilha] {len(sem_aviso)} peça(s) de \"{produto}\" sem `aviso`: "
+                      f"{sem_aviso}", flush=True)
+    return contagens
 
 
 _DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
