@@ -250,27 +250,33 @@ def init():
             CREATE UNIQUE INDEX IF NOT EXISTS ux_serie_itens_dedup
                 ON serie_itens(serie_id, ref_tipo, ref_id);
             CREATE TABLE IF NOT EXISTS trilha_pecas (
-                numero INTEGER PRIMARY KEY,
+                produto TEXT NOT NULL DEFAULT 'empreendedorismo',
+                numero INTEGER NOT NULL,
                 eixo TEXT DEFAULT '',
                 titulo TEXT DEFAULT '',
                 corpo TEXT DEFAULT '',
                 micro_resultado TEXT DEFAULT '',
                 mentalidade TEXT DEFAULT '',
+                aviso TEXT DEFAULT '',
                 ferramenta_slug TEXT DEFAULT '',
                 ativa INTEGER DEFAULT 1,
-                atualizado_em TEXT
+                atualizado_em TEXT,
+                PRIMARY KEY (produto, numero)
             );
             CREATE TABLE IF NOT EXISTS trilha_progresso (
-                subscriber_id TEXT PRIMARY KEY,
+                subscriber_id TEXT NOT NULL,
+                produto TEXT NOT NULL,
                 proxima_peca INTEGER DEFAULT 1,
-                ultimo_envio TEXT DEFAULT ''
+                ultimo_envio TEXT DEFAULT '',
+                PRIMARY KEY (subscriber_id, produto)
             );
             CREATE TABLE IF NOT EXISTS trilha_envios (
-                subscriber_id TEXT,
+                subscriber_id TEXT NOT NULL,
+                produto TEXT NOT NULL,
                 numero INTEGER,
                 enviado_em TEXT,
                 feito_em TEXT,
-                PRIMARY KEY (subscriber_id, numero)
+                PRIMARY KEY (subscriber_id, produto, numero)
             );
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
@@ -292,6 +298,7 @@ def init():
             """
         )
     _migrar_colunas()
+    _migrar_trilha_multiproduto()
     _migrar_indices()
     _seed_cupons()
     _seed_automacoes()
@@ -319,6 +326,68 @@ def _add_coluna(c, tabela, coluna, tipo):
             c.execute(f"ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}")
         except Exception:
             pass  # coluna já existe (banco recém-criado pela CREATE TABLE)
+
+
+def _tem_coluna(c, tabela, coluna):
+    """True se `coluna` já existe em `tabela` — usado ANTES de recriar schema
+    (diferente de `_add_coluna`, que só adiciona coluna solta)."""
+    if _is_pg():
+        r = c.execute("SELECT 1 FROM information_schema.columns "
+                      "WHERE table_name=? AND column_name=?", (tabela, coluna)).fetchone()
+        return r is not None
+    linhas = c.execute(f"PRAGMA table_info({tabela})").fetchall()
+    return any(dict(l)["name"] == coluna for l in linhas)
+
+
+def _migrar_trilha_multiproduto():
+    """As 3 tabelas da trilha ganham `produto` na CHAVE (não só uma coluna solta:
+    sem isso, a peça 1 de "peptideos" colidiria com a peça 1 de "empreendedorismo"
+    no PRIMARY KEY antigo). PRIMARY KEY não dá pra alterar com ALTER TABLE nem no
+    SQLite nem no Postgres -- recria as 3 tabelas com o schema novo e copia o que
+    já existe, marcado como 'empreendedorismo' (único produto que já rodou).
+    Idempotente: sai cedo se `trilha_pecas` já tem a coluna `produto` (banco novo,
+    criado direto pelo CREATE TABLE de cima, cai aqui também e não faz nada)."""
+    with _conn() as c:
+        if _tem_coluna(c, "trilha_pecas", "produto"):
+            return
+        c.execute("""CREATE TABLE trilha_pecas_novo (
+                produto TEXT NOT NULL DEFAULT 'empreendedorismo',
+                numero INTEGER NOT NULL,
+                eixo TEXT DEFAULT '', titulo TEXT DEFAULT '', corpo TEXT DEFAULT '',
+                micro_resultado TEXT DEFAULT '', mentalidade TEXT DEFAULT '',
+                aviso TEXT DEFAULT '', ferramenta_slug TEXT DEFAULT '',
+                ativa INTEGER DEFAULT 1, atualizado_em TEXT,
+                PRIMARY KEY (produto, numero))""")
+        c.execute("""INSERT INTO trilha_pecas_novo
+                (produto, numero, eixo, titulo, corpo, micro_resultado, mentalidade,
+                 aviso, ferramenta_slug, ativa, atualizado_em)
+            SELECT 'empreendedorismo', numero, eixo, titulo, corpo, micro_resultado,
+                   mentalidade, '', ferramenta_slug, ativa, atualizado_em
+            FROM trilha_pecas""")
+        c.execute("DROP TABLE trilha_pecas")
+        c.execute("ALTER TABLE trilha_pecas_novo RENAME TO trilha_pecas")
+
+        c.execute("""CREATE TABLE trilha_progresso_novo (
+                subscriber_id TEXT NOT NULL, produto TEXT NOT NULL,
+                proxima_peca INTEGER DEFAULT 1, ultimo_envio TEXT DEFAULT '',
+                PRIMARY KEY (subscriber_id, produto))""")
+        c.execute("""INSERT INTO trilha_progresso_novo
+                (subscriber_id, produto, proxima_peca, ultimo_envio)
+            SELECT subscriber_id, 'empreendedorismo', proxima_peca, ultimo_envio
+            FROM trilha_progresso""")
+        c.execute("DROP TABLE trilha_progresso")
+        c.execute("ALTER TABLE trilha_progresso_novo RENAME TO trilha_progresso")
+
+        c.execute("""CREATE TABLE trilha_envios_novo (
+                subscriber_id TEXT NOT NULL, produto TEXT NOT NULL, numero INTEGER,
+                enviado_em TEXT, feito_em TEXT,
+                PRIMARY KEY (subscriber_id, produto, numero))""")
+        c.execute("""INSERT INTO trilha_envios_novo
+                (subscriber_id, produto, numero, enviado_em, feito_em)
+            SELECT subscriber_id, 'empreendedorismo', numero, enviado_em, feito_em
+            FROM trilha_envios""")
+        c.execute("DROP TABLE trilha_envios")
+        c.execute("ALTER TABLE trilha_envios_novo RENAME TO trilha_envios")
 
 
 def _migrar_colunas():
@@ -1913,10 +1982,10 @@ def trilha_upsert_peca(numero, eixo, titulo, corpo, micro_resultado,
              mentalidade or "", ferramenta_slug or "", datetime.now().isoformat()))
 
 
-def trilha_peca(numero):
+def trilha_peca(produto, numero):
     with _conn() as c:
-        r = c.execute("SELECT * FROM trilha_pecas WHERE numero=? AND ativa=1",
-                      (int(numero),)).fetchone()
+        r = c.execute("SELECT * FROM trilha_pecas WHERE produto=? AND numero=? AND ativa=1",
+                      (produto or "empreendedorismo", int(numero))).fetchone()
     return dict(r) if r else None
 
 

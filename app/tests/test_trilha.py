@@ -682,5 +682,46 @@ class TestInterruptor(unittest.TestCase):
         self.assertFalse(self.t.ativa())
 
 
+class TestMigracaoMultiproduto(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+
+    def test_catalogo_tem_os_dois_produtos(self):
+        self.assertIn("empreendedorismo", self.cfg.TRILHAS)
+        self.assertIn("peptideos", self.cfg.TRILHAS)
+        self.assertEqual(self.cfg.TRILHAS["empreendedorismo"]["total"], 12)
+        self.assertEqual(self.cfg.TRILHAS["peptideos"]["total"], 11)
+        self.assertEqual(self.cfg.TRILHAS["peptideos"]["pecas_por_envio"], 2)
+        self.assertEqual(self.cfg.TRILHAS["empreendedorismo"]["pecas_por_envio"], 1)
+
+    def test_tabelas_novas_tem_coluna_produto(self):
+        with self.db._conn() as c:
+            self.assertTrue(self.db._tem_coluna(c, "trilha_pecas", "produto"))
+            self.assertTrue(self.db._tem_coluna(c, "trilha_progresso", "produto"))
+            self.assertTrue(self.db._tem_coluna(c, "trilha_envios", "produto"))
+            self.assertTrue(self.db._tem_coluna(c, "trilha_pecas", "aviso"))
+
+    def test_migracao_preserva_pecas_existentes_marcando_empreendedorismo(self):
+        # simula um banco ANTIGO (schema de 1 produto só) já com 1 peça gravada,
+        # roda a migração de novo e confere que a peça sobrevive marcada.
+        with self.db._conn() as c:
+            c.execute("DROP TABLE trilha_pecas")
+            c.execute("""CREATE TABLE trilha_pecas (
+                numero INTEGER PRIMARY KEY, eixo TEXT DEFAULT '', titulo TEXT DEFAULT '',
+                corpo TEXT DEFAULT '', micro_resultado TEXT DEFAULT '',
+                mentalidade TEXT DEFAULT '', ferramenta_slug TEXT DEFAULT '',
+                ativa INTEGER DEFAULT 1, atualizado_em TEXT)""")
+            c.execute("INSERT INTO trilha_pecas (numero, titulo) VALUES (1, 'Peça velha')")
+        self.db._migrar_trilha_multiproduto()
+        p = self.db.trilha_peca("empreendedorismo", 1)
+        self.assertIsNotNone(p)
+        self.assertEqual(p["titulo"], "Peça velha")
+
+    def test_migracao_e_idempotente(self):
+        self.db._migrar_trilha_multiproduto()   # 2ª chamada não pode quebrar
+        self.assertTrue(True)
+
+
 if __name__ == "__main__":
     unittest.main()

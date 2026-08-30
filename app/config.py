@@ -67,14 +67,38 @@ SLOT_HORA = {"07h": 7, "08h": 8, "12h": 12, "18h": 18, "20h": 20}
 SLOT_DEFAULT = "08h"
 SLOT_TETO_DEFAULT = 100
 
-# Trilha semanal de empreendedorismo médico (sábado, drip por assinante).
-# TRILHA_NOME: nome do produto. Mora aqui como fonte única (não espalhado no código),
-# justamente pra troca ser um campo e não uma varredura. Env DSCURSO_TRILHA_NOME sobrescreve.
-TRILHA_NOME = os.environ.get("DSCURSO_TRILHA_NOME") or "Trilha do Consultório Lucrativo"
+# Trilhas semanais (sábado, drip por assinante). Só UMA fica ativa por vez —
+# ver trilha.produto_ativo()/definir_produto_ativo(). Quem já está no meio de
+# uma trilha termina ela antes de entrar na próxima, não importa qual está
+# ativa (trilha.produto_do_assinante decide isso, não este catálogo).
+_SEED_BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TRILHA_DIA = "sabado"
-TRILHA_TOTAL = 12
-TRILHA_DIR = os.environ.get("DSCURSO_TRILHA_DIR") or os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "seed", "trilha")
+TRILHAS = {
+    "empreendedorismo": {
+        # Mesmas env vars de antes (DSCURSO_TRILHA_NOME/DSCURSO_TRILHA_DIR) —
+        # overrides já usados em deploy e em testes que isolam o diretório
+        # continuam funcionando sem mudança nenhuma.
+        "nome": os.environ.get("DSCURSO_TRILHA_NOME") or "Trilha do Consultório Lucrativo",
+        "total": 12,
+        "dir": os.environ.get("DSCURSO_TRILHA_DIR") or os.path.join(_SEED_BASE, "seed", "trilha"),
+        "pecas_por_envio": 1,
+        "exige_aviso": False,
+    },
+    "peptideos": {
+        "nome": os.environ.get("DSCURSO_PEPTIDEOS_NOME") or "Peptídeos (nome a definir)",
+        "total": 11,
+        "dir": os.environ.get("DSCURSO_PEPTIDEOS_DIR") or os.path.join(_SEED_BASE, "seed", "peptideos"),
+        "pecas_por_envio": 2,
+        # Achado do levantamento de pesquisa: praticamente toda peça precisa da
+        # nota de "sem registro ANVISA" — `trilha.semear()` avisa no log quantas
+        # peças deste produto ficaram sem o campo `aviso`.
+        "exige_aviso": True,
+    },
+}
+# Backward compatibility aliases para o produto 'empreendedorismo' (o único que rodava antes)
+TRILHA_NOME = TRILHAS["empreendedorismo"]["nome"]
+TRILHA_TOTAL = TRILHAS["empreendedorismo"]["total"]
+TRILHA_DIR = TRILHAS["empreendedorismo"]["dir"]
 
 # ── Máquina de conteúdo ──
 FRESCO_DIAS = int(os.environ.get("DSCURSO_FRESCO_DIAS") or 30)   # ≤ N dias = "Estudo recente"
