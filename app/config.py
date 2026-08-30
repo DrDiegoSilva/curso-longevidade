@@ -95,11 +95,6 @@ TRILHAS = {
         "exige_aviso": True,
     },
 }
-# Backward compatibility: constantes flat para módulos ainda não refatorados
-# (pdf_trilha.py, trilha.py, serve.py, site_web.py são Tasks 3, 5-10)
-TRILHA_NOME = TRILHAS["empreendedorismo"]["nome"]
-TRILHA_TOTAL = TRILHAS["empreendedorismo"]["total"]
-TRILHA_DIR = TRILHAS["empreendedorismo"]["dir"]
 
 # ── Máquina de conteúdo ──
 FRESCO_DIAS = int(os.environ.get("DSCURSO_FRESCO_DIAS") or 30)   # ≤ N dias = "Estudo recente"

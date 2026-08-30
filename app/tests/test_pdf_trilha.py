@@ -121,10 +121,11 @@ class TestCapaNova(unittest.TestCase):
         self.assertIn("<h1>Título Teste</h1>", h)
 
     def test_numero_e_nome_vao_escapados(self):
-        """Defesa em profundidade: config.TRILHA_NOME e' hoje um valor de config, nao entrada
-        de usuario por requisicao — mas continua indo por _esc, como todo campo aqui."""
-        with mock.patch("config.TRILHA_NOME", '<script>alert(1)</script>'):
-            import pdf_trilha
+        """Defesa em profundidade: config.TRILHAS[produto]["nome"] e' hoje um valor de config,
+        nao entrada de usuario por requisicao — mas continua indo por _esc, como todo campo aqui."""
+        import config
+        import pdf_trilha
+        with mock.patch.dict(config.TRILHAS["empreendedorismo"], {"nome": '<script>alert(1)</script>'}):
             h = pdf_trilha.montar_html(_peca(), "Dr. Diego")
         self.assertNotIn("<script>alert(1)</script>", h)
         self.assertIn("&lt;script&gt;", h)
