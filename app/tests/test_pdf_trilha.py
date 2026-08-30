@@ -48,19 +48,17 @@ class TestIconeDS(unittest.TestCase):
 
 def _peca(numero=1, titulo="O custo real da sua hora", eixo="Saber onde você está",
           corpo="Texto do corpo.", micro_resultado="A tarefa.", mentalidade="A mentalidade.",
-          ferramenta_slug="planilha-x"):
+          ferramenta_slug="planilha-x", produto="empreendedorismo"):
     return {"numero": numero, "titulo": titulo, "eixo": eixo, "corpo": corpo,
             "micro_resultado": micro_resultado, "mentalidade": mentalidade,
-            "ferramenta_slug": ferramenta_slug}
+            "ferramenta_slug": ferramenta_slug, "produto": produto}
 
 
 class TestCapaNova(unittest.TestCase):
     def _html(self, **kw):
         import pdf_trilha
-        with mock.patch("config.TRILHA_NOME", "Trilha do Consultório Lucrativo"), \
-             mock.patch("config.TRILHA_TOTAL", 12):
-            return pdf_trilha.montar_html(_peca(**kw), "Dr. Diego",
-                                          link_ferramenta="https://ex.com/f")
+        return pdf_trilha.montar_html(_peca(**kw), "Dr. Diego",
+                                      link_ferramenta="https://ex.com/f")
 
     def test_tem_a_banda_verde(self):
         h = self._html()
@@ -123,22 +121,18 @@ class TestCapaNova(unittest.TestCase):
         self.assertIn("<h1>Título Teste</h1>", h)
 
     def test_numero_e_nome_vao_escapados(self):
-        """Defesa em profundidade: TRILHA_NOME e' hoje um valor de config, nao entrada
+        """Defesa em profundidade: config.TRILHA_NOME e' hoje um valor de config, nao entrada
         de usuario por requisicao — mas continua indo por _esc, como todo campo aqui."""
-        with mock.patch("config.TRILHA_NOME", '<script>alert(1)</script>'), \
-             mock.patch("config.TRILHA_TOTAL", 12):
+        with mock.patch("config.TRILHA_NOME", '<script>alert(1)</script>'):
             import pdf_trilha
             h = pdf_trilha.montar_html(_peca(), "Dr. Diego")
         self.assertNotIn("<script>alert(1)</script>", h)
         self.assertIn("&lt;script&gt;", h)
 
     def test_numero_tambem_vai_escapado(self):
-        """O teste acima so' cobria TRILHA_NOME — o fixture usava numero=1 sempre, entao
-        nunca provava o escape do proprio numero da semana. Este cobre o caminho que o
-        outro deixava passar em branco."""
-        with mock.patch("config.TRILHA_NOME", "X"), mock.patch("config.TRILHA_TOTAL", 12):
-            import pdf_trilha
-            h = pdf_trilha.montar_html(_peca(numero='<script>alert(2)</script>'), "Dr. Diego")
+        """O teste acima cobria TRILHA_NOME — este cobre o escape do proprio numero da semana."""
+        import pdf_trilha
+        h = pdf_trilha.montar_html(_peca(numero='<script>alert(2)</script>'), "Dr. Diego")
         self.assertNotIn("<script>alert(2)</script>", h)
         self.assertIn("&lt;script&gt;", h)
 

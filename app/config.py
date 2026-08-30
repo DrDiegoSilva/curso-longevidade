@@ -95,7 +95,8 @@ TRILHAS = {
         "exige_aviso": True,
     },
 }
-# Backward compatibility aliases para o produto 'empreendedorismo' (o único que rodava antes)
+# Backward compatibility: constantes flat para módulos ainda não refatorados
+# (pdf_trilha.py, trilha.py, serve.py, site_web.py são Tasks 3, 5-10)
 TRILHA_NOME = TRILHAS["empreendedorismo"]["nome"]
 TRILHA_TOTAL = TRILHAS["empreendedorismo"]["total"]
 TRILHA_DIR = TRILHAS["empreendedorismo"]["dir"]
