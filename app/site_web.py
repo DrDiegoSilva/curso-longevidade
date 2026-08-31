@@ -2495,17 +2495,27 @@ def pagina_minha(sub, admin=False):
                    meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_trilha(sub, itens, msg=""):
-    """Trilha do assinante: peça da semana no topo, anteriores abaixo.
+def pagina_trilha(sub, itens, produto, msg=""):
+    """Trilha do assinante: peça da semana no topo, anteriores abaixo. `produto` é
+    a trilha em que ele está agora (resolvido por `trilha.produto_do_assinante`) —
+    "" quando não há nenhuma pra ele (nunca começou nada e nenhuma está ativa).
 
     `itens` já vem pronto do serve (mais recente primeiro), com numero, titulo,
     feito, ferramenta_slug e entregue. `entregue=False` é a peça de prévia que
-    `serve._pagina_trilha` insere quando o assinante ainda não recebeu aquela peça
-    pelo WhatsApp — sem botão de "fiz" (clicar antes do envio real sempre devolveria
-    False em silêncio, porque não existe linha em trilha_envios ainda) e com um
-    aviso de que ela chega no sábado. Item sem a chave `entregue` é tratado como
-    entregue (True), pra não quebrar dado antigo. A página não consulta banco."""
+    `serve._pagina_trilha` insere quando o assinante ainda não recebeu aquela
+    peça pelo WhatsApp. Item sem a chave `entregue` é tratado como entregue
+    (True), pra não quebrar dado antigo. A página não consulta banco."""
     import config as _cfg
+    if not produto:
+        corpo = f"""
+        <div class="wrap"><div class="panel">
+          <h2 class="disp">Trilha</h2>
+          <p class="hint">Nenhuma trilha disponível no momento.</p>
+          <p style="margin:22px 0 0"><a class="cta ghost" href="/minha">Voltar</a></p>
+        </div></div>"""
+        return _pagina(f"Trilha · {PRODUTO}", corpo, logado=True, atual="/trilha",
+                       meta_extra='<meta name="robots" content="noindex">')
+    info = _cfg.TRILHAS.get(produto, {"nome": _cfg.PRODUTO, "total": 0})
     nome = _esc(sub.get("nome") or "assinante")
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     if not itens:
@@ -2533,19 +2543,19 @@ def pagina_trilha(sub, itens, msg=""):
             destaque = ' style="border-color:var(--ouro2)"' if i == 0 else ""
             partes.append(
                 f'<div class="panel"{destaque}>'
-                f'<p class="plabel">Semana {int(it["numero"])} de {_cfg.TRILHA_TOTAL}</p>'
+                f'<p class="plabel">Semana {int(it["numero"])} de {info["total"]}</p>'
                 f'<h3 style="margin:4px 0 0">{_esc(it["titulo"])}</h3>'
                 f'{ferramenta}{acao}</div>')
         linhas = "".join(partes)
     corpo = f"""
     <div class="wrap">
-      <h2 class="disp">{_esc(_cfg.TRILHA_NOME)}</h2>
+      <h2 class="disp">{_esc(info["nome"])}</h2>
       <p class="hint">Olá, {nome}. Uma peça por sábado — cada uma tem uma tarefa pequena, é ela que faz a diferença.</p>
       {msg_html}
       {linhas}
       <p style="margin:22px 0 0"><a class="cta ghost" href="/minha">Voltar</a></p>
     </div>"""
-    return _pagina(f"{_cfg.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="/trilha",
+    return _pagina(f"{_esc(info['nome'])} · {PRODUTO}", corpo, logado=True, atual="/trilha",
                    meta_extra='<meta name="robots" content="noindex">')
 
 

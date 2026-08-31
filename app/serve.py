@@ -1544,10 +1544,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _trilha_post(self, g):
         """POST /trilha: `marcar_feito` MUTA dado do assinante (trilha_envios.feito_em)
-        — mesmo gate de aceite que `_meus_dados_post` usa, pelo mesmo motivo: sem esta
-        checagem aqui, aceite pendente não impede a mutação, só o link direto pra cá
-        (ver docstring de `_meus_dados_post` pro cenário completo)."""
-        import subscribers
+        -- mesmo gate de aceite que `_meus_dados_post` usa."""
+        import subscribers, trilha as _trilha
         sub = self._sub_logado()
         if not sub:
             return self._redirect("/entrar")
@@ -1556,10 +1554,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_legal.pagina_aceite_termos("/trilha"))
         msg = ""
         if g("acao") == "marcar_feito":
-            numero = _trilha_numero_valido(g("numero"))
+            produto = _trilha.produto_do_assinante(sub["id"])
+            numero = _trilha_numero_valido(g("numero"), produto) if produto else 0
             if numero:
                 import db as _db
-                if _db.trilha_marcar_feito(sub["id"], numero):
+                if _db.trilha_marcar_feito(sub["id"], produto, numero):
                     msg = "Marcado. Bom trabalho."
         return self._html(self._pagina_trilha(sub, msg=msg))
 
@@ -1571,39 +1570,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return subscribers.por_whatsapp(sess["whatsapp"])
 
     def _pagina_trilha(self, sub, msg=""):
-        """Monta os itens da trilha do assinante (peça atual + anteriores)."""
+        """Monta os itens da trilha do assinante (peça atual + anteriores), no
+        produto em que ele está agora."""
         import db as _db, site_web as _sw, trilha as _trilha
 
         def _slug_disponivel(slug):
-            # só afirma a ferramenta se o ARQUIVO existir -- a peça pode declarar
-            # `ferramenta:` no cabeçalho antes do arquivo ser subido em
-            # seed/trilha/ferramentas/ (Important 4 da revisão: 7 das 12 peças
-            # declaram ferramenta e o diretório só tinha .gitkeep). Sem esta
-            # checagem, `pagina_trilha` mostra "📎 Baixar" e a rota /ferramentas/
-            # devolve 404.
             return slug if slug and _trilha.caminho_ferramenta(slug) else ""
+
+        produto = _trilha.produto_do_assinante(sub["id"])
+        if produto is None:
+            return _sw.pagina_trilha(sub, [], "", msg=msg)
 
         itens = []
         atual = _trilha.proxima_peca(sub["id"])
         vistos = set()
-        for env in _db.trilha_historico(sub["id"]):
-            p = _db.trilha_peca(env["numero"]) or {}
+        for env in _db.trilha_historico(sub["id"], produto):
+            p = _db.trilha_peca(produto, env["numero"]) or {}
             itens.append({"numero": env["numero"], "titulo": p.get("titulo", ""),
                           "feito": bool(env.get("feito_em")),
                           "ferramenta_slug": _slug_disponivel(p.get("ferramenta_slug", "")),
                           "entregue": True})
             vistos.add(env["numero"])
         if atual and atual["numero"] not in vistos:
-            # ainda não recebeu por WhatsApp (entrou hoje): mostra o que vem aí, mas
-            # `entregue=False` — marcar "fiz" antes do envio real sempre devolveria
-            # False em silêncio (não existe linha em trilha_envios pra essa peça
-            # ainda), e o botão viraria decoração morta. `pagina_trilha` usa essa
-            # chave pra trocar o botão por um aviso de "chega no sábado".
             itens.insert(0, {"numero": atual["numero"], "titulo": atual.get("titulo", ""),
                              "feito": False,
                              "ferramenta_slug": _slug_disponivel(atual.get("ferramenta_slug", "")),
                              "entregue": False})
-        return _sw.pagina_trilha(sub, itens, msg=msg)
+        return _sw.pagina_trilha(sub, itens, produto, msg=msg)
 
     def _parse_multipart(self, ctype, body):
         """Parser mínimo de multipart/form-data. Retorna (campos:dict, arquivos:{nome:(filename,bytes)})."""

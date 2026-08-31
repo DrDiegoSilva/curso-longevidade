@@ -28,66 +28,61 @@ class TestPaginaTrilha(unittest.TestCase):
     def test_pagina_mostra_a_peca_e_o_botao(self):
         itens = [{"numero": 1, "titulo": "O custo real da sua hora", "feito": False,
                   "ferramenta_slug": ""}]
-        h = self.w.pagina_trilha({"nome": "Diego"}, itens)
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "empreendedorismo")
         self.assertIn("O custo real da sua hora", h)
         self.assertIn("fiz", h.lower())
 
     def test_peca_feita_nao_mostra_botao_de_novo(self):
         itens = [{"numero": 1, "titulo": "X", "feito": True, "ferramenta_slug": ""}]
-        h = self.w.pagina_trilha({"nome": "Diego"}, itens)
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "empreendedorismo")
         self.assertNotIn('value="marcar_feito"', h)
 
     def test_ferramenta_vira_link_de_download(self):
         itens = [{"numero": 1, "titulo": "X", "feito": False, "ferramenta_slug": "planilha-x"}]
-        h = self.w.pagina_trilha({"nome": "Diego"}, itens)
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "empreendedorismo")
         self.assertIn("/ferramentas/planilha-x", h)
 
     def test_escapa_titulo(self):
         itens = [{"numero": 1, "titulo": "<script>x</script>", "feito": False,
                   "ferramenta_slug": ""}]
-        h = self.w.pagina_trilha({"nome": "Diego"}, itens)
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "empreendedorismo")
         self.assertNotIn("<script>x", h)
 
     def test_lista_vazia_mostra_mensagem_de_fallback(self):
-        # Minor 4 da revisão: função pura, mesmo estilo dos demais testes desta classe.
-        h = self.w.pagina_trilha({"nome": "Diego"}, [])
+        h = self.w.pagina_trilha({"nome": "Diego"}, [], "empreendedorismo")
         self.assertIn("chega no próximo sábado", h)
 
+    def test_produto_vazio_mostra_mensagem_neutra(self):
+        # ninguém ativo e o assinante nunca começou nada -- não existe "a peça
+        # da vez" nem "próximo sábado" nenhum pra prometer.
+        h = self.w.pagina_trilha({"nome": "Diego"}, [], "")
+        self.assertIn("Nenhuma trilha disponível", h)
+
     def test_peca_ainda_nao_entregue_nao_mostra_botao(self):
-        # Important 3 da revisão (defeito do plano, não da execução): o item de
-        # prévia que `serve._pagina_trilha` insere quando a peça atual ainda não foi
-        # enviada por WhatsApp vem com `entregue=False`. Antes desta correção, esse
-        # item tinha o mesmo botão "✅ Fiz" dos itens já entregues — clicar chamava
-        # `trilha_marcar_feito`, que devolve False em silêncio (não existe linha em
-        # trilha_envios pra essa peça ainda), e a página só recarregava sem avisar
-        # nada. Um botão que não faz nada é pior que nenhum botão.
         itens = [{"numero": 1, "titulo": "X", "feito": False, "ferramenta_slug": "",
                   "entregue": False}]
-        h = self.w.pagina_trilha({"nome": "Diego"}, itens)
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "empreendedorismo")
         self.assertNotIn('value="marcar_feito"', h)
         self.assertIn("sábado", h.lower())
 
     def test_item_sem_a_chave_entregue_continua_mostrando_o_botao(self):
-        # Compatibilidade: item sem a chave `entregue` (formato usado pelos testes
-        # mais antigos desta classe, acima) é tratado como já entregue -- não
-        # queremos quebrar chamador nenhum que ainda não passe essa chave.
         itens = [{"numero": 1, "titulo": "X", "feito": False, "ferramenta_slug": ""}]
-        h = self.w.pagina_trilha({"nome": "Diego"}, itens)
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "empreendedorismo")
         self.assertIn('value="marcar_feito"', h)
 
     def test_saudacao_usa_o_nome_do_assinante(self):
-        # Minor 5 da revisão: `sub` estava no assinatura mas não era usado no corpo
-        # da página. Escolhi usar pra saudação (mesmo padrão de `pagina_minha`,
-        # que faz `Olá, {nome}.`) em vez de remover o parâmetro -- justificativa no
-        # relatório desta rodada.
-        h = self.w.pagina_trilha({"nome": "Diego"}, [])
+        h = self.w.pagina_trilha({"nome": "Diego"}, [], "empreendedorismo")
         self.assertIn("Diego", h)
 
     def test_plabel_tem_regra_no_css_global(self):
-        # Minor da revisão FINAL: `.plabel` era usada em pagina_trilha (rótulo
-        # "Semana N de 12") e no painel do admin sem regra correspondente em
-        # site_web._CSS -- renderizava como parágrafo comum, sem destaque nenhum.
         self.assertIn(".plabel", self.w._CSS)
+
+    def test_nome_e_total_vem_do_produto_certo(self):
+        itens = [{"numero": 1, "titulo": "X", "feito": False, "ferramenta_slug": ""}]
+        h = self.w.pagina_trilha({"nome": "Diego"}, itens, "peptideos")
+        total = self.cfg.TRILHAS["peptideos"]["total"]
+        self.assertIn(f"de {total}", h)
+        self.assertIn(self.cfg.TRILHAS["peptideos"]["nome"], h)
 
 
 class TestFerramentaSegura(unittest.TestCase):
@@ -168,11 +163,11 @@ class TestPaginaTrilhaFerramentaFaltando(unittest.TestCase):
         subscribers._migrado = False
         db.init()
         self.cfg, self.db, self.subs, self.serve = config, db, subscribers, serve
-        self.db.trilha_upsert_peca(1, "eixo", "Peça 1", "corpo", "micro", "mentalidade",
-                                   "planilha-custo-hora")
+        self.db.trilha_upsert_peca("empreendedorismo", 1, "eixo", "Peça 1", "corpo", "micro",
+                                   "mentalidade", "", "planilha-custo-hora")
         self.sub = {"id": "sub-a", "nome": "Diego"}
-        self.db.trilha_registrar_envio(self.sub["id"], 1)
-        self.db.trilha_avancar(self.sub["id"], 1)
+        self.db.trilha_registrar_envio(self.sub["id"], "empreendedorismo", 1)
+        self.db.trilha_avancar(self.sub["id"], "empreendedorismo", 1)
 
     def tearDown(self):
         os.environ.pop("DSCURSO_TRILHA_DIR", None)
@@ -182,7 +177,8 @@ class TestPaginaTrilhaFerramentaFaltando(unittest.TestCase):
         self.assertNotIn("/ferramentas/planilha-custo-hora", html)
 
     def test_link_aparece_quando_arquivo_existe(self):
-        caminho = os.path.join(self.cfg.TRILHA_DIR, "ferramentas", "planilha-custo-hora.csv")
+        caminho = os.path.join(self.cfg.TRILHAS["empreendedorismo"]["dir"], "ferramentas",
+                               "planilha-custo-hora.csv")
         with open(caminho, "w", encoding="utf-8") as f:
             f.write("a,b\n")
         html = self.serve.Handler._pagina_trilha(None, self.sub)
