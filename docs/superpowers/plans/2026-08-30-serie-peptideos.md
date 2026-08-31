@@ -1515,6 +1515,21 @@ git commit -m "feat(trilha): envio em lote (pecas_por_envio) e fim do gate boole
 - Consumes: `peca["produto"]`, `peca["aviso"]` (do banco, Task 2/3).
 - Produces: `pdf_trilha.montar_html(peca, nome_assinante, abertura="", link_ferramenta="")` (assinatura pública inalterada).
 
+**⚠️ Achado durante a execução (revisão da Task 7):** o Step 1 abaixo, como escrito originalmente
+neste plano, **substitui** a classe `TestPdfTrilha` inteira — e essa versão original tinha 10
+testes de markdown-lite (`test_escapa_nome_do_assinante`, `test_subtitulo_vira_h2_...`,
+`test_tabela_de_cano_vira_table_...`, `test_negrito_vira_strong_...`,
+`test_lista_com_marcador_vira_ul`, `test_lista_numerada_vira_ol`,
+`test_escapa_script_dentro_de_celula_de_tabela`, `test_escapa_script_dentro_de_item_de_lista`,
+`test_texto_sem_marcacao_continua_saindo_como_antes`, `test_peca_real_renderiza_sem_sobrar_marcador`)
+que **não têm nada a ver com o bloco de aviso** — cobrem `_paragrafos`/`_bloco_html`/
+`tabela_pipe`, que esta task nem toca. O Step 1 abaixo esqueceu de preservá-los ao "substituir a
+classe inteira". **Correção: os 10 testes citados acima (conteúdo idêntico ao que já existia em
+`app/tests/test_trilha.py` antes desta task — recuperável com
+`git show <commit-antes-da-task-7>:app/tests/test_trilha.py`) devem ser mantidos na classe
+`TestPdfTrilha`, junto com os 4 testes novos do Step 1.** Nenhuma função que eles cobrem foi
+alterada por esta task, então devem passar sem modificação nenhuma.
+
 - [ ] **Step 1: Write the failing test — substituir a classe `TestPdfTrilha` inteira**
 
 ```python
