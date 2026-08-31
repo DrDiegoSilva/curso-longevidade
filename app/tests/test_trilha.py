@@ -308,6 +308,18 @@ class TestDrip(unittest.TestCase):
         self.assertTrue(texto)
         self.assertNotIn("parabéns", texto.lower())
 
+    def test_produto_ativo_sem_pecas_nao_matricula_so_de_olhar(self):
+        # Achado da revisão final: ativar um produto sem conteúdo seedado
+        # ainda (ou incompleto) NÃO pode inscrever o assinante nele só porque
+        # alguém chamou `proxima_peca` (ex.: visita a /trilha sem nunca ter
+        # havido envio). "peptideos" nasce sem diretório de conteúdo no
+        # catálogo padrão -- `db.trilha_peca` devolve None pra qualquer peça.
+        self.t.definir_produto_ativo("peptideos")
+        self.assertIsNone(self.t.proxima_peca("sub-nova"), "sem peça 1, não há o que mostrar")
+        self.assertIsNone(
+            self.db.trilha_posicao_leitura("sub-nova", "peptideos"),
+            "só checar a próxima peça não pode ter criado linha de progresso")
+
 
 class TestPdfTrilha(unittest.TestCase):
     def setUp(self):
@@ -666,6 +678,26 @@ class TestEnvio(unittest.TestCase):
         html = capturado["html"]
         self.assertIn(f"{self.cfg.ARTIGOS_URL}/ferramentas/", html)
         self.assertNotIn(f"{self.cfg.PUBLIC_URL}/ferramentas/", html)
+
+    def test_ninguem_ativo_nao_conta_como_falha_nem_queima_claim(self):
+        # Achado da revisão final: sem produto ativo e sem ninguém ter
+        # começado nada, `enviar_para` devolve False (nada pra enviar) --
+        # antes do fix, `enviar_slot` já tinha queimado o claim do dia E
+        # contado isso como falha, gerando um alarme falso pro curador.
+        from datetime import date
+        self.t.definir_produto_ativo("")
+        sub = self._sub()
+        dia = date(2026, 8, 8)
+        res = self.t.enviar_slot("08h", quando=dia,
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.assertEqual(res["enviados"], 0)
+        self.assertEqual(res["falhas"], 0, "ninguém ativo não é falha -- é nada pra fazer")
+        self.assertEqual(self.enviados, [])
+        # o claim do dia não pode ter sido queimado à toa -- se tivesse sido
+        # burned, este 2º registro devolveria False.
+        self.assertTrue(
+            self.db.registrar_envio_assinante(f"trilha:{dia.strftime('%Y-%m-%d')}", sub["id"]),
+            "claim do dia foi queimado sem ninguém ter pra receber nada")
 
 
 class TestLoteDePecas(unittest.TestCase):

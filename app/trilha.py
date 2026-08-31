@@ -106,12 +106,18 @@ def e_dia_da_trilha(quando=None):
 def proxima_peca(sub_id):
     """A peça que este assinante deve receber agora (no produto que
     `produto_do_assinante` resolver). None se não há produto pra ele agora, ou se
-    ele já concluiu o produto atual (trilha incompleta não vira envio errado)."""
+    ele já concluiu o produto atual (trilha incompleta não vira envio errado).
+
+    Leitura pura: usa `trilha_posicao_leitura` (não cria linha de progresso) --
+    só visitar `/trilha` ou ativar um produto sem conteúdo ainda não pode
+    matricular o assinante nele pra sempre. A matrícula de verdade só acontece
+    em `db.trilha_registrar_envio`, no momento em que uma peça REAL está de
+    fato saindo (ver `_enviar_uma_peca`)."""
     produto = produto_do_assinante(sub_id)
     if produto is None:
         return None
     info = config.TRILHAS[produto]
-    n = db.trilha_posicao(sub_id, produto)
+    n = db.trilha_posicao_leitura(sub_id, produto) or 1
     if n > info["total"]:
         return None
     p = db.trilha_peca(produto, n)
@@ -149,7 +155,11 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None):
 
     sub_id = sub.get("id")
     info = config.TRILHAS[produto]
-    n = db.trilha_posicao(sub_id, produto)
+    # Leitura pura -- não cria linha de progresso só de calcular qual peça
+    # seria a vez. A matrícula de verdade acontece embaixo, em
+    # `db.trilha_registrar_envio`, quando a peça JÁ foi confirmada existente
+    # e está de fato prestes a ser enviada.
+    n = db.trilha_posicao_leitura(sub_id, produto) or 1
     if n > info["total"]:
         return False
     peca = db.trilha_peca(produto, n)
@@ -158,11 +168,11 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None):
     peca["numero"] = n
     if not db.trilha_registrar_envio(sub_id, produto, n):
         # INVARIANTE que sustenta este "retomar" em vez de `return False`: `n`
-        # acabou de sair de `db.trilha_posicao(sub_id, produto)`, ou seja, É a
-        # posição ATUAL do assinante NESSE produto. Um claim que colide com a
-        # posição atual só pode ser órfão (execução anterior morreu entre o
-        # INSERT do claim e o envio/avanço). Sem retomar aqui, o assinante trava
-        # NESSA peça pra sempre, em silêncio.
+        # acabou de sair de `db.trilha_posicao_leitura(sub_id, produto)` (ou 1),
+        # ou seja, É a posição ATUAL do assinante NESSE produto. Um claim que
+        # colide com a posição atual só pode ser órfão (execução anterior
+        # morreu entre o INSERT do claim e o envio/avanço). Sem retomar aqui, o
+        # assinante trava NESSA peça pra sempre, em silêncio.
         print(f"[trilha] retomando claim órfão da peça {n} ({produto}) p/ {sub_id} "
               f"(execução anterior não completou)", flush=True)
 
@@ -290,6 +300,18 @@ def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
     primeiro = True
     for s in subscribers.ativos():
         if subscribers.slot_de(s) != slot:
+            continue
+        try:
+            tem_produto = produto_do_assinante(s.get("id")) is not None
+        except Exception as e:
+            print(f"[trilha] envio a {s.get('id')} explodiu fora do enviar_para: {e}", flush=True)
+            falhas += 1
+            continue
+        if not tem_produto:
+            # ninguém ativo e este assinante nunca começou nenhuma trilha --
+            # não é falha, é "nada pra fazer aqui" (ver docstring). Continuar
+            # ANTES do claim/pacing: não queima o claim do dia à toa nem
+            # espera o delay de um envio que não vai acontecer.
             continue
         if not db.registrar_envio_assinante(f"trilha:{data}", s.get("id")):
             continue   # já recebeu a(s) peça(s) da semana hoje
