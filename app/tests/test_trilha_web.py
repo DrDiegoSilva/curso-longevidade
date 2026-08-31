@@ -195,7 +195,7 @@ class TestTrilhaNumeroValido(unittest.TestCase):
     `OverflowError: Python int too large to convert to SQLite INTEGER` (o sqlite3
     não converte um Python int de precisão arbitrária pra INTEGER de 64 bits) --
     sem try/except no caminho, e qualquer assinante logado conseguia disparar.
-    `serve._trilha_numero_valido` filtra a faixa (1..config.TRILHA_TOTAL) ANTES de
+    `serve._trilha_numero_valido` filtra a faixa (1..total DO PRODUTO) ANTES de
     qualquer valor chegar no banco. Função pura, mesmo padrão de
     test_destino_seguro.py (TestDestinoSeguro)."""
 
@@ -204,22 +204,30 @@ class TestTrilhaNumeroValido(unittest.TestCase):
         self.f = serve._trilha_numero_valido
 
     def test_numero_valido_passa(self):
-        self.assertEqual(self.f("1"), 1)
-        self.assertEqual(self.f("12"), 12)
+        self.assertEqual(self.f("1", "empreendedorismo"), 1)
+        self.assertEqual(self.f("12", "empreendedorismo"), 12)
 
     def test_numero_fora_da_faixa_vira_zero(self):
-        self.assertEqual(self.f("0"), 0)
-        self.assertEqual(self.f("13"), 0)
-        self.assertEqual(self.f("-1"), 0)
+        self.assertEqual(self.f("0", "empreendedorismo"), 0)
+        self.assertEqual(self.f("13", "empreendedorismo"), 0)
+        self.assertEqual(self.f("-1", "empreendedorismo"), 0)
+
+    def test_numero_valido_no_produto_errado_vira_zero(self):
+        # 12 é válido pra empreendedorismo (total 12), mas não pra peptideos (11)
+        self.assertEqual(self.f("12", "peptideos"), 0)
+        self.assertEqual(self.f("11", "peptideos"), 11)
+
+    def test_produto_desconhecido_vira_zero(self):
+        self.assertEqual(self.f("1", "nao-existe"), 0)
 
     def test_numero_nao_numerico_vira_zero(self):
-        self.assertEqual(self.f("abc"), 0)
-        self.assertEqual(self.f(""), 0)
-        self.assertEqual(self.f(None), 0)
+        self.assertEqual(self.f("abc", "empreendedorismo"), 0)
+        self.assertEqual(self.f("", "empreendedorismo"), 0)
+        self.assertEqual(self.f(None, "empreendedorismo"), 0)
 
     def test_numero_gigante_nao_estoura_e_vira_zero(self):
         # ~90 dígitos: bem além de qualquer INTEGER de 64 bits do SQLite.
-        self.assertEqual(self.f("9" * 90), 0)
+        self.assertEqual(self.f("9" * 90, "empreendedorismo"), 0)
 
 
 class _TrilhaPostStub:
@@ -320,29 +328,43 @@ class TestAdminTrilha(unittest.TestCase):
         for m in (config, db, site_web):
             importlib.reload(m)
         db.init()
-        self.w = site_web
+        self.cfg, self.w = config, site_web
 
     def test_lista_assinantes_com_posicao(self):
         linhas = [{"nome": "Diego", "proxima_peca": 4, "enviadas": 3, "feitas": 2,
                    "concluiu": False}]
-        h = self.w.pagina_admin_trilha(linhas)
+        h = self.w.pagina_admin_trilha(linhas, produto="empreendedorismo")
         self.assertIn("Diego", h)
         self.assertIn("4", h)
 
     def test_marca_quem_concluiu(self):
         linhas = [{"nome": "Ana", "proxima_peca": 13, "enviadas": 12, "feitas": 12,
                    "concluiu": True}]
-        h = self.w.pagina_admin_trilha(linhas)
+        h = self.w.pagina_admin_trilha(linhas, produto="empreendedorismo")
         self.assertIn("Concluiu", h)
 
     def test_sem_ninguem_na_trilha_nao_quebra(self):
-        h = self.w.pagina_admin_trilha([])
+        h = self.w.pagina_admin_trilha([], produto="empreendedorismo")
         self.assertIn("Ninguém", h)
 
     def test_escapa_nome(self):
         linhas = [{"nome": "<script>x</script>", "proxima_peca": 1, "enviadas": 0,
                    "feitas": 0, "concluiu": False}]
-        self.assertNotIn("<script>x", self.w.pagina_admin_trilha(linhas))
+        self.assertNotIn("<script>x", self.w.pagina_admin_trilha(linhas, produto="empreendedorismo"))
+
+    def test_mostra_qual_produto_esta_ativo(self):
+        h = self.w.pagina_admin_trilha([], produto="empreendedorismo", produto_ativo="peptideos")
+        self.assertIn("checked", h)   # o rádio de "peptideos" vem marcado
+
+    def test_lista_os_produtos_do_catalogo_como_opcoes(self):
+        h = self.w.pagina_admin_trilha([], produto="empreendedorismo", produto_ativo="")
+        for info in self.cfg.TRILHAS.values():
+            self.assertIn(info["nome"], h)
+
+    def test_produto_default_e_o_primeiro_do_catalogo_se_invalido(self):
+        h = self.w.pagina_admin_trilha([], produto="nao-existe")
+        primeiro_nome = next(iter(self.cfg.TRILHAS.values()))["nome"]
+        self.assertIn(primeiro_nome, h)
 
 
 class TestPreviaPecas(unittest.TestCase):
@@ -365,17 +387,19 @@ class TestPreviaPecas(unittest.TestCase):
         self.t.semear()
 
     def test_listar_pecas_vem_ordenado(self):
-        nums = [p["numero"] for p in self.db.trilha_listar_pecas()]
+        nums = [p["numero"] for p in self.db.trilha_listar_pecas("empreendedorismo")]
         self.assertEqual(nums, sorted(nums))
-        self.assertEqual(len(nums), self.cfg.TRILHA_TOTAL)
+        self.assertEqual(len(nums), self.cfg.TRILHAS["empreendedorismo"]["total"])
 
-    def test_admin_lista_as_12_pecas_com_link_de_previa(self):
-        h = self.w.pagina_admin_trilha([], pecas=self.db.trilha_listar_pecas())
+    def test_admin_lista_as_pecas_com_link_de_previa(self):
+        h = self.w.pagina_admin_trilha([], pecas=self.db.trilha_listar_pecas("empreendedorismo"),
+                                       produto="empreendedorismo")
         self.assertIn("/admin/trilha/peca/1", h)
-        self.assertIn(f"/admin/trilha/peca/{self.cfg.TRILHA_TOTAL}", h)
+        total = self.cfg.TRILHAS["empreendedorismo"]["total"]
+        self.assertIn(f"/admin/trilha/peca/{total}", h)
 
     def test_admin_sem_pecas_nao_quebra(self):
-        h = self.w.pagina_admin_trilha([], pecas=[])
+        h = self.w.pagina_admin_trilha([], pecas=[], produto="empreendedorismo")
         self.assertIn("Nenhuma peça", h)
 
 
@@ -446,15 +470,16 @@ class TestRotaPreviaPeca(unittest.TestCase):
         # prova a ordem das guardas: token errado + numero não-numérico ainda
         # devolve 403 (a guarda de admin roda primeiro) e não 404 (o parse do
         # `numero`, que viria depois, nunca chega a rodar).
-        r = self._get("/admin/trilha/peca/abc?token=errado")
+        r = self._get("/admin/trilha/peca/abc?token=errado&produto=empreendedorismo")
         self.assertEqual(r["code"], 403)
 
     def test_numero_nao_inteiro_com_token_bom_devolve_404_sem_traceback(self):
-        r = self._get("/admin/trilha/peca/abc?token=tok123")
+        r = self._get("/admin/trilha/peca/abc?token=tok123&produto=empreendedorismo")
         self.assertEqual(r["code"], 404)
 
     def test_numero_inexistente_devolve_404(self):
-        r = self._get(f"/admin/trilha/peca/{self.cfg.TRILHA_TOTAL + 1}?token=tok123")
+        total = self.cfg.TRILHAS["empreendedorismo"]["total"]
+        r = self._get(f"/admin/trilha/peca/{total + 1}?token=tok123&produto=empreendedorismo")
         self.assertEqual(r["code"], 404)
 
     def test_numero_gigante_devolve_404_sem_estourar(self):
@@ -467,20 +492,28 @@ class TestRotaPreviaPeca(unittest.TestCase):
         # fechada aqui reaproveitando `_trilha_numero_valido` em vez de validação
         # paralela. ~90 dígitos: bem além de qualquer INTEGER de 64 bits do SQLite,
         # mesma grandeza usada em TestTrilhaNumeroValido.
-        r = self._get(f"/admin/trilha/peca/{'9' * 90}?token=tok123")
+        r = self._get(f"/admin/trilha/peca/{'9' * 90}?token=tok123&produto=empreendedorismo")
         self.assertEqual(r["code"], 404)
 
     def test_numero_zero_devolve_404(self):
-        r = self._get("/admin/trilha/peca/0?token=tok123")
+        r = self._get("/admin/trilha/peca/0?token=tok123&produto=empreendedorismo")
         self.assertEqual(r["code"], 404)
 
     def test_numero_negativo_devolve_404(self):
-        r = self._get("/admin/trilha/peca/-1?token=tok123")
+        r = self._get("/admin/trilha/peca/-1?token=tok123&produto=empreendedorismo")
+        self.assertEqual(r["code"], 404)
+
+    def test_produto_ausente_devolve_404(self):
+        r = self._get("/admin/trilha/peca/1?token=tok123")
+        self.assertEqual(r["code"], 404)
+
+    def test_produto_desconhecido_devolve_404(self):
+        r = self._get("/admin/trilha/peca/1?token=tok123&produto=nao-existe")
         self.assertEqual(r["code"], 404)
 
     def test_token_certo_devolve_a_mesma_renderizacao_do_pdf(self):
-        titulo = self.db.trilha_peca(1)["titulo"]
-        r = self._get("/admin/trilha/peca/1?token=tok123")
+        titulo = self.db.trilha_peca("empreendedorismo", 1)["titulo"]
+        r = self._get("/admin/trilha/peca/1?token=tok123&produto=empreendedorismo")
         self.assertEqual(r["code"], 200)
         self.assertIn(titulo, r["body"])
 
@@ -489,8 +522,8 @@ class TestRotaPreviaPeca(unittest.TestCase):
         # planilha-custo-hora` no cabeçalho, mas seed/trilha/ferramentas/ só tem
         # .gitkeep -- a prévia do admin não pode divergir do envio real e mostrar
         # um botão que dá 404.
-        self.assertTrue(self.db.trilha_peca(1)["ferramenta_slug"])   # a peça DECLARA ferramenta
-        r = self._get("/admin/trilha/peca/1?token=tok123")
+        self.assertTrue(self.db.trilha_peca("empreendedorismo", 1)["ferramenta_slug"])   # a peça DECLARA ferramenta
+        r = self._get("/admin/trilha/peca/1?token=tok123&produto=empreendedorismo")
         self.assertEqual(r["code"], 200)
         self.assertNotIn("Baixar", r["body"])
 

@@ -68,26 +68,25 @@ def _pct_str(pct):
     return ("%g" % float(pct)).replace(".", ",") + "%"
 
 
-def _trilha_numero_valido(numero_str):
+def _trilha_numero_valido(numero_str, produto):
     """Converte um `numero` (form do POST /trilha OU segmento de URL da rota GET
-    /admin/trilha/peca/<n>) num inteiro de peça válido (1..config.TRILHA_TOTAL), ou
-    devolve 0 se não for. Único ponto de verdade pras duas rotas -- nenhuma delas
-    tem permissão de validar `numero` por conta própria.
+    /admin/trilha/peca/<n>) num inteiro de peça válido pro `produto` dado
+    (1..total DESSE produto), ou devolve 0. Único ponto de verdade pras duas
+    rotas -- nenhuma delas valida `numero` por conta própria.
 
     A faixa é checada AQUI, antes de qualquer valor chegar em `db.trilha_marcar_feito`
-    ou `db.trilha_peca`: `int()` do Python não estoura com uma string de dezenas de
-    dígitos (inteiro de precisão arbitrária), mas o `sqlite3` estoura ao tentar
-    converter esse Python int pra INTEGER de 64 bits do SQLite (`OverflowError:
-    Python int too large to convert to SQLite INTEGER`), sem try/except no caminho do
-    banco — qualquer requisição (form OU URL) conseguiria derrubar a resposta só
-    mandando um número gigante. Preferimos rejeitar aqui (peça inválida vira 0,
-    silenciosamente ignorada) a deixar a exceção subir."""
+    ou `db.trilha_peca`: `int()` do Python não estoura com string gigante, mas o
+    `sqlite3` estoura ao converter esse int pra INTEGER de 64 bits sem try/except
+    no caminho do banco."""
     import config
+    if produto not in config.TRILHAS:
+        return 0
     try:
         numero = int(numero_str or 0)
     except ValueError:
         return 0
-    return numero if 1 <= numero <= config.TRILHA_TOTAL else 0
+    total = config.TRILHAS[produto]["total"]
+    return numero if 1 <= numero <= total else 0
 
 
 def agendador():
@@ -442,27 +441,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not token_ok:
                 return self._html("<h3>Acesso negado</h3>", 403)
             _db.init()
-            # mesmo helper do POST /trilha (linha ~1251): rejeita fora da faixa
-            # 1..TRILHA_TOTAL ANTES de tocar o banco -- um `numero` gigante na URL
-            # não pode virar OverflowError do sqlite3 dentro de `db.trilha_peca`
-            # (duas validações paralelas pra mesma entrada é como a 2ª volta fura).
-            numero = _trilha_numero_valido(path.rsplit("/", 1)[1])
+            produto = q.get("produto", [""])[0]
+            if produto not in config.TRILHAS:
+                return self._html("<h3>Produto inválido</h3>", 404)
+            numero = _trilha_numero_valido(path.rsplit("/", 1)[1], produto)
             if not numero:
                 return self._html("<h3>Peça inválida</h3>", 404)
-            peca = _db.trilha_peca(numero)
+            peca = _db.trilha_peca(produto, numero)
             if not peca:
                 return self._html("<h3>Peça não encontrada</h3>", 404)
             peca["numero"] = numero
-            # só afirma o link se o ARQUIVO existir -- mesma correção do envio real
-            # (app/trilha.py, enviar_para): a prévia não pode divergir do que sai no
-            # WhatsApp, e mostrar aqui um botão que dá 404 seria exatamente isso.
             slug = peca.get("ferramenta_slug")
-            # ARTIGOS_URL, igual ao envio real (ver comentário em trilha.enviar_para):
-            # /ferramentas/ só existe no portal do assinante; no host do ebook a rota
-            # cai no fallback e devolve o ebook com 200.
             link = (f"{config.ARTIGOS_URL}/ferramentas/{slug}"
                     if slug and _trilha_mod.caminho_ferramenta(slug) else "")
-            # mesma função que gera o PDF: a prévia não pode divergir do que é enviado
             return self._html(pdf_trilha.montar_html(
                 peca, "(prévia)", abertura="", link_ferramenta=link), 200)
         if path == "/admin/trilha":
@@ -472,16 +463,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not token_ok:
                 return self._html("<h3>Acesso negado</h3>", 403)
             _db.init()
+            produto = q.get("produto", [""])[0]
+            if produto not in config.TRILHAS:
+                produto = next(iter(config.TRILHAS), "")
             linhas = []
-            for l in _db.trilha_painel():
+            total = config.TRILHAS[produto]["total"] if produto else 0
+            for l in _db.trilha_painel(produto):
                 reg = _subs.por_id(l["subscriber_id"]) or {}
                 linhas.append({"nome": reg.get("nome") or l["subscriber_id"],
                                "proxima_peca": l["proxima_peca"],
                                "enviadas": l["enviadas"], "feitas": l["feitas"],
-                               "concluiu": l["proxima_peca"] > config.TRILHA_TOTAL})
+                               "concluiu": l["proxima_peca"] > total})
             return self._html(site_web.pagina_admin_trilha(
-                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas(),
-                ativa=_trilha.ativa(), msg=q.get("msg", [""])[0]), 200)
+                linhas, config.ADMIN_TOKEN or "", pecas=_db.trilha_listar_pecas(produto),
+                produto=produto, produto_ativo=_trilha.produto_ativo(),
+                msg=q.get("msg", [""])[0]), 200)
         if path.startswith("/admin"):
             import config, subscribers, site_web, auth_web, db
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -905,10 +901,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not token_ok:
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
-            ligar = g("acao") == "ligar"
-            _trilha.definir_ativa(ligar)
-            msg = ("Trilha LIGADA — a partir do próximo sábado os assinantes recebem."
-                   if ligar else "Trilha desligada. Nenhum assinante recebe.")
+            novo = g("produto_ativo")
+            try:
+                _trilha.definir_produto_ativo(novo)
+            except ValueError:
+                return self._redirect(f"/admin/trilha?token={config.ADMIN_TOKEN}"
+                                      f"&msg={up.quote('Produto inválido.')}")
+            if novo:
+                msg = (f"Trilha ativa: {config.TRILHAS[novo]['nome']}. Quem já está no meio de "
+                       "outra termina antes de entrar nesta.")
+            else:
+                msg = "Nenhuma trilha ativa. Ninguém novo entra; quem já está em progresso continua recebendo."
             return self._redirect(f"/admin/trilha?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
         if path == "/admin/precos":
             import config, db

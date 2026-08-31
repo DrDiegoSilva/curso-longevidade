@@ -875,17 +875,32 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
     return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_admin_trilha(linhas, token="", pecas=None, ativa=False, msg=""):
+def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo="", msg=""):
     """Painel do admin: quem está em qual semana da trilha, quanto recebeu e
-    quanto executou. Cartões (não tabela: `.tbl` não existe no CSS deste repo, e
-    a tela de Assinantes já foi redesenhada em cartões por causa disso no celular).
-    Cada linha: nome, proxima_peca, enviadas, feitas, concluiu:bool.
+    quanto executou, MAIS o seletor de qual trilha está ativa (só uma por vez).
+
+    `produto` é qual trilha está sendo VISUALIZADA (peças/painel abaixo);
+    `produto_ativo` é qual trilha está aceitando gente NOVA agora -- podem ser
+    diferentes (ex.: visualizando a prévia de peptídeos enquanto empreendedorismo
+    ainda está ativa pra quem já começou nela).
 
     `pecas` alimenta a prévia sob demanda: um link por peça pra
-    `/admin/trilha/peca/<n>`, que renderiza com a MESMA função que gera o PDF
-    enviado no WhatsApp -- assim a prévia não pode divergir do envio real.
-    Default `None` de propósito: chamadores antigos (sem essa lista) continuam
-    funcionando."""
+    `/admin/trilha/peca/<n>&produto=...`, que renderiza com a MESMA função que
+    gera o PDF enviado no WhatsApp -- assim a prévia não pode divergir do envio
+    real."""
+    import config
+    catalogo = config.TRILHAS
+    if produto not in catalogo:
+        produto = next(iter(catalogo), "")
+    info = catalogo.get(produto, {"nome": "", "total": 0})
+    tk = f"token={_esc(token)}" if token else ""
+
+    abas = "".join(
+        f'<a class="{"actbtn" if p == produto else "actbtn ghost"}" '
+        f'href="/admin/trilha?produto={p}{("&" + tk) if tk else ""}" '
+        f'style="text-decoration:none;padding:8px 15px;font-size:13px">{_esc(dados["nome"])}</a>'
+        for p, dados in catalogo.items())
+
     pecas = pecas or []
     if not pecas:
         bloco_pecas = '<p class="hint">Nenhuma peça carregada.</p>'
@@ -894,34 +909,30 @@ def pagina_admin_trilha(linhas, token="", pecas=None, ativa=False, msg=""):
         for p in pecas:
             itens.append(
                 f'<p style="margin:0 0 6px"><a class="cta ghost" '
-                f'href="/admin/trilha/peca/{int(p["numero"])}?token={_esc(token)}">'
+                f'href="/admin/trilha/peca/{int(p["numero"])}?produto={produto}'
+                f'{("&" + tk) if tk else ""}">'
                 f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
         bloco_pecas = "".join(itens)
+
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
-    # O interruptor mestre. Fica no topo porque é a única coisa nesta tela que muda o
-    # que o assinante recebe -- o resto é leitura.
-    if ativa:
-        bloco_switch = (
-            '<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px;'
-            'border-color:var(--ouro2)">'
-            '<p class="plabel" style="color:var(--ouro2)">Trilha LIGADA</p>'
-            '<p class="hint" style="margin:6px 0 12px">Todo sábado os assinantes recebem a '
-            'peça da vez, cada um no horário que escolheu.</p>'
-            f'<form method="post" action="/admin/trilha">'
-            f'<input type="hidden" name="token" value="{_esc(token)}">'
-            '<input type="hidden" name="acao" value="desligar">'
-            '<button class="actbtn ghost" type="submit">Desligar a trilha</button></form></div>')
-    else:
-        bloco_switch = (
-            '<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
-            '<p class="plabel">Trilha desligada</p>'
-            '<p class="hint" style="margin:6px 0 12px">Nenhum assinante recebe nada. Leia as '
-            f'{config.TRILHA_TOTAL} peças abaixo antes de ligar — depois de ligada, a primeira '
-            'sai no próximo sábado e não tem como voltar atrás no que já saiu.</p>'
-            f'<form method="post" action="/admin/trilha">'
-            f'<input type="hidden" name="token" value="{_esc(token)}">'
-            '<input type="hidden" name="acao" value="ligar">'
-            '<button class="actbtn" type="submit">Ligar a trilha</button></form></div>')
+
+    seletor = "".join(
+        f'<label style="display:block;margin:4px 0">'
+        f'<input type="radio" name="produto_ativo" value="{p}" '
+        f'{"checked" if p == produto_ativo else ""}> {_esc(dados["nome"])}</label>'
+        for p, dados in catalogo.items())
+    bloco_switch = (
+        '<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
+        '<p class="plabel">Qual trilha está ativa</p>'
+        '<p class="hint" style="margin:6px 0 12px">Só uma por vez. Quem já está no meio de '
+        'outra termina ela antes de entrar nesta — trocar aqui não interrompe ninguém.</p>'
+        f'<form method="post" action="/admin/trilha">'
+        f'<input type="hidden" name="token" value="{_esc(token)}">'
+        f'<label style="display:block;margin:4px 0"><input type="radio" name="produto_ativo" '
+        f'value="" {"checked" if not produto_ativo else ""}> Nenhuma</label>'
+        f'{seletor}'
+        '<button class="actbtn" type="submit" style="margin-top:10px">Salvar</button></form></div>')
+
     if not linhas:
         corpo_lista = '<p class="hint">Ninguém entrou na trilha ainda.</p>'
     else:
@@ -929,10 +940,6 @@ def pagina_admin_trilha(linhas, token="", pecas=None, ativa=False, msg=""):
         for l in linhas:
             estado = "Concluiu" if l.get("concluiu") else f"Semana {int(l['proxima_peca'])}"
             cards.append(
-                # .panel padrão é feito p/ 1 caixa centralizada (login/forms), não p/ lista
-                # repetida -- max-width/margin sobrescritos aqui, mesma técnica já usada em
-                # pagina_admin_envio logo acima (senão dezenas de assinantes viram uma coluna
-                # estreita e centralizada com 40px de vão entre cada cartão).
                 f'<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
                 f'<h3 style="margin:0;font-family:var(--disp);color:var(--creme);font-size:20px">'
                 f'{_esc(l.get("nome") or "—")}</h3>'
@@ -944,17 +951,18 @@ def pagina_admin_trilha(linhas, token="", pecas=None, ativa=False, msg=""):
     <div class="wrap">
       {_admin_nav(token, "trilha")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
-      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">{_esc(config.TRILHA_NOME)}</h2>
-      <p class="hint">{len(linhas)} assinante(s) na trilha · {config.TRILHA_TOTAL} peças no total.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 12px">{abas}</div>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">{_esc(info["nome"])}</h2>
+      <p class="hint">{len(linhas)} assinante(s) nesta trilha · {info["total"]} peças no total.</p>
       {msg_html}
       {bloco_switch}
       <div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">
-        <p class="plabel">As {config.TRILHA_TOTAL} peças</p>
+        <p class="plabel">As {info["total"]} peças</p>
         <p class="hint">Abra cada uma pra ver exatamente o que vira PDF no WhatsApp.</p>
         {bloco_pecas}</div>
       {corpo_lista}
     </div>"""
-    return _pagina(f"{config.TRILHA_NOME} · {PRODUTO}", corpo, logado=True, atual="trilha",
+    return _pagina(f"{_esc(info['nome'])} · {PRODUTO}", corpo, logado=True, atual="trilha",
                    meta_extra='<meta name="robots" content="noindex">')
 
 
