@@ -138,38 +138,32 @@ def _liberar_claim(sub_id, produto, numero):
                   "AND feito_em IS NULL", (sub_id or "", produto, int(numero)))
 
 
-def enviar_para(sub, enviar_fn=None, render_fn=None):
-    """Envia a peça da vez a UM assinante. True se enviou.
-
-    Ordem que importa: claim -> render -> envia -> avança. A posição só anda depois
-    do envio dar certo; se falhar, o claim é liberado e ele recebe a MESMA peça no
-    sábado seguinte. Nunca pula conteúdo."""
+def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None):
+    """Um ciclo claim->render->envia->avança, pra UMA peça de UM produto.
+    Extraído pra `enviar_para` poder rodar isto `pecas_por_envio` vezes seguidas
+    na mesma visita, sem duplicar a lógica de claim/retomada/falha."""
     import os
     import tempfile
     import deliver
     import phone
 
     sub_id = sub.get("id")
-    peca = proxima_peca(sub_id)
-    if peca is None:
+    info = config.TRILHAS[produto]
+    n = db.trilha_posicao(sub_id, produto)
+    if n > info["total"]:
         return False
-    numero = peca["numero"]
-    if not db.trilha_registrar_envio(sub_id, numero):
-        # INVARIANTE que sustenta este "retomar" em vez de `return False`: `numero`
-        # acabou de sair de `proxima_peca(sub_id)`, ou seja, É a posição ATUAL do
-        # assinante. Se esta peça já tivesse sido enviada com sucesso, `trilha_avancar`
-        # já teria movido a posição pra frente e `proxima_peca` teria devolvido outro
-        # número -- não este. Logo, um claim que colide com a posição atual só pode
-        # ser órfão: uma execução anterior morreu entre o INSERT do claim e o
-        # envio/avanço (deploy, OOM, restart do container) e nunca chegou nos
-        # try/except abaixo, que liberariam o claim via `_liberar_claim`. Sem retomar
-        # aqui, o assinante trava NESSA peça pra sempre, em silêncio -- provado em
-        # produção: 3 sábados seguidos com {'enviados': 0, 'falhas': 1}, posição
-        # sempre 1, zero mensagens de verdade. O que evita reenvio duplicado DENTRO
-        # do mesmo sábado não é este claim por peça -- é o claim por (sábado,
-        # assinante) que `enviar_slot` faz ANTES de chamar esta função (chave
-        # `trilha:{data}` em `registrar_envio_assinante`).
-        print(f"[trilha] retomando claim órfão da peça {numero} p/ {sub_id} "
+    peca = db.trilha_peca(produto, n)
+    if not peca:
+        return False
+    peca["numero"] = n
+    if not db.trilha_registrar_envio(sub_id, produto, n):
+        # INVARIANTE que sustenta este "retomar" em vez de `return False`: `n`
+        # acabou de sair de `db.trilha_posicao(sub_id, produto)`, ou seja, É a
+        # posição ATUAL do assinante NESSE produto. Um claim que colide com a
+        # posição atual só pode ser órfão (execução anterior morreu entre o
+        # INSERT do claim e o envio/avanço). Sem retomar aqui, o assinante trava
+        # NESSA peça pra sempre, em silêncio.
+        print(f"[trilha] retomando claim órfão da peça {n} ({produto}) p/ {sub_id} "
               f"(execução anterior não completou)", flush=True)
 
     enviar_fn = enviar_fn or deliver.enviar_pdf
@@ -180,46 +174,56 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
     try:
         import pdf_trilha
         link = ""
-        # só afirma o link se o ARQUIVO existir -- a peça pode declarar `ferramenta:`
-        # no cabeçalho antes do arquivo ser subido em seed/trilha/ferramentas/, e um
-        # link morto na peça 1 é o pior lugar pra isso acontecer (todo assinante
-        # pagante recebe a peça 1 primeiro).
         if peca.get("ferramenta_slug") and caminho_ferramenta(peca["ferramenta_slug"]):
-            # ARTIGOS_URL, não PUBLIC_URL: este app serve DOIS hosts. `curso.`
-            # (PUBLIC_URL) é o ebook e faz fallback pra ele em rota desconhecida —
-            # um link de ferramenta ali devolveria o ebook, com HTTP 200, sem erro
-            # nenhum aparecendo. `/ferramentas/` só existe no portal do assinante.
             link = f"{config.ARTIGOS_URL}/ferramentas/{peca['ferramenta_slug']}"
         html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
-                                           abertura=abertura(sub_id, numero), link_ferramenta=link)
-        out = os.path.join(tempfile.gettempdir(), f"trilha-{numero}-{sub_id}.pdf")
+                                           abertura=abertura(sub_id, produto, n), link_ferramenta=link)
+        out = os.path.join(tempfile.gettempdir(), f"trilha-{produto}-{n}-{sub_id}.pdf")
         render_fn(html_peca, out)
-        # nota: deliver.enviar_pdf(whatsapp, pdf_path, caption="") não tem parâmetro
-        # `nome_arquivo` (o nome do arquivo no WhatsApp sai do próprio `caption`,
-        # ver deliver._evolution_media_payload) — não passar aqui derrubaria todo
-        # envio real com TypeError, capturado abaixo e mascarado como "zap caiu".
         enviar_fn(phone.normalizar(sub.get("whatsapp", "")), out,
-                  caption=f"{config.TRILHA_NOME} · Semana {numero}: {peca.get('titulo','')}")
+                  caption=f"{info['nome']} · Semana {n}: {peca.get('titulo','')}")
     except Exception as e:
-        print(f"[trilha] peça {numero} p/ {sub_id} falhou: {e}", flush=True)
-        _liberar_claim(sub_id, numero)
+        print(f"[trilha] peça {n} ({produto}) p/ {sub_id} falhou: {e}", flush=True)
+        _liberar_claim(sub_id, produto, n)
         return False
 
     try:
-        db.trilha_avancar(sub_id, numero)
+        db.trilha_avancar(sub_id, produto, n)
     except Exception as e:
-        # a mensagem JÁ SAIU no WhatsApp aqui — não dá pra desfazer o envio. Se a
-        # posição não avançar e o claim continuar de pé, o assinante trava nessa
-        # peça pra sempre, em silêncio (proxima_peca some, mas trilha_registrar_envio
-        # devolve False pro resto da vida). Preferimos o oposto: libera o claim e
-        # ele recebe a MESMA peça de novo no sábado seguinte — duplicata é visível
-        # e recuperável; travamento silencioso não é.
-        print(f"[trilha] AVANÇO da peça {numero} p/ {sub_id} falhou (mensagem JÁ enviada!): {e}",
+        print(f"[trilha] AVANÇO da peça {n} ({produto}) p/ {sub_id} falhou (mensagem JÁ enviada!): {e}",
               flush=True)
-        _liberar_claim(sub_id, numero)
+        _liberar_claim(sub_id, produto, n)
         return False
 
     return True
+
+
+def enviar_para(sub, enviar_fn=None, render_fn=None):
+    """Envia a(s) peça(s) da vez a UM assinante -- `pecas_por_envio` do produto em
+    que ele está agora (1 pra empreendedorismo, 2 pra peptídeos). Se a trilha
+    acabar no meio do lote, manda a que resta e para -- nunca emenda no próximo
+    produto no mesmo sábado (isso só é decidido de novo no sábado seguinte, por
+    `produto_do_assinante`). True se enviou AO MENOS uma peça."""
+    import time
+
+    sub_id = sub.get("id")
+    produto = produto_do_assinante(sub_id)
+    if produto is None:
+        return False
+    n_lote = config.TRILHAS[produto].get("pecas_por_envio", 1)
+    enviou_alguma = False
+    for i in range(n_lote):
+        if i > 0:
+            # mesmo número de WhatsApp que sustenta o produto pago inteiro -- não
+            # dispara 2 mensagens grudadas pra mesma pessoa.
+            time.sleep(config.SEND_DELAY_SEC)
+        ok = _enviar_uma_peca(sub, produto, enviar_fn=enviar_fn, render_fn=render_fn)
+        if not ok:
+            return enviou_alguma
+        enviou_alguma = True
+        if db.trilha_posicao(sub_id, produto) > config.TRILHAS[produto]["total"]:
+            break
+    return enviou_alguma
 
 
 def produto_ativo():
@@ -259,28 +263,23 @@ def produto_do_assinante(sub_id):
 
 
 def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
-    """Envia a peça da semana aos assinantes ativos de `slot`. Só roda no dia da
-    trilha, e só com o interruptor `ativa()` ligado. Idempotente por (data, slot)
-    usando `envios_slot` com chave namespaced — mesmo truque da varredura semanal,
-    sem tabela nova.
+    """Envia a peça (ou peças, se `pecas_por_envio>1`) da semana aos assinantes
+    ativos de `slot`. Só roda no dia da trilha. Quem não tem produto pra receber
+    agora (`produto_do_assinante` devolve None) simplesmente não conta nem como
+    enviado nem como falha -- não existe mais um "desligada" global: cada
+    assinante é resolvido individualmente, então quem está no meio de uma trilha
+    continua recebendo mesmo sem nenhum produto NOVO ativo.
 
     Dois claims empilhados, cada um matando um bug diferente:
-    - por (data, slot), acima: o TICK inteiro não roda duas vezes (restart do cron).
-    - por (data, assinante), no loop: o ASSINANTE não leva DUAS peças no mesmo
-      sábado por causa de troca de horário no meio do dia — mesma defesa que
-      `daily.enviar_slot` usa pro estudo diário (ver `db.registrar_envio_assinante`),
-      aqui reaproveitada com chave namespaced (`trilha:{data}`) pra não brigar com
-      o claim do estudo diário na mesma tabela `envios_dia`."""
+    - por (data, slot): o TICK inteiro não roda duas vezes (restart do cron).
+    - por (data, assinante): o ASSINANTE não leva DUAS peças no mesmo sábado por
+      troca de horário no meio do dia -- reaproveitado com chave namespaced
+      (`trilha:{data}`) pra não brigar com o claim do estudo diário."""
     from datetime import datetime
     import time
     import subscribers
 
     d = quando or datetime.now()
-    if not ativa():
-        # ANTES de qualquer claim: desligar a trilha não pode queimar o envio do
-        # sábado. Se o claim fosse consumido aqui, ligar o interruptor no mesmo dia
-        # deixaria a base sem receber e ninguém entenderia por quê.
-        return {"enviados": 0, "falhas": 0, "desligada": True}
     if not e_dia_da_trilha(d):
         return {"enviados": 0, "falhas": 0}
     data = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else str(d)
@@ -293,20 +292,13 @@ def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
         if subscribers.slot_de(s) != slot:
             continue
         if not db.registrar_envio_assinante(f"trilha:{data}", s.get("id")):
-            continue   # já recebeu a peça da semana hoje (troca de horário no mesmo sábado)
-        # pacing: é o MESMO número de WhatsApp que sustenta o produto pago inteiro —
-        # sem o delay, o 1º sábado dispara a base inteira de um slot em rajada. Não
-        # dorme antes do 1º envio (sem atraso inútil no início do lote).
+            continue   # já recebeu a(s) peça(s) da semana hoje
         if not primeiro:
             time.sleep(config.SEND_DELAY_SEC)
         primeiro = False
         try:
             ok = enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn)
         except Exception as e:
-            # cinto e suspensório: enviar_para já cobre claim/render/envio/avanço
-            # com try/except próprios, mas uma falha em UM assinante (ex.: erro no
-            # próprio `proxima_peca`, antes do try interno) não pode abortar o
-            # `for` e deixar o resto do slot sem receber nada.
             print(f"[trilha] envio a {s.get('id')} explodiu fora do enviar_para: {e}", flush=True)
             ok = False
         if ok:
