@@ -221,18 +221,40 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
     return True
 
 
-def ativa():
-    """Interruptor mestre da trilha. Nasce DESLIGADA, de propósito.
+def produto_ativo():
+    """Qual trilha aceita gente NOVA agora. Vazio = nenhuma -- mesma postura de
+    segurança de antes (`ativa()` nascia False): sem escolha explícita, ninguém
+    novo entra. Quem já está em progresso em outro produto não é afetado por
+    isto (ver `produto_do_assinante`)."""
+    v = db.get_config("trilha_produto_ativo", "")
+    return v if v in config.TRILHAS else ""
 
-    O conteúdo é escrito uma vez e vai direto pro WhatsApp de assinante pagante —
-    não existe etapa de aprovação por envio, como tem no estudo diário. Então a
-    trilha só dispara depois que o dono leu as 12 peças na prévia do admin e ligou
-    o interruptor. Um deploy sozinho nunca é suficiente pra começar a enviar."""
-    return db.get_config("trilha_ativa", "0") == "1"
+
+def definir_produto_ativo(produto):
+    if produto and produto not in config.TRILHAS:
+        raise ValueError(f"produto de trilha desconhecido: {produto}")
+    db.set_config("trilha_produto_ativo", produto or "")
 
 
-def definir_ativa(ligada):
-    db.set_config("trilha_ativa", "1" if ligada else "0")
+def produto_do_assinante(sub_id):
+    """Qual produto de trilha este assinante recebe agora.
+
+    1. Se ele tem progresso INCOMPLETO em algum produto do catálogo, é esse --
+       não importa qual está ativo agora. É isso que garante "termina antes de
+       trocar".
+    2. Senão (nunca começou nada, ou concluiu tudo que já tinha começado), cai
+       no produto ativo do momento.
+    3. Sem produto ativo, `None` -- ninguém novo entra.
+
+    Invariante que sustenta o passo 1: nunca há dois produtos incompletos ao
+    mesmo tempo pro mesmo assinante, porque só se entra num produto novo quando
+    não sobra nenhum em aberto (não existe caminho pra "meio de A e meio de B"
+    simultaneamente)."""
+    for produto, info in config.TRILHAS.items():
+        pos = db.trilha_posicao_leitura(sub_id, produto)
+        if pos is not None and pos <= info["total"]:
+            return produto
+    return produto_ativo() or None
 
 
 def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):

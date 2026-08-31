@@ -711,10 +711,50 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
         self.assertIn("Baixar", htmls[0])
 
 
+class TestProdutoDoAssinante(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+
+    def test_ninguem_ativo_e_ninguem_comecou_devolve_none(self):
+        self.assertIsNone(self.t.produto_do_assinante("sub-a"))
+
+    def test_assinante_novo_entra_no_produto_ativo(self):
+        self.t.definir_produto_ativo("peptideos")
+        self.assertEqual(self.t.produto_do_assinante("sub-a"), "peptideos")
+
+    def test_meio_de_um_produto_continua_nele_mesmo_trocando_o_ativo(self):
+        self.t.definir_produto_ativo("empreendedorismo")
+        self.db.trilha_avancar("sub-a", "empreendedorismo", 1)   # está na peça 2 de 12
+        self.t.definir_produto_ativo("peptideos")                # Diego troca a ativa
+        self.assertEqual(self.t.produto_do_assinante("sub-a"), "empreendedorismo",
+                         "quem tá no meio tem que terminar antes de trocar")
+
+    def test_quem_concluiu_cai_no_produto_ativo(self):
+        self.t.definir_produto_ativo("empreendedorismo")
+        self.db.trilha_avancar("sub-a", "empreendedorismo", self.cfg.TRILHAS["empreendedorismo"]["total"])
+        self.t.definir_produto_ativo("peptideos")
+        self.assertEqual(self.t.produto_do_assinante("sub-a"), "peptideos")
+
+    def test_definir_produto_ativo_rejeita_produto_desconhecido(self):
+        with self.assertRaises(ValueError):
+            self.t.definir_produto_ativo("nao-existe")
+
+    def test_definir_produto_ativo_vazio_desliga(self):
+        self.t.definir_produto_ativo("peptideos")
+        self.t.definir_produto_ativo("")
+        self.assertEqual(self.t.produto_ativo(), "")
+        self.assertIsNone(self.t.produto_do_assinante("sub-a"))
+
+
 class TestInterruptor(unittest.TestCase):
-    """O interruptor mestre. Nasce DESLIGADO porque a trilha não tem aprovação por
-    envio (o estudo diário tem, às 18h): o conteúdo vai do arquivo direto pro
-    WhatsApp de assinante pagante. Um deploy sozinho não pode começar a enviar."""
+    """O interruptor mestre virou seletor de produto. Nasce sem nenhuma trilha
+    ativa porque a trilha não tem aprovação por envio (o estudo diário tem, às
+    18h): o conteúdo vai do arquivo direto pro WhatsApp de assinante pagante. Um
+    deploy sozinho não pode começar a enviar."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -723,48 +763,15 @@ class TestInterruptor(unittest.TestCase):
         importlib.reload(trilha)
         self.t = trilha
         self.t.semear()
-        self.enviados = []
 
-    def _fake_enviar(self, whatsapp, pdf_path, caption=""):
-        self.enviados.append(whatsapp)
-
-    def _fake_render(self, html, out_path):
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write("pdf")
-        return out_path
-
-    def test_nasce_desligada(self):
-        self.assertFalse(self.t.ativa())
-
-    def test_desligada_nao_envia_nem_no_sabado(self):
-        from datetime import date
-        reg = self.subs.adicionar("Fulano", "5543999990000")
-        self.subs.definir_slot(reg["id"], "08h")
-        res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
-                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
-        self.assertEqual(res["enviados"], 0)
-        self.assertEqual(self.enviados, [])
-        self.assertTrue(res.get("desligada"))
-
-    def test_desligada_nao_queima_o_claim_do_sabado(self):
-        """Se o gate viesse DEPOIS do claim, ligar o interruptor no mesmo sábado
-        deixaria a base sem receber e ninguém entenderia por quê."""
-        from datetime import date
-        reg = self.subs.adicionar("Fulano", "5543999990000")
-        self.subs.definir_slot(reg["id"], "08h")
-        sab = date(2026, 8, 8)
-        self.t.enviar_slot("08h", quando=sab,
-                           enviar_fn=self._fake_enviar, render_fn=self._fake_render)
-        self.t.definir_ativa(True)
-        res = self.t.enviar_slot("08h", quando=sab,
-                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
-        self.assertEqual(res["enviados"], 1, "ligar no mesmo sábado tem que passar a enviar")
+    def test_nasce_sem_produto_ativo(self):
+        self.assertEqual(self.t.produto_ativo(), "")
 
     def test_ligar_e_desligar(self):
-        self.t.definir_ativa(True)
-        self.assertTrue(self.t.ativa())
-        self.t.definir_ativa(False)
-        self.assertFalse(self.t.ativa())
+        self.t.definir_produto_ativo("empreendedorismo")
+        self.assertEqual(self.t.produto_ativo(), "empreendedorismo")
+        self.t.definir_produto_ativo("")
+        self.assertEqual(self.t.produto_ativo(), "")
 
 
 class TestMigracaoMultiproduto(unittest.TestCase):
