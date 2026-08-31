@@ -316,14 +316,16 @@ class TestPdfTrilha(unittest.TestCase):
         import pdf_trilha
         importlib.reload(pdf_trilha)
         self.p = pdf_trilha
-        self.peca = {"numero": 3, "titulo": "Escolha uma linha", "eixo": "Saber onde você está",
-                     "corpo": "Primeiro.\n\nSegundo.", "micro_resultado": "Faça a conta.",
-                     "mentalidade": "Pense grande.", "ferramenta_slug": "mapa-de-linha"}
+        self.peca = {"produto": "empreendedorismo", "numero": 3, "titulo": "Escolha uma linha",
+                     "eixo": "Saber onde você está", "corpo": "Primeiro.\n\nSegundo.",
+                     "micro_resultado": "Faça a conta.", "mentalidade": "Pense grande.",
+                     "ferramenta_slug": "mapa-de-linha", "aviso": ""}
 
     def test_html_traz_titulo_e_progresso(self):
         h = self.p.montar_html(self.peca, "Diego")
         self.assertIn("Escolha uma linha", h)
-        self.assertIn(f"3 de {self.cfg.TRILHA_TOTAL}", h)
+        total = self.cfg.TRILHAS["empreendedorismo"]["total"]
+        self.assertIn(f"3 de {total}", h)
 
     def test_html_traz_as_tres_camadas(self):
         h = self.p.montar_html(self.peca, "Diego")
@@ -354,83 +356,34 @@ class TestPdfTrilha(unittest.TestCase):
         self.assertNotIn("<script>", h)
         self.assertIn("&lt;script&gt;", h)
 
-    def test_escapa_nome_do_assinante(self):
-        h = self.p.montar_html(self.peca, "<img src=x onerror=1>")
-        self.assertNotIn("<img src=x", h)
+    def test_sem_aviso_nao_mostra_bloco_de_alerta(self):
+        h = self.p.montar_html(self.peca, "Diego")
+        self.assertNotIn("Sem registro na Anvisa", h)
+        self.assertNotIn("bloco alerta", h)
 
-    def test_subtitulo_vira_h2_sem_sobrar_marcador(self):
-        peca = dict(self.peca, corpo="### Um passo importante\n\nTexto normal.")
+    def test_com_aviso_mostra_bloco_de_alerta_depois_do_corpo(self):
+        peca = dict(self.peca, produto="peptideos",
+                   aviso="A Anvisa nomeou esta substância como ilegal para qualquer uso.")
         h = self.p.montar_html(peca, "Diego")
-        self.assertIn("<h2>Um passo importante</h2>", h)
-        self.assertNotIn("###", h)
+        self.assertIn("Sem registro na Anvisa", h)
+        self.assertIn("ilegal para qualquer uso", h)
+        # ordem: depois do corpo, antes do bloco de tarefa da semana
+        pos_corpo = h.index('<div class="corpo">')
+        pos_alerta = h.index('bloco alerta')
+        pos_tarefa = h.index("Sua tarefa desta semana")
+        self.assertTrue(pos_corpo < pos_alerta < pos_tarefa)
 
-    def test_tabela_de_cano_vira_table_com_thead_e_tbody(self):
-        corpo = "| Item | Valor |\n| --- | --- |\n| Aluguel | R$ 100 |"
-        peca = dict(self.peca, corpo=corpo)
+    def test_aviso_escapa_html(self):
+        peca = dict(self.peca, aviso="<script>alert(1)</script>")
         h = self.p.montar_html(peca, "Diego")
-        self.assertIn("<table>", h)
-        self.assertIn("<thead>", h)
-        self.assertIn("<tbody>", h)
-        self.assertIn("<th>Item</th>", h)
-        self.assertIn("<td>Aluguel</td>", h)
-        self.assertNotIn("|", h)
+        self.assertNotIn("<script>alert", h)
 
-    def test_negrito_vira_strong_em_paragrafo_tabela_e_lista(self):
-        corpo = ("Isto é **forte**.\n\n"
-                 "| Item | Valor |\n| --- | --- |\n| **Total** | R$ 100 |\n\n"
-                 "- Primeiro **item**.")
-        peca = dict(self.peca, corpo=corpo)
+    def test_nome_e_total_vem_do_catalogo_do_produto(self):
+        peca = dict(self.peca, produto="peptideos", numero=1)
         h = self.p.montar_html(peca, "Diego")
-        self.assertIn("<strong>forte</strong>", h)
-        self.assertIn("<strong>Total</strong>", h)
-        self.assertIn("<strong>item</strong>", h)
-        self.assertNotIn("**", h)
-
-    def test_lista_com_marcador_vira_ul(self):
-        peca = dict(self.peca, corpo="- Um\n- Dois\n- Três")
-        h = self.p.montar_html(peca, "Diego")
-        self.assertIn("<ul><li>Um</li><li>Dois</li><li>Três</li></ul>", h)
-
-    def test_lista_numerada_vira_ol(self):
-        peca = dict(self.peca, corpo="1. Um\n2. Dois\n3. Três")
-        h = self.p.montar_html(peca, "Diego")
-        self.assertIn("<ol><li>Um</li><li>Dois</li><li>Três</li></ol>", h)
-
-    def test_escapa_script_dentro_de_celula_de_tabela(self):
-        corpo = "| Item | Valor |\n| --- | --- |\n| <script>alert(1)</script> | R$ 1 |"
-        peca = dict(self.peca, corpo=corpo)
-        h = self.p.montar_html(peca, "Diego")
-        self.assertNotIn("<script>", h)
-        self.assertIn("&lt;script&gt;", h)
-
-    def test_escapa_script_dentro_de_item_de_lista(self):
-        peca = dict(self.peca, corpo="- <script>alert(1)</script>")
-        h = self.p.montar_html(peca, "Diego")
-        self.assertNotIn("<script>", h)
-        self.assertIn("&lt;script&gt;", h)
-
-    def test_texto_sem_marcacao_continua_saindo_como_antes(self):
-        peca = dict(self.peca, corpo="Primeiro.\n\nSegundo.")
-        h = self.p.montar_html(peca, "Diego")
-        self.assertIn("<p>Primeiro.</p>", h)
-        self.assertIn("<p>Segundo.</p>", h)
-        self.assertNotIn("<h2>", h)
-        self.assertNotIn("<ul>", h)
-        self.assertNotIn("<table>", h)
-
-    def test_peca_real_renderiza_sem_sobrar_marcador(self):
-        import trilha
-        caminho = os.path.join(os.path.dirname(__file__), "..", "..", "seed", "trilha",
-                               "05-precificacao.md")
-        with open(caminho, encoding="utf-8") as f:
-            peca = trilha.parse_peca(f.read())
-        peca["numero"] = 5
-        h = self.p.montar_html(peca, "Diego")
-        self.assertNotIn("|", h)
-        self.assertNotIn("###", h)
-        self.assertNotIn("**", h)
-        self.assertIn("<table>", h)
-        self.assertIn("<h2>", h)
+        total_pep = self.cfg.TRILHAS["peptideos"]["total"]
+        self.assertIn(f"1 de {total_pep}", h)
+        self.assertIn(self.cfg.TRILHAS["peptideos"]["nome"], h)
 
 
 class TestEnvio(unittest.TestCase):

@@ -61,6 +61,8 @@ _CSS = """
   .bloco .rot { font-family: system-ui, sans-serif; font-size: 11px; letter-spacing: .18em;
                 text-transform: uppercase; color: #8a6a2f; font-weight: 700; margin: 0 0 10px; }
   .bloco p { margin: 0; font-size: 15px; line-height: 1.6; }
+  .bloco.alerta { border-left-color: #b3402a; background: #fdf3f0; }
+  .bloco.alerta .rot { color: #a13a26; }
   .ferramenta { margin: 26px 0 0; }
   .ferramenta a { font-family: system-ui, sans-serif; font-size: 13px; color: #8a6a2f; }
   .rodape { margin-top: 4px; font-family: system-ui, sans-serif; font-size: 11px; color: #8a8a8a; }
@@ -138,20 +140,26 @@ def _paragrafos(texto):
 
 
 def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
-    """HTML completo de uma peça. `link_ferramenta` vazio some com o bloco inteiro —
-    peça de mentalidade pura não tem anexo e não pode exibir botão órfão.
+    """HTML completo de uma peça. `link_ferramenta` vazio some com o bloco inteiro
+    -- peça de mentalidade pura não tem anexo e não pode exibir botão órfão.
+    `peca["aviso"]` vazio some com o bloco de alerta inteiro, mesma regra.
 
-    A capa fica FORA do wrapper `.pagina`: é a técnica de sangria que `app/pdf.py` já usa
-    (margem lateral do `@page` zerada, cover ocupa a largura inteira, o resto do conteúdo
-    ganha padding próprio pra simular a margem). Colocar a capa dentro de `.pagina` faria
-    ela herdar o padding lateral e parar de bater de ponta a ponta.
-    """
+    Nome/total do produto vêm de `config.TRILHAS[peca["produto"]]`, não de
+    constante fixa -- é o que permite a mesma função servir qualquer trilha do
+    catálogo sem saber seus nomes de antemão."""
     numero = peca.get("numero", 0)
+    info = config.TRILHAS.get(peca.get("produto", ""), {})
+    nome_produto = info.get("nome", config.PRODUTO)
+    total_produto = info.get("total", numero)
     abertura_html = (f'<p class="abertura">{_esc(abertura)}</p>' if abertura else "")
     ferramenta_html = ""
     if link_ferramenta:
         ferramenta_html = (f'<p class="ferramenta">📎 <a href="{_esc(link_ferramenta)}">'
                            f'Baixar a ferramenta desta semana</a></p>')
+    aviso_html = ""
+    if peca.get("aviso"):
+        aviso_html = (f'<div class="bloco alerta"><p class="rot">⚠ Sem registro na Anvisa</p>'
+                      f'{_paragrafos(peca.get("aviso"))}</div>')
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <style>{_CSS}</style></head><body>
   <div class="capa">
@@ -160,20 +168,21 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
         <img class="capa-icone" src="data:image/png;base64,{_ICONE_DS_B64}" alt="">
         <span class="capa-nome">Dr. Diego Silva</span>
       </div>
-      <span class="capa-selo">Semana {_esc(numero)} de {_esc(config.TRILHA_TOTAL)}</span>
+      <span class="capa-selo">Semana {_esc(numero)} de {_esc(total_produto)}</span>
     </div>
-    <div class="capa-produto">{_esc(config.TRILHA_NOME)}</div>
+    <div class="capa-produto">{_esc(nome_produto)}</div>
   </div>
   <div class="pagina">
   <h1>{_esc(peca.get('titulo'))}</h1>
   <p class="eixo">{_esc(peca.get('eixo'))}</p>
   {abertura_html}
   <div class="corpo">{_paragrafos(peca.get('corpo'))}</div>
+  {aviso_html}
   <div class="bloco"><p class="rot">Sua tarefa desta semana</p>
     {_paragrafos(peca.get('micro_resultado')) or '<p></p>'}</div>
   <div class="bloco"><p class="rot">Mentalidade</p>
     {_paragrafos(peca.get('mentalidade')) or '<p></p>'}</div>
   {ferramenta_html}
-  <p class="rodape">Para {_esc(nome_assinante)} · {_esc(config.TRILHA_NOME)}</p>
+  <p class="rodape">Para {_esc(nome_assinante)} · {_esc(nome_produto)}</p>
   </div>
 </body></html>"""
