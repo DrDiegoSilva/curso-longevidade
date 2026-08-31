@@ -747,11 +747,9 @@ class TestLoteDePecas(unittest.TestCase):
 
 
 class TestLinkFerramentaNoEnvio(unittest.TestCase):
-    """Important 4 da revisão: o PDF só pode oferecer o link de download da
-    ferramenta quando o arquivo existe de verdade em seed/trilha/ferramentas/ --
-    caso contrário o assinante loga e recebe 404. Usa `DSCURSO_TRILHA_DIR` isolado
-    (mesmo padrão de TestFerramentaSegura em test_trilha_web.py) pra não escrever
-    arquivo nenhum no diretório real do repo."""
+    """Important 4 da revisão original: o PDF só pode oferecer o link de download
+    da ferramenta quando o arquivo existe de verdade em seed/<produto>/ferramentas/
+    -- caso contrário o assinante loga e recebe 404."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -761,13 +759,12 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
         import trilha
         importlib.reload(trilha)
         self.t = trilha
-        self.db.trilha_upsert_peca(1, "eixo", "Peça 1", "corpo", "micro", "mentalidade",
-                                   "planilha-custo-hora")
+        self.t.definir_produto_ativo("empreendedorismo")
+        self.db.trilha_upsert_peca("empreendedorismo", 1, "eixo", "Peça 1", "corpo", "micro",
+                                   "mentalidade", "", "planilha-custo-hora")
         self.enviados = []
 
     def tearDown(self):
-        # DSCURSO_TRILHA_DIR é global -- sem limpar, vaza pras classes seguintes
-        # da suíte (mesmo achado documentado em TestFerramentaSegura).
         os.environ.pop("DSCURSO_TRILHA_DIR", None)
 
     def _fake_enviar(self, whatsapp, pdf_path, caption=""):
@@ -796,7 +793,8 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
         self.assertNotIn("planilha-custo-hora", htmls[0])
 
     def test_link_aparece_quando_arquivo_da_ferramenta_existe(self):
-        caminho = os.path.join(self.cfg.TRILHA_DIR, "ferramentas", "planilha-custo-hora.csv")
+        caminho = os.path.join(self.cfg.TRILHAS["empreendedorismo"]["dir"], "ferramentas",
+                               "planilha-custo-hora.csv")
         with open(caminho, "w", encoding="utf-8") as f:
             f.write("a,b\n")
         sub = self._sub()

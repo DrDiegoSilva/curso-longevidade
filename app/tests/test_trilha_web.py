@@ -93,6 +93,7 @@ class TestPaginaTrilha(unittest.TestCase):
 class TestFerramentaSegura(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
+        self.tmp2 = tempfile.mkdtemp()
         os.environ["DSCURSO_DATA"] = self.tmp
         os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
         os.environ["DSCURSO_TRILHA_DIR"] = self.tmp
@@ -115,6 +116,7 @@ class TestFerramentaSegura(unittest.TestCase):
         # de peças em vez do `seed/trilha/` de verdade, e `trilha_listar_pecas()`
         # some com as 12 peças). Achado ao rodar a suíte inteira do arquivo.
         os.environ.pop("DSCURSO_TRILHA_DIR", None)
+        os.environ.pop("DSCURSO_PEPTIDEOS_DIR", None)
 
     def test_acha_a_ferramenta_existente(self):
         self.assertTrue(self.t.caminho_ferramenta("planilha-x"))
@@ -126,6 +128,22 @@ class TestFerramentaSegura(unittest.TestCase):
         for mau in ("../db.py", "..%2Fdb.py", "a/../../etc/passwd", "/etc/passwd",
                     "..", ".", "a\\..\\b"):
             self.assertIsNone(self.t.caminho_ferramenta(mau), f"passou: {mau}")
+
+    def test_acha_ferramenta_de_qualquer_produto_do_catalogo(self):
+        # a rota /ferramentas/<slug> não sabe de qual produto é o slug -- a busca
+        # tem que varrer TODOS os diretórios do catálogo, não só um fixo.
+        d_pep = os.path.join(self.tmp2, "peptideos", "ferramentas")
+        os.makedirs(d_pep)
+        with open(os.path.join(d_pep, "checklist-pep.csv"), "w") as f:
+            f.write("a,b\n")
+        os.environ["DSCURSO_PEPTIDEOS_DIR"] = os.path.join(self.tmp2, "peptideos")
+        import config
+        importlib.reload(config)
+        importlib.reload(self.t)
+        try:
+            self.assertTrue(self.t.caminho_ferramenta("checklist-pep"))
+        finally:
+            os.environ.pop("DSCURSO_PEPTIDEOS_DIR", None)
 
 
 class TestPaginaTrilhaFerramentaFaltando(unittest.TestCase):

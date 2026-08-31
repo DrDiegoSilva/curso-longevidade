@@ -319,20 +319,25 @@ _SLUG_OK = re.compile(r"^[a-z0-9][a-z0-9-]{0,60}$")
 
 
 def caminho_ferramenta(slug):
-    """Caminho absoluto do arquivo da ferramenta, ou None.
+    """Caminho absoluto do arquivo da ferramenta, ou None. Busca em TODOS os
+    diretórios do catálogo (a rota /ferramentas/<slug> não sabe de qual produto é
+    o slug) -- primeiro achado vence, mesma tolerância de sempre.
 
     O slug vem da URL, então é entrada não confiável: só minúscula/dígito/hífen
     passa, o que já elimina `..`, `/` e `\\`. A checagem de prefixo depois é cinto
-    e suspensório — se o regex mudar um dia, o arquivo servido continua preso ao
-    diretório de ferramentas."""
+    e suspensório -- se o regex mudar um dia, o arquivo servido continua preso ao
+    diretório de ferramentas daquele produto."""
     if not slug or not _SLUG_OK.match(slug):
         return None
-    base = os.path.realpath(os.path.join(config.TRILHA_DIR, "ferramentas"))
-    for nome in sorted(os.listdir(base)) if os.path.isdir(base) else []:
-        raiz, _ext = os.path.splitext(nome)
-        if raiz != slug:
+    for info in config.TRILHAS.values():
+        base = os.path.realpath(os.path.join(info["dir"], "ferramentas"))
+        if not os.path.isdir(base):
             continue
-        caminho = os.path.realpath(os.path.join(base, nome))
-        if caminho.startswith(base + os.sep) and os.path.isfile(caminho):
-            return caminho
+        for nome in sorted(os.listdir(base)):
+            raiz, _ext = os.path.splitext(nome)
+            if raiz != slug:
+                continue
+            caminho = os.path.realpath(os.path.join(base, nome))
+            if caminho.startswith(base + os.sep) and os.path.isfile(caminho):
+                return caminho
     return None
