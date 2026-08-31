@@ -104,37 +104,38 @@ def e_dia_da_trilha(quando=None):
 
 
 def proxima_peca(sub_id):
-    """A peça que este assinante deve receber agora. None se já concluiu a trilha
-    (ou se a peça não existe no banco — trilha incompleta não vira envio errado)."""
-    n = db.trilha_posicao(sub_id)
-    if n > config.TRILHA_TOTAL:
+    """A peça que este assinante deve receber agora (no produto que
+    `produto_do_assinante` resolver). None se não há produto pra ele agora, ou se
+    ele já concluiu o produto atual (trilha incompleta não vira envio errado)."""
+    produto = produto_do_assinante(sub_id)
+    if produto is None:
         return None
-    p = db.trilha_peca(n)
+    info = config.TRILHAS[produto]
+    n = db.trilha_posicao(sub_id, produto)
+    if n > info["total"]:
+        return None
+    p = db.trilha_peca(produto, n)
     if not p:
         return None
     p["numero"] = n
     return p
 
 
-def abertura(sub_id, numero):
-    """Linha de retomada no topo da peça, olhando a peça anterior.
-
-    É a cobrança da trilha: sem grupo, sem live, sem canal de entrada no WhatsApp —
-    a peça seguinte é que reconhece ou retoma. Vazia na peça 1 (não há anterior)."""
+def abertura(sub_id, produto, numero):
+    """Linha de retomada no topo da peça, olhando a peça anterior DO MESMO
+    produto. Vazia na peça 1 (não há anterior)."""
     if numero <= 1:
         return ""
-    if db.trilha_fez(sub_id, numero - 1):
+    if db.trilha_fez(sub_id, produto, numero - 1):
         return "Você marcou a tarefa da semana passada como feita. É assim que essa trilha funciona."
     return "A tarefa da semana passada continua em aberto — ela leva menos tempo do que parece."
 
 
-def _liberar_claim(sub_id, numero):
-    """Desfaz o claim de `trilha_registrar_envio` quando o envio falhou. Sem isso o
-    assinante ficaria travado: a posição não avançou (certo) mas o claim impediria
-    a retentativa no sábado seguinte (errado) — ele nunca mais receberia a peça."""
+def _liberar_claim(sub_id, produto, numero):
+    """Desfaz o claim de `trilha_registrar_envio` quando o envio falhou."""
     with db._conn() as c:
-        c.execute("DELETE FROM trilha_envios WHERE subscriber_id=? AND numero=? "
-                  "AND feito_em IS NULL", (sub_id or "", int(numero)))
+        c.execute("DELETE FROM trilha_envios WHERE subscriber_id=? AND produto=? AND numero=? "
+                  "AND feito_em IS NULL", (sub_id or "", produto, int(numero)))
 
 
 def enviar_para(sub, enviar_fn=None, render_fn=None):

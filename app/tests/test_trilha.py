@@ -262,6 +262,7 @@ class TestDrip(unittest.TestCase):
         importlib.reload(trilha)
         self.t = trilha
         self.t.semear()
+        self.t.definir_produto_ativo("empreendedorismo")
 
     def test_dia_da_trilha_e_sabado(self):
         from datetime import date
@@ -270,31 +271,40 @@ class TestDrip(unittest.TestCase):
         self.assertFalse(self.t.e_dia_da_trilha(date(2026, 8, 9)))    # domingo
 
     def test_assinante_novo_recebe_a_peca_1(self):
-        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)
+        peca = self.t.proxima_peca("sub-a")
+        self.assertEqual(peca["numero"], 1)
+        self.assertEqual(peca["produto"], "empreendedorismo")
 
     def test_peca_nao_avanca_sozinha(self):
         self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)
-        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)   # sem avanço, mesma peça
+        self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 1)
 
     def test_avanco_leva_a_proxima(self):
-        self.db.trilha_avancar("sub-a", 1)
+        self.db.trilha_avancar("sub-a", "empreendedorismo", 1)
         self.assertEqual(self.t.proxima_peca("sub-a")["numero"], 2)
 
-    def test_quem_concluiu_nao_tem_proxima(self):
-        self.db.trilha_avancar("sub-a", self.cfg.TRILHA_TOTAL)
+    def test_quem_concluiu_e_sem_produto_ativo_nao_tem_proxima(self):
+        self.db.trilha_avancar("sub-a", "empreendedorismo", self.cfg.TRILHAS["empreendedorismo"]["total"])
+        self.t.definir_produto_ativo("")
         self.assertIsNone(self.t.proxima_peca("sub-a"))
 
+    def test_quem_conclui_cai_na_proxima_trilha_ativa(self):
+        self.db.trilha_avancar("sub-a", "empreendedorismo", self.cfg.TRILHAS["empreendedorismo"]["total"])
+        self.t.definir_produto_ativo("peptideos")
+        produto = self.t.produto_do_assinante("sub-a")
+        self.assertEqual(produto, "peptideos")
+
     def test_abertura_da_peca_1_nao_cobra_nada(self):
-        self.assertEqual(self.t.abertura("sub-a", 1), "")
+        self.assertEqual(self.t.abertura("sub-a", "empreendedorismo", 1), "")
 
     def test_abertura_reconhece_quem_fez(self):
-        self.db.trilha_registrar_envio("sub-a", 1)
-        self.db.trilha_marcar_feito("sub-a", 1)
-        self.assertIn("semana passada", self.t.abertura("sub-a", 2).lower())
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        self.db.trilha_marcar_feito("sub-a", "empreendedorismo", 1)
+        self.assertIn("semana passada", self.t.abertura("sub-a", "empreendedorismo", 2).lower())
 
     def test_abertura_retoma_quem_nao_fez(self):
-        self.db.trilha_registrar_envio("sub-a", 1)
-        texto = self.t.abertura("sub-a", 2)
+        self.db.trilha_registrar_envio("sub-a", "empreendedorismo", 1)
+        texto = self.t.abertura("sub-a", "empreendedorismo", 2)
         self.assertTrue(texto)
         self.assertNotIn("parabéns", texto.lower())
 
