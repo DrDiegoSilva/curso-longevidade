@@ -137,6 +137,11 @@ class TestPaginaTrocando(unittest.TestCase):
         h = review_web.pagina_trocando("tok", "2026-08-27")
         self.assertIn("Pode fechar esta página", h)
 
+    def test_tem_botao_pra_verificar_na_mao(self):
+        import review_web
+        h = review_web.pagina_trocando("tok", "2026-08-27")
+        self.assertIn('id="troca-verificar"', h)
+
 
 _SHIM = r"""
 'use strict';
@@ -170,7 +175,9 @@ statusEl.querySelector = function(sel){
   return (sel === '.troca-espera' && !this._substituido) ? espera : null;
 };
 
-var mapa = {'troca-status': statusEl};
+var btnVerificar = new El('button', {});
+
+var mapa = {'troca-status': statusEl, 'troca-verificar': btnVerificar};
 function removerElemento(){ mapa['troca-status'] = null; }
 function removerAtributos(){ statusEl.attrs = {}; }
 
@@ -278,6 +285,16 @@ class TestComportamentoDoJs(unittest.TestCase):
             " tick(); relatarDepois();")
         self.assertEqual(r["resumo"], "")
         self.assertTrue(r["timerVivo"])
+
+    def test_botao_verificar_agora_consulta_na_hora_sem_esperar_o_timer(self):
+        """O navegador embutido do WhatsApp (onde o link "Revisar/editar" normalmente é
+        aberto) pode suspender o setInterval mesmo com a página em primeiro plano — o
+        botão dá uma saída manual que não depende do timer disparar."""
+        r = self._rodar(
+            "enfileirar({status:'pronto', link:'/revisar/novo'}); btnVerificar.onclick();"
+            " relatarDepois();")
+        self.assertIn("Troca conclu", r["resumo"])
+        self.assertIn("/revisar/novo", r["resumo"])
 
     def test_sem_o_elemento_no_dom_o_js_nao_explode(self):
         r = self._rodar("relatarDepois();", prelude="removerElemento();")

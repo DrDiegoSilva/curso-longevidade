@@ -222,7 +222,13 @@ def pagina_trocando(token, data):
     """Tela pós-troca: consulta /revisar-status a cada ~3s e mostra sozinha quando
     terminou (sucesso com link novo, ou erro) — sem precisar checar o WhatsApp. Sem
     JS/fetch, cai pro texto estático (nunca quebra). Ver `draft_store.status_troca`
-    (formato da resposta) e `daily.trocar_estudo_amanha` (quem faz a troca de verdade)."""
+    (formato da resposta) e `daily.trocar_estudo_amanha` (quem faz a troca de verdade).
+
+    O link "Revisar/editar" chega pelo WhatsApp, então normalmente abre no navegador
+    embutido do app — que pode suspender o setInterval mesmo com a página em primeiro
+    plano (caso real: 2026-08-31, a troca terminou e o WhatsApp chegou, mas a tela
+    ficou parada no texto de espera). O botão "verificar agora" dá uma saída manual
+    que não depende do timer disparar."""
     esc = _html.escape
     return f"""<!doctype html><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -231,6 +237,9 @@ def pagina_trocando(token, data):
 <div id="troca-status" data-token="{esc(token)}" data-data="{esc(data)}">
 <p><span class="troca-espera">O novo resumo está sendo gerado. Em ~1-2 min você recebe no
 WhatsApp o estudo novo (com PDF, áudio e um link de revisão novo). Pode fechar esta página.</span></p>
+<button type="button" id="troca-verificar" style="margin-top:4px;padding:6px 14px;
+border-radius:8px;border:1px solid #0f4c3a;background:#fff;color:#0f4c3a;cursor:pointer;
+font-size:14px">🔄 Verificar agora</button>
 </div>
 <script>
 (function(){{
@@ -239,6 +248,8 @@ WhatsApp o estudo novo (com PDF, áudio e um link de revisão novo). Pode fechar
   var token = el.getAttribute('data-token'), data = el.getAttribute('data-data');
   if (!token || !data) return;
   var t0 = Date.now(), timer = setInterval(consultar, 3000);
+  var btn = document.getElementById('troca-verificar');
+  if (btn) btn.onclick = consultar;
   function consultar(){{
     fetch('/revisar-status?token=' + encodeURIComponent(token) + '&data=' + encodeURIComponent(data))
       .then(function(r){{ return r.json(); }})
