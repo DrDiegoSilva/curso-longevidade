@@ -163,10 +163,12 @@ def modo_atualizacao(tema):
     if not dest and not menc:
         return {"msg": None, "commit": lambda: None, "forte": False}  # semana vazia -> só aula
     # 2) Opus aprofunda destaques
+    diretriz = CFG["temas"].get(tema, {}).get("diretriz_extra", "")
+    sys_aprof = SYS_APROF + (f"\n\nDIRETRIZ DO TEMA:\n{diretriz}" if diretriz else "")
     partes = []
     if dest:
         blob = "\n\n".join(f"### {e['titulo']}\nData de publicação: {e['data']}\nRevista: {e['journal']} | doi:{e['doi']}\n{e['abstract']}" for e in dest)
-        partes.append(claude(OPUS, f"Tema: {tema}. Aprofunde ESTES estudos-destaque (abra cada um pela data de publicação):\n\n{blob}", system=SYS_APROF, max_tokens=3200, acao="boletim"))
+        partes.append(claude(OPUS, f"Tema: {tema}. Aprofunde ESTES estudos-destaque (abra cada um pela data de publicação):\n\n{blob}", system=sys_aprof, max_tokens=3200, acao="boletim"))
     # 3) Sonnet menções
     if menc:
         blob = "\n\n".join(f"- [{e['data']}] {e['titulo']} ({e['journal']}, doi:{e['doi']}): {e['abstract'][:600]}" for e in menc)
@@ -306,8 +308,10 @@ def gerar_texto_do_artigo(artigo):
     Usado pela máquina de conteúdo (daily.py) e pelo upload do admin (curadoria)."""
     blob = (f"### {artigo.get('titulo','')}\nData: {artigo.get('data','')}\n"
             f"Fonte: {artigo.get('fonte','')} | doi:{artigo.get('doi','')}\n{artigo.get('resumo','')}")
+    diretriz = CFG["temas"].get(artigo.get("tema", ""), {}).get("diretriz_extra", "")
+    sys_estudo = SYS_ESTUDO + (f"\n\nDIRETRIZ DO TEMA:\n{diretriz}" if diretriz else "")
     return claude(OPUS, f"Resuma ESTE estudo para o médico:\n\n{blob}",
-                  system=SYS_ESTUDO, max_tokens=3600, acao="resumo_estudo")
+                  system=sys_estudo, max_tokens=3600, acao="resumo_estudo")
 
 
 # ─── Main ─────────────────────────────────────────────────────

@@ -6,7 +6,8 @@
       "emoji": "⚖️",
       "cor": "#14332a",
       "query": "(obesity OR \"weight loss\" OR \"weight management\" OR \"anti-obesity\" OR \"GLP-1\" OR tirzepatide OR semaglutide OR retatrutide OR orforglipron OR cagrilintide OR liraglutide OR survodutide OR \"bariatric surgery\")",
-      "excluir": "(pediatric OR adolescent OR \"in mice\" OR \"in rats\" OR 3T3)"
+      "excluir": "(pediatric OR adolescent OR \"in mice\" OR \"in rats\" OR 3T3)",
+      "diretriz_extra": "Quando o estudo for sobre medicação para obesidade/GLP-1 (semaglutida, tirzepatida, liraglutida, retatrutida, orforglipron, cagrilintida, survodutida): a seção de conduta é o lugar certo para trazer munição contra a automedicação, que hoje é rotina no consultório por causa da compra informal dessas canetas sem receita (leva Paraguai, farmácia de manipulação sem controle, importação por conta própria) — sem triagem de comorbidade, sem ajuste de dose, sem acompanhamento de efeito adverso. Deixe claro que o resultado do estudo não valida esse uso desacompanhado: reforce, com o que o próprio estudo permitir (grupo controle, desenho, população, adesão), que a medicação isolada não segura o resultado — pesa tratar em conjunto os pilares hormonal, metabólico e nutricional (avaliação hormonal, controle metabólico, plano alimentar, acompanhamento) pra sustentar a perda e evitar o reganho quando a medicação para ou falta. Só entra quando o próprio estudo der gancho pra isso — não force em texto que não tem espaço clínico pra esse ponto."
     },
     "Hormonal": {
       "rotulo": "Menopausa & Reposição Hormonal",
