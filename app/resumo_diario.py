@@ -252,6 +252,16 @@ def modo_curso():
     return {"msg": f"🎓 *CURSO LONGEVIDADE — Aula {num}: {titulo}*\n\n" + aula, "commit": commit}
 
 # ─── Prompts de sistema ───────────────────────────────────────
+# Voz do Dr. Diego — destilada de feedback real dele em cima de texto gerado (ver
+# docs/superpowers/specs/assets/2026-09-03-voz-diego.md para o antes/depois original).
+# Some ao final de QUALQUER prompt que escreve texto pro assinante final.
+VOZ_DIEGO = (
+    "TOM DO TEXTO: abra pela ideia central, não pela estatística — o número entra depois, como apoio, nunca "
+    "como primeira palavra da frase. Frase curta, uma ideia por frase; corte oração intercalada que obrigue reler "
+    "pra entender. Fale como colega puxando conversa, nunca como professor dando aula. Não empilhe dado em cima de "
+    "dado sem parar pra dizer o que aquilo significa na prática. Ao contrastar duas situações (ex.: paciente "
+    "acompanhado x paciente que se automedica), abra pela situação/pessoa, não pela comparação abstrata.")
+
 SYS_APROF = ("Você escreve resumos clínicos para médicos assinantes (nunca se dirija ao leitor pelo nome — o mesmo "
     "texto vai para todos). Mantenha TODOS os dados e números, mas em "
     "LINGUAGEM CLARA: frases curtas, uma ideia por frase; explique cada sigla/termo técnico na PRIMEIRA vez em palavras "
@@ -264,15 +274,18 @@ SYS_APROF = ("Você escreve resumos clínicos para médicos assinantes (nunca se
     "(5) ⚠️ *Efeitos adversos* com números; (6) 🛠️ *Manejo* dos EA; "
     "(7) 🔬 *MBE* — traduza as siglas (MD, HR, IC95%, I²…) em português claro; "
     "(8) 🧠 *Conduta*, separando o consolidado do que é só deste estudo. "
-    "Sem seção 'para paciente'. WhatsApp: *negrito* com asteriscos, sem títulos markdown. NÃO invente dados fora do abstract.")
+    "Sem seção 'para paciente'. WhatsApp: *negrito* com asteriscos, sem títulos markdown. NÃO invente dados fora do abstract.\n\n"
+    + VOZ_DIEGO)
 SYS_MENC = ("Menções curtas p/ médico (WhatsApp, *negrito*). Comece CADA uma pela data → `🗓️ mês/ano` + revista; "
-    "depois 1–2 linhas em linguagem clara: achado + relevância clínica. Sem inventar.")
+    "depois 1–2 linhas em linguagem clara: achado + relevância clínica. Sem inventar.\n\n"
+    + VOZ_DIEGO)
 SYS_CURSO = ("Você é professor de medicina de longevidade escrevendo para médicos assinantes (o mesmo texto vai para "
     "todos: nunca se dirija ao leitor pelo nome). Aula completa e prática, mas em LINGUAGEM CLARA: "
     "frases curtas, explique cada termo técnico/sigla na primeira vez. Abra com um parágrafo '💡 Em resumo' do que ele vai "
     "aprender. Traga níveis de evidência (A) RCT/meta humano (B) mecanismo/animal (C) opinião; SEMPRE cite o ANO dos "
     "estudos-chave (ex.: 'Konopka 2019') para ele situar quão atual é; cubra mecanismo, doses, segurança, interações, "
-    "conduta e o debate entre pesquisadores com conflito de interesse. WhatsApp: *negrito*. Honesto sobre hype/evidência fraca.")
+    "conduta e o debate entre pesquisadores com conflito de interesse. WhatsApp: *negrito*. Honesto sobre hype/evidência fraca.\n\n"
+    + VOZ_DIEGO)
 
 SYS_ESTUDO = (
     "Você escreve o resumo de UM estudo científico para MÉDICOS ASSINANTES, pra enviar no WhatsApp. "
@@ -300,7 +313,8 @@ SYS_ESTUDO = (
     "   ✅ *Pontos fortes* — breve.\n"
     "   🧠 *O que muda na prática* — conduta, separando o consolidado do que é só deste estudo; só quando fizer sentido.\n"
     "   ⚠️ *Conflito de interesse* — quem declarou o quê; se ausente, 'não declarado'.\n"
-    "Sem seção 'para paciente'. Honesto sobre hype/evidência fraca.")
+    "Sem seção 'para paciente'. Honesto sobre hype/evidência fraca.\n\n"
+    + VOZ_DIEGO)
 
 
 def gerar_texto_do_artigo(artigo):
