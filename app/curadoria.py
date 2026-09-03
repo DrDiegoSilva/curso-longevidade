@@ -37,6 +37,10 @@ def _normalizar(a, tema, tipo="varredura"):
         "doi": a.get("doi") or "",
         "url": a.get("url") or "",
         "abstract": (a.get("resumo") or "")[:2500],
+        # Texto completo (Open Access, ver sources._so_com_texto_completo) — SEM corte de
+        # 2500: é o que gerar_resumo() usa de verdade pra escrever o resumo (o 'abstract'
+        # acima só sobra pra exibição/triagem). Vazio quando o artigo não tem full text.
+        "texto_completo": a.get("texto_completo") or "",
         "score": float(a.get("score", 5) or 0),
         "citacoes": int(a.get("citacoes", 0) or 0),
         "tipo": tipo,
@@ -335,10 +339,11 @@ def gerar_perguntas(cands, llm_fn=None, chunk=15):
 def gerar_resumo(cand, modelo="sonnet", gerar_resumo=None, gerar_gancho=None,
                  gerar_grafico_json=None, gerar_titulo=None):
     """Gera {titulo_pt, resumo, gancho, grafico}. modelo='sonnet' (padrão da reserva,
-    ótimo + barato) ou 'opus' (máximo). Mapeia 'abstract' -> 'resumo' que o gerador espera."""
+    ótimo + barato) ou 'opus' (máximo). Mapeia pro 'resumo' que o gerador espera, preferindo
+    'texto_completo' (Open Access) a 'abstract' — mesma regra de resumo_diario.gerar_texto_do_artigo."""
     import content
     art = dict(cand)
-    art["resumo"] = cand.get("abstract") or cand.get("resumo") or ""
+    art["resumo"] = cand.get("texto_completo") or cand.get("abstract") or cand.get("resumo") or ""
     f_resumo = gerar_resumo
     if f_resumo is None:
         from resumo_diario import claude, OPUS, SONNET, SYS_ESTUDO

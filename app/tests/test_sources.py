@@ -111,6 +111,91 @@ class TestParseOpenAlex(unittest.TestCase):
         self.assertEqual(len(got), 0)  # abstract < 120 chars -> filtered out
 
 
+class TestParseEpmc(unittest.TestCase):
+    def test_carrega_pmcid_e_open_access(self):
+        results = [{"title": "T", "abstractText": "x" * 200, "journalTitle": "NEJM",
+                    "doi": "10.1/x", "firstPublicationDate": "2026-01-01",
+                    "pmcid": "PMC1", "isOpenAccess": "Y"}]
+        out = sources.parse_epmc(results)
+        self.assertEqual(out[0]["pmcid"], "PMC1")
+        self.assertEqual(out[0]["isOpenAccess"], "Y")
+        self.assertEqual(out[0]["banco"], "europepmc")
+
+    def test_sem_pmcid_fica_vazio_nao_quebra(self):
+        results = [{"title": "T", "abstractText": "x" * 200, "journalTitle": "NEJM"}]
+        out = sources.parse_epmc(results)
+        self.assertEqual(out[0]["pmcid"], "")
+        self.assertEqual(out[0]["isOpenAccess"], "")
+
+    def test_filtra_abstract_curto(self):
+        results = [{"title": "T", "abstractText": "curto"}]
+        self.assertEqual(sources.parse_epmc(results), [])
+
+
+class TestSoComTextoCompleto(unittest.TestCase):
+    """O gate obrigatório: sem texto completo (Open Access), o artigo é descartado --
+    decisão de 2026-09-03, nunca cai pro abstract como substituto."""
+
+    def test_descarta_sem_texto_completo(self):
+        import buscar_estudos as be
+        orig = be.texto_completo
+        be.texto_completo = lambda **kw: None
+        try:
+            out = sources._so_com_texto_completo([{"titulo": "A", "doi": "10.1/x"}])
+        finally:
+            be.texto_completo = orig
+        self.assertEqual(out, [])
+
+    def test_mantem_e_anexa_texto_completo(self):
+        import buscar_estudos as be
+        orig = be.texto_completo
+        be.texto_completo = lambda **kw: "TEXTO INTEGRAL DO ESTUDO"
+        try:
+            out = sources._so_com_texto_completo(
+                [{"titulo": "A", "doi": "10.1/x", "pmcid": "PMC1", "url": "https://doi.org/10.1/x"}])
+        finally:
+            be.texto_completo = orig
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["texto_completo"], "TEXTO INTEGRAL DO ESTUDO")
+
+    def test_troca_url_pro_link_da_europe_pmc_quando_tem_pmcid(self):
+        """DOI pode cair em paywall; o link da Europe PMC do próprio full text, não."""
+        import buscar_estudos as be
+        orig = be.texto_completo
+        be.texto_completo = lambda **kw: "TEXTO"
+        try:
+            out = sources._so_com_texto_completo(
+                [{"titulo": "A", "doi": "10.1/x", "pmcid": "PMC42", "url": "https://doi.org/10.1/x"}])
+        finally:
+            be.texto_completo = orig
+        self.assertEqual(out[0]["url"], "https://europepmc.org/article/PMC/PMC42")
+
+    def test_clinicaltrials_sem_doi_nunca_passa(self):
+        """ClinicalTrials.gov não tem DOI -> texto_completo() sempre None -> sempre descartado."""
+        import buscar_estudos as be
+        orig = be.texto_completo
+        chamados = []
+        be.texto_completo = lambda **kw: chamados.append(kw) or None
+        try:
+            out = sources._so_com_texto_completo(
+                [{"titulo": "Trial", "doi": "", "url": "https://clinicaltrials.gov/study/NCT01"}])
+        finally:
+            be.texto_completo = orig
+        self.assertEqual(out, [])
+        self.assertEqual(chamados[0]["doi"], "")
+
+    def test_nao_muta_a_lista_original(self):
+        import buscar_estudos as be
+        orig = be.texto_completo
+        be.texto_completo = lambda **kw: "TEXTO"
+        entrada = [{"titulo": "A", "doi": "10.1/x", "pmcid": "PMC1"}]
+        try:
+            sources._so_com_texto_completo(entrada)
+        finally:
+            be.texto_completo = orig
+        self.assertNotIn("texto_completo", entrada[0])   # o dict original não foi alterado
+
+
 class TestBackoff(unittest.TestCase):
     def _fake_get(self, respostas):
         """Retorna uma função que consome `respostas` (Exception ou valor) a cada chamada."""

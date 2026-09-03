@@ -77,10 +77,12 @@ def parse_clinicaltrials(data):
     return out
 
 
-def _epmc_normalizado(query, desde, ate):
-    from buscar_estudos import buscar_epmc
+def parse_epmc(results):
+    """Normaliza uma lista de resultados CRUS da Europe PMC (resultType=core). Puro/testável
+    (mesmo padrão dos outros bancos). Carrega pmcid/isOpenAccess adiante — é o que o gate de
+    texto completo em search_all() usa pra não ter que consultar a Europe PMC de novo."""
     out = []
-    for r in buscar_epmc(query, desde, ate, 40, clinico=True):
+    for r in results:
         ab = r.get("abstractText") or ""
         if len(ab) < 120:
             continue
@@ -92,9 +94,16 @@ def _epmc_normalizado(query, desde, ate):
             "url": (f"https://doi.org/{r['doi']}" if r.get("doi") else ""),
             "data": r.get("firstPublicationDate", ""),
             "tipo": ",".join(r.get("pubTypeList", {}).get("pubType", []) or []),
+            "pmcid": r.get("pmcid") or "",
+            "isOpenAccess": r.get("isOpenAccess") or "",
             "banco": "europepmc",
         })
     return out
+
+
+def _epmc_normalizado(query, desde, ate):
+    from buscar_estudos import buscar_epmc
+    return parse_epmc(buscar_epmc(query, desde, ate, 40, clinico=True))
 
 
 def reconstruir_abstract(inv):
@@ -191,14 +200,40 @@ def _clinicaltrials(query, desde, ate):
     return parse_clinicaltrials(data)
 
 
+def _so_com_texto_completo(arts):
+    """Gate final, obrigatório: só passa artigo com o ESTUDO COMPLETO confirmado (Open
+    Access + PMCID na Europe PMC) — decisão de 2026-09-03, o site/WhatsApp nunca publicam
+    resumo feito só de abstract. Pra artigo que já veio da própria Europe PMC (tem pmcid),
+    usa o dado que já veio na busca; pra artigo de outra base (OpenAlex, Semantic Scholar),
+    resolve pelo DOI. ClinicalTrials.gov não tem DOI — nunca passa, e é o correto: registro
+    de ensaio não é 'o estudo completo'. Sem texto completo, o artigo é DESCARTADO — nunca
+    cai pro abstract como substituto. Anexa `texto_completo` e troca `url` pelo link do
+    texto completo (o DOI pode cair em paywall; o link da Europe PMC, não)."""
+    import buscar_estudos as be
+    out = []
+    for a in arts:
+        texto = be.texto_completo(doi=a.get("doi", ""), pmcid=a.get("pmcid", ""),
+                                   is_open_access=a.get("isOpenAccess", ""))
+        if not texto:
+            continue
+        a = dict(a)
+        a["texto_completo"] = texto
+        if a.get("pmcid"):
+            a["url"] = f"https://europepmc.org/article/PMC/{a['pmcid']}"
+        out.append(a)
+    return out
+
+
 def search_all(query, desde, ate):
-    """Agrega os bancos que ENTREGAM abstract. Falha de um NÃO derruba os outros.
-    PubMed (esummary) foi aposentado: vem SEM abstract e o Europe PMC já indexa o MEDLINE.
-    Semantic Scholar entra só se SEMANTIC_SCHOLAR_KEY estiver setada (sem chave → [], sem 429)."""
+    """Agrega os bancos que ENTREGAM abstract, depois filtra pelo texto completo
+    (`_so_com_texto_completo`) — só o que sobra disso vira candidato de verdade. Falha de
+    um banco NÃO derruba os outros. PubMed (esummary) foi aposentado: vem SEM abstract e o
+    Europe PMC já indexa o MEDLINE. Semantic Scholar entra só se SEMANTIC_SCHOLAR_KEY
+    estiver setada (sem chave → [], sem 429)."""
     arts = []
     for fn in (_epmc_normalizado, _openalex_normalizado, _semanticscholar_normalizado, _clinicaltrials):
         try:
             arts += fn(query, desde, ate)
         except Exception as e:
             print(f"[sources] {fn.__name__} falhou: {e}", flush=True)
-    return arts
+    return _so_com_texto_completo(arts)

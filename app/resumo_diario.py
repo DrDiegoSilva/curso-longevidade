@@ -319,9 +319,12 @@ SYS_ESTUDO = (
 
 def gerar_texto_do_artigo(artigo):
     """Resumo estruturado de UM artigo já escolhido (formato SYS_ESTUDO: 🎯 direto + apreciação crítica).
-    Usado pela máquina de conteúdo (daily.py) e pelo upload do admin (curadoria)."""
+    Usado pela máquina de conteúdo (daily.py) e pelo upload do admin (curadoria).
+    Prefere `texto_completo` (Open Access, ver sources._so_com_texto_completo) ao `resumo`
+    (abstract) — o abstract só sobrevive aqui pra artigo manual sem esse campo preenchido."""
+    corpo = artigo.get("texto_completo") or artigo.get("resumo", "")
     blob = (f"### {artigo.get('titulo','')}\nData: {artigo.get('data','')}\n"
-            f"Fonte: {artigo.get('fonte','')} | doi:{artigo.get('doi','')}\n{artigo.get('resumo','')}")
+            f"Fonte: {artigo.get('fonte','')} | doi:{artigo.get('doi','')}\n{corpo}")
     diretriz = CFG["temas"].get(artigo.get("tema", ""), {}).get("diretriz_extra", "")
     sys_estudo = SYS_ESTUDO + (f"\n\nDIRETRIZ DO TEMA:\n{diretriz}" if diretriz else "")
     return claude(OPUS, f"Resuma ESTE estudo para o médico:\n\n{blob}",

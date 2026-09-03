@@ -39,6 +39,49 @@ class TestFormatoEstudo(unittest.TestCase):
         self.assertEqual(cap["system"], self.rd.SYS_ESTUDO)
         self.assertIn("ABSTRACT-XYZ", cap["prompt"])
 
+    def test_gerar_texto_prefere_texto_completo(self):
+        """Com texto_completo (Open Access) preenchido, o gerador usa ELE, não o abstract —
+        decisão de 2026-09-03: resumo do site nunca sai só de abstract."""
+        cap = {}
+        orig = self.rd.claude
+        self.rd.claude = lambda model, prompt, system="", **k: cap.update(prompt=prompt) or ""
+        try:
+            self.rd.gerar_texto_do_artigo({"titulo": "T", "resumo": "SO-ABSTRACT",
+                                           "texto_completo": "TEXTO-COMPLETO-AQUI",
+                                           "data": "2026", "fonte": "F", "doi": "d"})
+        finally:
+            self.rd.claude = orig
+        self.assertIn("TEXTO-COMPLETO-AQUI", cap["prompt"])
+        self.assertNotIn("SO-ABSTRACT", cap["prompt"])
+
+    def test_gerar_texto_cai_pro_abstract_sem_texto_completo(self):
+        """Sem texto_completo (ex.: artigo manual antigo), continua funcionando com o abstract."""
+        cap = {}
+        orig = self.rd.claude
+        self.rd.claude = lambda model, prompt, system="", **k: cap.update(prompt=prompt) or ""
+        try:
+            self.rd.gerar_texto_do_artigo({"titulo": "T", "resumo": "SO-ABSTRACT",
+                                           "data": "2026", "fonte": "F", "doi": "d"})
+        finally:
+            self.rd.claude = orig
+        self.assertIn("SO-ABSTRACT", cap["prompt"])
+
+    def test_curadoria_prefere_texto_completo(self):
+        import curadoria
+        importlib.reload(curadoria)
+        cap = {}
+        orig = self.rd.claude
+        self.rd.claude = lambda model, prompt, system="", **k: cap.update(prompt=prompt) or ""
+        try:
+            curadoria.gerar_resumo(
+                {"titulo": "T", "abstract": "SO-ABSTRACT", "texto_completo": "TEXTO-COMPLETO-AQUI",
+                 "data": "", "fonte": "", "doi": ""},
+                gerar_gancho=lambda a: "", gerar_grafico_json=lambda a: "", gerar_titulo=lambda a: "T")
+        finally:
+            self.rd.claude = orig
+        self.assertIn("TEXTO-COMPLETO-AQUI", cap["prompt"])
+        self.assertNotIn("SO-ABSTRACT", cap["prompt"])
+
     def test_curadoria_usa_sys_estudo(self):
         import curadoria
         importlib.reload(curadoria)

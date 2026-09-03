@@ -57,7 +57,8 @@ class TestVarrer(unittest.TestCase):
         cands = curadoria.varrer("2026-01-01", "2026-07-19", caps={"Obesidade": 1},
                                  buscar_fn=_fake_buscar, triar_fn=_fake_triar)
         c = cands[0]
-        for campo in ("tema", "titulo", "fonte", "data", "doi", "url", "abstract", "score", "chave"):
+        for campo in ("tema", "titulo", "fonte", "data", "doi", "url", "abstract",
+                      "texto_completo", "score", "chave"):
             self.assertIn(campo, c)
         self.assertTrue(c["chave"])                         # chave de dedup não vazia
         self.assertIsInstance(c["score"], float)
