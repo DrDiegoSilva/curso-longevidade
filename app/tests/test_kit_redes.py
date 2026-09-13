@@ -352,6 +352,15 @@ class TestMontarHtmlKit(unittest.TestCase):
         self.assertIn(".paper-rule {", html)
         self.assertIn(".kit-frase {", html)
 
+    def test_classes_de_titulo_longo_existem_no_css_do_pdf_e_do_site(self):
+        """Sem isso, título de RCT grande (achado do Diego, 2026-09-13) vira parede de
+        texto no card pensado pra print -- ver _sufixo_titulo_longo em app/pdf.py."""
+        import site_web
+        html = self.pdf.montar_html(self.artigo, self.conteudo, self.tema)
+        for classe in ("paper-tit--sm", "paper-tit--xs"):
+            self.assertIn(f".{classe} {{", html, f"{classe} sem regra no CSS do PDF")
+            self.assertIn(f".{classe}{{", site_web._CSS, f"{classe} sem regra no CSS do site")
+
 
 class TestCartaoDoEstudoSemRotulo(unittest.TestCase):
     """O cartao "1 O estudo" e a "2 A frase" perderam a numeracao e ganharam cara de
@@ -408,6 +417,24 @@ class TestCartaoDoEstudoSemRotulo(unittest.TestCase):
         h = self.pdf._kit_html("", art)
         self.assertIn('<p class="paper-doi">DOI 10.1056/NEJMoa2026123</p>', h)
 
+    def test_titulo_curto_sem_classe_extra(self):
+        h = self.pdf._kit_html("", self.artigo)   # "Effects of Intermittent Fasting" -- 32 chars
+        self.assertIn('<p class="paper-tit">Effects of Intermittent Fasting</p>', h)
+
+    def test_titulo_medio_reduz_a_fonte(self):
+        art = dict(self.artigo, titulo_original="T" * 100)   # 71-130 chars
+        h = self.pdf._kit_html("", art)
+        self.assertIn('<p class="paper-tit paper-tit--sm">', h)
+
+    def test_titulo_muito_longo_reduz_mais_a_fonte_sem_cortar_o_texto(self):
+        titulo = ("Efficacy and Safety of Once-Weekly Subcutaneous Tirzepatide Versus "
+                  "Once-Daily Insulin Degludec in Participants With Type 2 Diabetes and "
+                  "Increased Cardiovascular Risk: A Randomized, Open-Label Trial")   # > 130 chars
+        art = dict(self.artigo, titulo_original=titulo)
+        h = self.pdf._kit_html("", art)
+        self.assertIn('<p class="paper-tit paper-tit--xs">', h)
+        self.assertIn(titulo, h)   # nunca corta -- só diminui a fonte
+
     def test_revista_e_titulo_escapam_html(self):
         art = dict(self.artigo, fonte="<script>alert(1)</script>",
                    titulo_original="<script>alert(2)</script>")
@@ -462,6 +489,26 @@ class TestPromptGancho(unittest.TestCase):
         s = self.c.SYS_GANCHO.lower()
         for termo in ("cfm", "receita", "resultado"):
             self.assertIn(termo, s)
+
+    def test_regra_central_abre_por_esperanca_nao_por_dor(self):
+        """Pedido do Diego (2026-09-13): médico prefere trazer efeito positivo/esperança
+        pro paciente; abrir pela dor vira exceção, não regra."""
+        s = self.c.SYS_GANCHO.lower()
+        self.assertIn("esperança", s)
+        self.assertIn("exceção", s)
+
+    def test_alerta_do_tema_obesidade_existe_e_outros_nao(self):
+        """Só o tema com 'alerta_paciente' no temas_config.json oferece o gancho de alerta
+        (hoje só Obesidade/GLP-1, automedicação) -- os demais não ganham nada extra no prompt."""
+        self.assertIn("GLP-1", self.c._alerta_do_tema("Obesidade"))
+        self.assertEqual(self.c._alerta_do_tema("Hormonal"), "")
+        self.assertEqual(self.c._alerta_do_tema(""), "")
+
+    def test_prompt_gancho_injeta_o_alerta_so_quando_o_tema_tem(self):
+        com_alerta = self.c._prompt_gancho({"titulo": "T", "tema": "Obesidade"})
+        sem_alerta = self.c._prompt_gancho({"titulo": "T", "tema": "Hormonal"})
+        self.assertIn("Alerta real do tema", com_alerta)
+        self.assertNotIn("Alerta real do tema", sem_alerta)
 
     def test_teto_de_tokens_cabe_na_saida_real(self):
         """Saida real medida: 934 tokens. Com 900 o JSON chega cortado."""

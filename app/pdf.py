@@ -276,12 +276,13 @@ def _kit_html(gancho_bruto, artigo):
     if titulo:
         revista = (artigo.get("fonte") or "").strip()
         rodape = _data_doi_linha(artigo.get("data"), artigo.get("doi"))
+        classe_tit = "paper-tit" + _sufixo_titulo_longo(titulo)
         blocos.append(
             '<div class="kit-paper"><div class="paper-box">'
             # Estudo subido na mao nao tem fonte: sem a guarda sobra o topo do
             # masthead vazio (nome + regua) acima do titulo.
             + (f'<p class="paper-rev">{esc(revista)}</p><hr class="paper-rule">' if revista else "")
-            + f'<p class="paper-tit">{esc(titulo)}</p>'
+            + f'<p class="{classe_tit}">{esc(titulo)}</p>'
             + (f'<p class="paper-doi">{rodape}</p>' if rodape else "")
             + '</div></div>')
 
@@ -353,6 +354,21 @@ def _data_doi_linha(data, doi):
     if doi:
         partes.append(f"DOI {esc(doi)}")
     return " &middot; ".join(partes)
+
+
+def _sufixo_titulo_longo(titulo):
+    """Sufixo de classe CSS pro tamanho da fonte do título do masthead, pelo comprimento
+    do título ORIGINAL (em inglês -- é o que aparece ali, não o traduzido). Sem isso,
+    título de RCT grande (padrão "Efficacy and Safety of X Versus Y in Z ... (SIGLA)",
+    comum em cardio/endócrino) vira parede de 6 linhas no card pensado pra print --
+    exatamente os estudos mais importantes do tema Obesidade/GLP-1 (achado do Diego,
+    2026-09-13). Reduz a fonte, nunca corta o texto: o médico ainda lê o título inteiro."""
+    n = len(titulo or "")
+    if n > 130:
+        return " paper-tit--xs"
+    if n > 70:
+        return " paper-tit--sm"
+    return ""
 
 
 def montar_html(artigo, conteudo, tema_meta):
@@ -458,6 +474,8 @@ def montar_html(artigo, conteudo, tema_meta):
            color:#14332a; margin:0 0 10px; }}
   .paper-rule {{ border:none; border-top:1px solid #c7cec8; margin:0 0 12px; }}
   .paper-tit {{ text-align:center; margin:0 0 10px; font-size:17.5px; line-height:1.32; color:#16211c; }}
+  .paper-tit--sm {{ font-size:15px; }}
+  .paper-tit--xs {{ font-size:13px; }}
   .paper-doi {{ text-align:center; font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:#6f7d78; margin:0; }}
   .paper-box > :last-child {{ margin-bottom:0; }}
   .kit-frase {{ margin-top:8px; }}
