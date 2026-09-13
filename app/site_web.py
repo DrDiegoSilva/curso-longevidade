@@ -2482,6 +2482,13 @@ def pagina_minha(sub, admin=False):
                   + card("/agenda", "📅", "Agenda de envios", "O que sai cada dia da semana")
                   + card("/admin", "👥", "Assinantes", "Quem recebe e status das contas")
                   + card("/admin/whatsapp", "📱", "WhatsApp", "Conexão e envio das mensagens")
+                  + card("/admin/envio", "🗓️", "Dias de envio", "Em quais dias da semana o robô manda")
+                  + card("/admin/mensagens", "✉️", "Mensagens", "Textos de WhatsApp/e-mail e automações")
+                  + card("/admin/precos", "🏷️", "Preços", "Planos e valores de venda")
+                  + card("/admin/custos", "💰", "Custos de IA", "Quanto o robô gastou no mês")
+                  + card("/admin/afiliados", "🤝", "Afiliados", "Cadastro e comissões")
+                  + card("/admin/trilha", "🧬", "Trilhas", "Peptídeos/empreendedorismo — qual está ativa")
+                  + card("/series", "📚", "Séries", "Estudos em várias partes")
                   + '</div>') if admin else ""
     corpo = f"""
     <div class="wrap"><div class="panel">

@@ -382,20 +382,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(site_web.pagina_admin_envio(
                 daily._dias_envio(), config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
         if path == "/admin/precos":
-            import config, site_web
+            import config, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
-            if not token_ok:
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             visiveis = {p["slug"]: p for p in config.planos_venda()}
             planos = [visiveis[s] for s in ("mensal", "anual") if s in visiveis]
             return self._html(site_web.pagina_precos(planos, config.ADMIN_TOKEN or "",
                                                       msg=q.get("msg", [""])[0]), 200)
         if path == "/admin/custos":
-            import config, db, ia_custo, site_web, subscribers
+            import config, db, ia_custo, site_web, subscribers, auth_web
             from datetime import datetime, timedelta
             q = up.parse_qs(up.urlparse(self.path).query)
-            if not config.ADMIN_TOKEN or q.get("token", [""])[0] != config.ADMIN_TOKEN:
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             hoje = datetime.now()
@@ -457,10 +460,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._html(pdf_trilha.montar_html(
                 peca, "(prévia)", abertura="", link_ferramenta=link), 200)
         if path == "/admin/trilha":
-            import config, site_web, db as _db, subscribers as _subs, trilha as _trilha
+            import config, site_web, db as _db, subscribers as _subs, trilha as _trilha, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
-            if not token_ok:
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             _db.init()
             produto = q.get("produto", [""])[0]
