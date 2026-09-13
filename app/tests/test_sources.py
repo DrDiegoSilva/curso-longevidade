@@ -29,13 +29,52 @@ class TestParsers(unittest.TestCase):
         self.assertEqual(out[0]["doi"], "10.1/x")
         self.assertEqual(out[0]["resumo"], "")          # esummary não traz abstract (por isso aposentado)
 
-    def test_clinicaltrials_parse(self):
-        data = {"studies": [{"protocolSection": {
+    def test_clinicaltrials_com_resultado_publicado(self):
+        data = {"studies": [{"hasResults": True, "protocolSection": {
             "identificationModule": {"nctId": "NCT01", "briefTitle": "Estudo X"},
-            "descriptionModule": {"briefSummary": "resumo do ensaio"}}}]}
+            "descriptionModule": {"briefSummary": "resumo do ensaio"}},
+            "resultsSection": {"outcomeMeasuresModule": {"outcomeMeasures": [
+                {"title": "Perda de peso", "value": "-12.4"}]}}}]}
         out = sources.parse_clinicaltrials(data)
         self.assertEqual(out[0]["url"], "https://clinicaltrials.gov/study/NCT01")
         self.assertEqual(out[0]["resumo"], "resumo do ensaio")
+        self.assertIn("Perda de peso", out[0]["texto_completo"])
+        self.assertIn("-12.4", out[0]["texto_completo"])
+
+    def test_clinicaltrials_sem_resultado_e_excluido(self):
+        """O bug que o Diego achou: ensaio sem hasResults é só o PROTOCOLO (o que o estudo
+        pretende testar, escrito antes de rodar) -- sem dado nenhum, não entra."""
+        data = {"studies": [{"protocolSection": {
+            "identificationModule": {"nctId": "NCT02", "briefTitle": "Estudo Y"},
+            "descriptionModule": {"briefSummary": "ainda recrutando"}}}]}   # sem hasResults
+        self.assertEqual(sources.parse_clinicaltrials(data), [])
+
+    def test_clinicaltrials_hasresults_false_tambem_excluido(self):
+        data = {"studies": [{"hasResults": False, "protocolSection": {
+            "identificationModule": {"nctId": "NCT03", "briefTitle": "Estudo Z"}}}]}
+        self.assertEqual(sources.parse_clinicaltrials(data), [])
+
+
+class TestJsonParaTexto(unittest.TestCase):
+    def test_achata_dict_aninhado(self):
+        obj = {"outcomeMeasuresModule": {"outcomeMeasures": [{"title": "Peso", "value": "-8"}]}}
+        texto = sources._json_para_texto(obj)
+        self.assertIn("title: Peso", texto)
+        self.assertIn("value: -8", texto)
+
+    def test_ignora_valores_vazios(self):
+        obj = {"a": "", "b": None, "c": [], "d": "fica"}
+        self.assertEqual(sources._json_para_texto(obj), "d: fica")
+
+    def test_lista_de_dicts(self):
+        obj = {"eventos": [{"termo": "náusea"}, {"termo": "cefaleia"}]}
+        texto = sources._json_para_texto(obj)
+        self.assertIn("termo: náusea", texto)
+        self.assertIn("termo: cefaleia", texto)
+
+    def test_vazio(self):
+        self.assertEqual(sources._json_para_texto({}), "")
+        self.assertEqual(sources._json_para_texto(None), "")
 
 
 class TestSemanticScholar(unittest.TestCase):
@@ -170,8 +209,9 @@ class TestSoComTextoCompleto(unittest.TestCase):
             be.texto_completo = orig
         self.assertEqual(out[0]["url"], "https://europepmc.org/article/PMC/PMC42")
 
-    def test_clinicaltrials_sem_doi_nunca_passa(self):
-        """ClinicalTrials.gov não tem DOI -> texto_completo() sempre None -> sempre descartado."""
+    def test_clinicaltrials_sem_resultado_nunca_passa(self):
+        """Sem hasResults, parse_clinicaltrials NÃO anexa texto_completo -- cai no caminho da
+        Europe PMC por DOI, mas não tem DOI -> texto_completo() sempre None -> descartado."""
         import buscar_estudos as be
         orig = be.texto_completo
         chamados = []
@@ -183,6 +223,23 @@ class TestSoComTextoCompleto(unittest.TestCase):
             be.texto_completo = orig
         self.assertEqual(out, [])
         self.assertEqual(chamados[0]["doi"], "")
+
+    def test_clinicaltrials_com_resultado_passa_sem_consultar_epmc(self):
+        """Com hasResults, parse_clinicaltrials já anexa texto_completo (resultsSection) --
+        o gate aceita direto, sem tentar (inutilmente) resolver por DOI na Europe PMC."""
+        import buscar_estudos as be
+        orig = be.texto_completo
+        chamado = {"n": 0}
+        be.texto_completo = lambda **kw: chamado.__setitem__("n", chamado["n"] + 1) or None
+        try:
+            out = sources._so_com_texto_completo(
+                [{"titulo": "Trial", "doi": "", "texto_completo": "Resultados: -8kg",
+                  "url": "https://clinicaltrials.gov/study/NCT01"}])
+        finally:
+            be.texto_completo = orig
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["texto_completo"], "Resultados: -8kg")
+        self.assertEqual(chamado["n"], 0)
 
     def test_nao_muta_a_lista_original(self):
         import buscar_estudos as be

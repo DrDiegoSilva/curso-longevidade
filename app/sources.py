@@ -58,15 +58,46 @@ def parse_pubmed_esummary(data):
     return out
 
 
+def _json_para_texto(obj, max_chars=20000):
+    """Achata um valor JSON (dict/list aninhado) num texto corrido 'chave: valor'. Genérico
+    de propósito — usado pro resultsSection do ClinicalTrials.gov, cujo esquema é profundo e
+    muda por tipo de desfecho; travar num parser rígido de campo específico quebraria
+    silenciosamente a cada formato diferente. Perde a formatação bonita, mas preserva o
+    DADO real (número de cada braço, evento adverso) pra IA organizar depois."""
+    partes = []
+    def _andar(v, chave=""):
+        if isinstance(v, dict):
+            for k, vv in v.items():
+                _andar(vv, k)
+        elif isinstance(v, list):
+            for item in v:
+                _andar(item, chave)
+        elif v not in (None, "", []):
+            partes.append(f"{chave}: {v}" if chave else str(v))
+    _andar(obj)
+    return " | ".join(partes)[:max_chars]
+
+
 def parse_clinicaltrials(data):
+    """Só entra ensaio com RESULTADO POSTADO (hasResults=True). Sem isso, o registro é só o
+    PROTOCOLO — o que o estudo pretende testar, escrito antes de rodar — sem nenhum dado.
+    'completed' no status não garante resultado publicado (pode levar meses depois do fim).
+    Quando tem resultado, o texto_completo vem do resultsSection de verdade (desfechos +
+    eventos adversos), não do briefSummary do protocolo."""
     out = []
     for s in (data or {}).get("studies", []):
+        if not s.get("hasResults"):
+            continue
         ps = s.get("protocolSection", {})
         ident = ps.get("identificationModule", {})
         nct = ident.get("nctId", "")
+        contexto = (ps.get("descriptionModule", {}).get("briefSummary") or "").strip()
+        resultados = _json_para_texto(s.get("resultsSection", {}))
         out.append({
             "titulo": (ident.get("briefTitle") or "").strip(),
-            "resumo": (ps.get("descriptionModule", {}).get("briefSummary") or "").strip(),
+            "resumo": contexto,
+            "texto_completo": (f"Contexto do estudo: {contexto}\n\nResultados publicados no "
+                                f"registro: {resultados}" if resultados else ""),
             "fonte": "ClinicalTrials.gov",
             "doi": "",
             "url": f"https://clinicaltrials.gov/study/{nct}",
@@ -201,17 +232,22 @@ def _clinicaltrials(query, desde, ate):
 
 
 def _so_com_texto_completo(arts):
-    """Gate final, obrigatório: só passa artigo com o ESTUDO COMPLETO confirmado (Open
-    Access + PMCID na Europe PMC) — decisão de 2026-09-03, o site/WhatsApp nunca publicam
-    resumo feito só de abstract. Pra artigo que já veio da própria Europe PMC (tem pmcid),
-    usa o dado que já veio na busca; pra artigo de outra base (OpenAlex, Semantic Scholar),
-    resolve pelo DOI. ClinicalTrials.gov não tem DOI — nunca passa, e é o correto: registro
-    de ensaio não é 'o estudo completo'. Sem texto completo, o artigo é DESCARTADO — nunca
-    cai pro abstract como substituto. Anexa `texto_completo` e troca `url` pelo link do
-    texto completo (o DOI pode cair em paywall; o link da Europe PMC, não)."""
+    """Gate final, obrigatório: só passa artigo com o ESTUDO COMPLETO confirmado — decisão de
+    2026-09-03, o site/WhatsApp nunca publicam resumo feito só de abstract (ou, no caso de
+    ensaio clínico, só do protocolo sem resultado). Dois jeitos de confirmar:
+    1) já veio pronto (`parse_clinicaltrials` só anexa texto_completo quando hasResults=True
+       — sem resultado publicado, nem chega aqui com o campo preenchido);
+    2) Open Access + PMCID na Europe PMC — direto (artigo já veio de lá) ou por DOI (artigo
+       de outra base, ex.: OpenAlex, Semantic Scholar).
+    Sem nenhum dos dois, o artigo é DESCARTADO — nunca cai pro abstract como substituto.
+    Quando resolve pela Europe PMC, também troca `url` pelo link do texto completo (o DOI
+    pode cair em paywall; o link da Europe PMC, não)."""
     import buscar_estudos as be
     out = []
     for a in arts:
+        if a.get("texto_completo"):             # já veio pronto (ex.: resultsSection do CT.gov)
+            out.append(dict(a))
+            continue
         texto = be.texto_completo(doi=a.get("doi", ""), pmcid=a.get("pmcid", ""),
                                    is_open_access=a.get("isOpenAccess", ""))
         if not texto:
