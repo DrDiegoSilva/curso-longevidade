@@ -13,11 +13,16 @@ SYS_GANCHO = (
     '"reels":[{"titulo":"...","gancho":"...","roteiro":["...","..."],"apoio":"..."}]}\n'
     "\n"
     "REGRA CENTRAL DAS PAUTAS — o público é o PACIENTE do médico, não o médico. O paciente "
-    "não lê estudo e não se interessa por desenho de pesquisa. Cada pauta ABRE numa dor que "
-    "ele reconhece em si mesmo e TERMINA apontando para algo que se resolve com acompanhamento "
-    "médico. O estudo é a prova que sustenta, nunca a manchete. É PROIBIDO fazer pauta sobre "
-    "metodologia, grupo comparador, tamanho de amostra ou tempo de seguimento — isso é conversa "
-    "de médico para médico e faz o paciente rolar o feed.\n"
+    "não lê estudo e não se interessa por desenho de pesquisa. POR PADRÃO, cada pauta ABRE "
+    "trazendo ESPERANÇA — o efeito positivo real que o estudo mostra, o que melhora de "
+    "verdade na vida de quem trata — nunca pelo medo ou pela dor. TERMINA sempre apontando o "
+    "acompanhamento médico como o caminho pra chegar lá. EXCEÇÃO deliberada, não regra: se o "
+    "prompt trouxer um 'alerta real do tema' (contexto abaixo do resumo), UMA das pautas pode "
+    "abrir alertando sobre esse risco específico — sempre terminando em 'converse com seu "
+    "médico', nunca como recurso de medo genérico nem em todo estudo. O estudo é a prova que "
+    "sustenta, nunca a manchete. É PROIBIDO fazer pauta sobre metodologia, grupo comparador, "
+    "tamanho de amostra ou tempo de seguimento — isso é conversa de médico para médico e faz "
+    "o paciente rolar o feed.\n"
     "\n"
     "- `frase`: o achado em linguagem de paciente, UMA frase que se sustenta sozinha como "
     "imagem de post.\n"
@@ -68,9 +73,25 @@ def _prompt_titulo_do_texto(artigo):
             "Responda SÓ o título, sem aspas e sem ponto final.\n\nTEXTO:\n" + corpo)
 
 
+def _alerta_do_tema(tema):
+    """Alerta real do tema (ex.: automedicação de GLP-1), pra SYS_GANCHO oferecer como base de
+    UMA pauta — não é regra, é matéria-prima que o modelo só usa se o estudo der o gancho.
+    Vazio (tema sem entrada, ou config ilegível) = nenhum alerta oferecido, comportamento
+    igual a antes desta diretriz existir."""
+    import os
+    try:
+        cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temas_config.json")
+        return json.load(open(cfg, encoding="utf-8"))["temas"].get(tema, {}).get("alerta_paciente", "")
+    except Exception:
+        return ""
+
+
 def _prompt_gancho(artigo):
+    alerta = _alerta_do_tema(artigo.get("tema", ""))
+    extra = f"\n\nAlerta real do tema (só vira pauta se o estudo abaixo sustentar o ponto): {alerta}" if alerta else ""
     return (f"Estudo: {artigo.get('titulo','')} ({artigo.get('fonte','')}).\n"
-            f"Resumo: {(artigo.get('resumo','') or '')[:900]}\n\n"
+            f"Resumo: {(artigo.get('resumo','') or '')[:900]}"
+            f"{extra}\n\n"
             "Devolva o JSON com a frase e as pautas de Reels deste estudo.")
 
 
