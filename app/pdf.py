@@ -283,7 +283,7 @@ def _kit_html(gancho_bruto, artigo, titulo_pt=""):
         rodape = _data_doi_linha(artigo.get("data"), artigo.get("doi"))
         classe_tit = "paper-tit" + _sufixo_titulo_longo(titulo)
         titulo_pt = (titulo_pt or "").strip()
-        traducao = (f'<p class="paper-trad">Em portugu&ecirc;s: {esc(titulo_pt)}</p>'
+        traducao = (f'<p class="paper-trad">{esc(titulo_pt)}</p>'
                     if titulo_pt and titulo_pt != titulo else "")
         blocos.append(
             '<div class="kit-paper"><div class="paper-box">'

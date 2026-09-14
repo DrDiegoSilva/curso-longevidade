@@ -439,7 +439,7 @@ class TestCartaoDoEstudoSemRotulo(unittest.TestCase):
         """Pedido do Diego (2026-09-14): tradução NÃO entra dentro do card (autêntico,
         só o original) -- vira legenda por fora, embaixo."""
         h = self.pdf._kit_html("", self.artigo, titulo_pt="Efeitos do Jejum Intermitente")
-        self.assertIn('<p class="paper-trad">Em portugu&ecirc;s: Efeitos do Jejum Intermitente</p>', h)
+        self.assertIn('<p class="paper-trad">Efeitos do Jejum Intermitente</p>', h)
         # a legenda vem DEPOIS do </div> que fecha o paper-box, ainda dentro do kit-paper
         antes_trad, _, depois_trad = h.partition('<p class="paper-trad">')
         self.assertTrue(antes_trad.rstrip().endswith("</div>"))
@@ -447,7 +447,6 @@ class TestCartaoDoEstudoSemRotulo(unittest.TestCase):
     def test_sem_titulo_pt_nao_aparece_legenda(self):
         h = self.pdf._kit_html("", self.artigo)
         self.assertNotIn("paper-trad", h)
-        self.assertNotIn("Em portugu&ecirc;s:", h)
 
     def test_titulo_pt_igual_ao_original_nao_duplica(self):
         h = self.pdf._kit_html("", self.artigo, titulo_pt=self.artigo["titulo_original"])
