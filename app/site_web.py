@@ -917,6 +917,24 @@ def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo=
                 f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
         bloco_pecas = "".join(itens)
 
+    opcoes_numero = "".join(
+        f'<option value="{int(p["numero"])}">Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</option>'
+        for p in pecas)
+    admin_wpp = (config.ADMIN_WHATSAPPS[0] if config.ADMIN_WHATSAPPS else "")
+    bloco_teste = (
+        '<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
+        '<p class="plabel">Enviar peça de teste</p>'
+        '<p class="hint" style="margin:6px 0 12px">Manda texto + PDF (+ áudio, se ligado) pro número '
+        'abaixo agora mesmo -- não mexe na posição de nenhum assinante real.</p>'
+        f'<form method="post" action="/admin/trilha/teste">'
+        f'<input type="hidden" name="token" value="{_esc(token)}">'
+        f'<input type="hidden" name="produto" value="{_esc(produto)}">'
+        f'<select name="numero" style="margin:0 6px 8px 0">{opcoes_numero}</select>'
+        f'<input type="text" name="whatsapp" value="{_esc(admin_wpp)}" placeholder="whatsapp" '
+        'style="margin:0 6px 8px 0">'
+        '<button class="actbtn" type="submit">Enviar teste</button></form></div>'
+    ) if pecas else ""
+
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
 
     seletor = "".join(
@@ -963,6 +981,7 @@ def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo=
         <p class="plabel">As {info["total"]} peças</p>
         <p class="hint">Abra cada uma pra ver exatamente o que vira PDF no WhatsApp.</p>
         {bloco_pecas}</div>
+      {bloco_teste}
       {corpo_lista}
     </div>"""
     return _pagina(f"{_esc(info['nome'])} · {PRODUTO}", corpo, logado=True, atual="trilha",

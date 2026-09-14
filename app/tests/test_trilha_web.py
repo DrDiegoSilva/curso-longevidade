@@ -403,6 +403,16 @@ class TestPreviaPecas(unittest.TestCase):
         h = self.w.pagina_admin_trilha([], pecas=[], produto="empreendedorismo")
         self.assertIn("Nenhuma peça", h)
 
+    def test_form_de_teste_aparece_com_pecas(self):
+        h = self.w.pagina_admin_trilha([], pecas=self.db.trilha_listar_pecas("empreendedorismo"),
+                                       produto="empreendedorismo")
+        self.assertIn("/admin/trilha/teste", h)
+        self.assertIn(self.cfg.ADMIN_WHATSAPPS[0], h)
+
+    def test_form_de_teste_nao_aparece_sem_pecas(self):
+        h = self.w.pagina_admin_trilha([], pecas=[], produto="empreendedorismo")
+        self.assertNotIn("/admin/trilha/teste", h)
+
 
 class _RotaPecaStub:
     """Stub mínimo pro `self` de `do_GET`: só `path` e `_html` -- mesmo padrão do

@@ -917,6 +917,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 msg = "Nenhuma trilha ativa. Ninguém novo entra; quem já está em progresso continua recebendo."
             return self._redirect(f"/admin/trilha?token={config.ADMIN_TOKEN}&msg={up.quote(msg)}")
+        if path == "/admin/trilha/teste":
+            import config, db, trilha as _trilha
+            token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
+            if not token_ok:
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            produto = g("produto")
+            try:
+                numero = int(g("numero") or 0)
+            except ValueError:
+                numero = 0
+            whatsapp = g("whatsapp") or (config.ADMIN_WHATSAPPS[0] if config.ADMIN_WHATSAPPS else "")
+            r = _trilha.enviar_peca_teste(produto, numero, whatsapp)
+            return self._redirect(f"/admin/trilha?produto={produto}&token={config.ADMIN_TOKEN}"
+                                  f"&msg={up.quote(r.get('msg', ''))}")
         if path == "/admin/precos":
             import config, db
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN

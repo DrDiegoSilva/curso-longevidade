@@ -263,6 +263,60 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
     return True
 
 
+def enviar_peca_teste(produto, numero, whatsapp, enviar_fn=None, render_fn=None, texto_fn=None):
+    """Manda UMA peça pro número dado, texto+PDF+áudio (se ligado), sem tocar
+    claim/progresso de ninguém -- é só uma prévia real no WhatsApp de quem pedir
+    (o curador testando antes de ativar o produto pra assinantes de verdade).
+    Diferente de `_enviar_uma_peca`: não chama `trilha_registrar_envio` nem
+    `trilha_avancar`, então não interfere na posição de nenhum assinante real."""
+    import os
+    import tempfile
+    import deliver
+    import phone
+
+    if produto not in config.TRILHAS:
+        return {"ok": False, "msg": f"Produto de trilha desconhecido: {produto}"}
+    peca = db.trilha_peca(produto, numero)
+    if not peca:
+        return {"ok": False, "msg": f"Peça {numero} de \"{produto}\" não encontrada."}
+    peca["numero"] = numero
+    numero_whats = phone.normalizar(whatsapp)
+    if not numero_whats:
+        return {"ok": False, "msg": "Número de WhatsApp inválido."}
+
+    enviar_fn = enviar_fn or deliver.enviar_pdf
+    texto_fn = texto_fn or deliver.enviar_texto
+    if render_fn is None:
+        import pdf as _pdf
+        render_fn = _pdf.gerar_pdf
+
+    info = config.TRILHAS[produto]
+    try:
+        import pdf_trilha
+        link = ""
+        if peca.get("ferramenta_slug") and caminho_ferramenta(peca["ferramenta_slug"]):
+            link = f"{config.ARTIGOS_URL}/ferramentas/{peca['ferramenta_slug']}"
+        texto_fn(numero_whats, texto_peca(peca))
+        html_peca = pdf_trilha.montar_html(peca, "(teste)", abertura="", link_ferramenta=link)
+        out = os.path.join(tempfile.gettempdir(), f"trilha-teste-{produto}-{numero}.pdf")
+        render_fn(html_peca, out)
+        enviar_fn(numero_whats, out,
+                  caption=f"[TESTE] {info['nome']} · Semana {numero}: {peca.get('titulo','')}")
+    except Exception as e:
+        return {"ok": False, "msg": f"Falhou no envio da peça {numero} ({produto}): {e}"}
+
+    if config.audio_ligado():
+        try:
+            import audio as audiomod
+            mp3 = audiomod.gerar_audio_da_peca(peca)
+            deliver.enviar_audio(numero_whats, mp3)
+        except Exception as e:
+            print(f"[trilha] áudio de teste da peça {numero} ({produto}) falhou (não crítico): {e}",
+                  flush=True)
+
+    return {"ok": True, "msg": f"Peça {numero} de \"{info['nome']}\" enviada (teste) para {numero_whats}."}
+
+
 def enviar_para(sub, enviar_fn=None, render_fn=None, texto_fn=None):
     """Envia a(s) peça(s) da vez a UM assinante -- `pecas_por_envio` do produto em
     que ele está agora (1 pra empreendedorismo, 2 pra peptídeos). Se a trilha

@@ -781,6 +781,67 @@ class TestEnvio(unittest.TestCase):
             "claim do dia foi queimado sem ninguém ter pra receber nada")
 
 
+class TestEnvioPecaTeste(unittest.TestCase):
+    """`enviar_peca_teste`: manda uma peça avulsa pra um número dado (o curador
+    conferindo antes de ativar o produto pra valer), sem tocar claim/progresso
+    de assinante nenhum -- pedido do Diego (2026-09-14): "manda uma peça de
+    teste pra mim"."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+        self.t.semear()
+        self.enviados = []
+
+    def _fake_enviar(self, whatsapp, pdf_path, caption=""):
+        self.enviados.append({"whatsapp": whatsapp, "caption": caption})
+
+    def _fake_render(self, html, out_path):
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("pdf")
+        return out_path
+
+    def _fake_texto(self, whatsapp, msg):
+        self.textos_enviados = getattr(self, "textos_enviados", [])
+        self.textos_enviados.append({"whatsapp": whatsapp, "msg": msg})
+
+    def test_envia_texto_e_pdf_pro_numero_pedido(self):
+        r = self.t.enviar_peca_teste("empreendedorismo", 1, "5543999990000",
+                                     enviar_fn=self._fake_enviar, render_fn=self._fake_render,
+                                     texto_fn=self._fake_texto)
+        self.assertTrue(r["ok"])
+        self.assertEqual(len(self.enviados), 1)
+        self.assertEqual(len(self.textos_enviados), 1)
+
+    def test_nao_cria_progresso_pra_ninguem(self):
+        # sem subscriber_id nenhum envolvido -- não há como isto matricular
+        # alguém ou avançar posição de quem quer que seja.
+        self.t.enviar_peca_teste("empreendedorismo", 1, "5543999990000",
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render,
+                                 texto_fn=self._fake_texto)
+        with self.db._conn() as c:
+            n = c.execute("SELECT COUNT(*) FROM trilha_envios").fetchone()[0]
+        self.assertEqual(n, 0)
+
+    def test_produto_invalido_nao_quebra(self):
+        r = self.t.enviar_peca_teste("nao-existe", 1, "5543999990000")
+        self.assertFalse(r["ok"])
+        self.assertEqual(self.enviados, [])
+
+    def test_peca_inexistente_nao_quebra(self):
+        total = self.cfg.TRILHAS["empreendedorismo"]["total"]
+        r = self.t.enviar_peca_teste("empreendedorismo", total + 1, "5543999990000")
+        self.assertFalse(r["ok"])
+
+    def test_whatsapp_vazio_nao_quebra(self):
+        r = self.t.enviar_peca_teste("empreendedorismo", 1, "")
+        self.assertFalse(r["ok"])
+        self.assertEqual(self.enviados, [])
+
+
 class TestLoteDePecas(unittest.TestCase):
     """Peptídeos manda 2 peças por sábado (vs. 1 da trilha de empreendedorismo) --
     `config.TRILHAS["peptideos"]["pecas_por_envio"]`."""
