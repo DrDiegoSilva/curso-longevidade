@@ -275,6 +275,7 @@ button.cta.ghost:hover{border-color:var(--ouro);color:var(--ouro2);transform:non
 .paper-tit--sm{font-size:16px}
 .paper-tit--xs{font-size:14px}
 .paper-doi{text-align:center;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#6f7d78;word-break:break-word;margin:0}
+.paper-trad{text-align:center;font-style:italic;font-size:13.5px;color:#6f7d78;margin:10px 4px 0}
 .paper-box>:last-child{margin-bottom:0}
 .kit-frase{margin-top:9px}
 .frase-box{border:2px solid var(--ouro);border-radius:12px;padding:20px 22px;background:linear-gradient(180deg,#fff9e9,#fbf3d9)}
@@ -2453,7 +2454,7 @@ def pagina_digest(meta, d, vizinhos=None):
                  f'<h1 class="title">{_esc(d["titulo_pt"])}</h1>'
                  f'<div class="meta">{pdf._meta_linha(d.get("fonte"), _data_br(d["data"]), d.get("doi"))}</div>'
                  f'<div class="corpo">{pdf._resumo_html(d.get("resumo",""))}</div>'
-                 f'{pdf._grafico_html(grafico)}{pdf._kit_html(d.get("gancho",""), d)}')
+                 f'{pdf._grafico_html(grafico)}{pdf._kit_html(d.get("gancho",""), d, d.get("titulo_pt",""))}')
     if d.get("url"):
         corpo_doc += f'<div style="margin-top:22px"><a class="docbtn" href="{_esc(d["url"])}" target="_blank" rel="noopener">Ver o estudo original ↗</a></div>'
     corpo_doc += '</div>'

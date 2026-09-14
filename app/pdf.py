@@ -254,7 +254,7 @@ def _paciente_html(gancho_bruto):
             f'<p>{_html.escape(dados["paciente"])}</p></div>')
 
 
-def _kit_html(gancho_bruto, artigo):
+def _kit_html(gancho_bruto, artigo, titulo_pt=""):
     """Kit de post no rodape: recorte do paper + a frase + as pautas de Reels + os
     limites do CFM.
 
@@ -266,6 +266,11 @@ def _kit_html(gancho_bruto, artigo):
     outros, alguem recortaria a instrucao junto e postaria. O quarto sao os limites
     daquele estudo -- fica por ESTUDO e nao por pauta, porque a evidencia e a mesma
     pras tres.
+
+    `titulo_pt` (opcional): traducao do titulo, mostrada como legenda ABAIXO do
+    masthead, fora do `.paper-box` -- o card em si fica intacto (autentico, em
+    ingles, sem mistura de idioma), a traducao e' um apoio de leitura por fora
+    (pedido do Diego, 2026-09-14). So aparece quando ha algo a traduzir de fato.
     """
     import content
     esc = _html.escape
@@ -277,6 +282,9 @@ def _kit_html(gancho_bruto, artigo):
         revista = (artigo.get("fonte") or "").strip()
         rodape = _data_doi_linha(artigo.get("data"), artigo.get("doi"))
         classe_tit = "paper-tit" + _sufixo_titulo_longo(titulo)
+        titulo_pt = (titulo_pt or "").strip()
+        traducao = (f'<p class="paper-trad">Em portugu&ecirc;s: {esc(titulo_pt)}</p>'
+                    if titulo_pt and titulo_pt != titulo else "")
         blocos.append(
             '<div class="kit-paper"><div class="paper-box">'
             # Estudo subido na mao nao tem fonte: sem a guarda sobra o topo do
@@ -284,7 +292,7 @@ def _kit_html(gancho_bruto, artigo):
             + (f'<p class="paper-rev">{esc(revista)}</p><hr class="paper-rule">' if revista else "")
             + f'<p class="{classe_tit}">{esc(titulo)}</p>'
             + (f'<p class="paper-doi">{rodape}</p>' if rodape else "")
-            + '</div></div>')
+            + '</div>' + traducao + '</div>')
 
     if dados["frase"]:
         blocos.append(
@@ -381,7 +389,7 @@ def montar_html(artigo, conteudo, tema_meta):
     bracos_html = _bracos_html(conteudo.get("grafico"))
     grafico_html = _grafico_html(conteudo.get("grafico"))
     paciente_html = _paciente_html(conteudo.get("gancho", ""))
-    kit_html = _kit_html(conteudo.get("gancho", ""), artigo)
+    kit_html = _kit_html(conteudo.get("gancho", ""), artigo, conteudo.get("titulo_pt", ""))
     url = (artigo.get("url") or "").strip()
     # Link de verdade: o Chromium (--print-to-pdf, `gerar_pdf`) preserva hyperlink como
     # anotacao no PDF. Como texto puro, o medico tinha que copiar o DOI na mao.
@@ -477,6 +485,7 @@ def montar_html(artigo, conteudo, tema_meta):
   .paper-tit--sm {{ font-size:15px; }}
   .paper-tit--xs {{ font-size:13px; }}
   .paper-doi {{ text-align:center; font-family:ui-monospace,Menlo,monospace; font-size:11.5px; color:#6f7d78; margin:0; }}
+  .paper-trad {{ text-align:center; font-style:italic; font-size:12.5px; color:#6f7d78; margin:9px 4px 0; }}
   .paper-box > :last-child {{ margin-bottom:0; }}
   .kit-frase {{ margin-top:8px; }}
   .frase-box {{ border:2px solid #c9a227; border-radius:12px; padding:17px 20px;

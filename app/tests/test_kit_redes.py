@@ -435,6 +435,29 @@ class TestCartaoDoEstudoSemRotulo(unittest.TestCase):
         self.assertIn('<p class="paper-tit paper-tit--xs">', h)
         self.assertIn(titulo, h)   # nunca corta -- só diminui a fonte
 
+    def test_traducao_aparece_fora_do_paper_box(self):
+        """Pedido do Diego (2026-09-14): tradução NÃO entra dentro do card (autêntico,
+        só o original) -- vira legenda por fora, embaixo."""
+        h = self.pdf._kit_html("", self.artigo, titulo_pt="Efeitos do Jejum Intermitente")
+        self.assertIn('<p class="paper-trad">Em portugu&ecirc;s: Efeitos do Jejum Intermitente</p>', h)
+        # a legenda vem DEPOIS do </div> que fecha o paper-box, ainda dentro do kit-paper
+        antes_trad, _, depois_trad = h.partition('<p class="paper-trad">')
+        self.assertTrue(antes_trad.rstrip().endswith("</div>"))
+
+    def test_sem_titulo_pt_nao_aparece_legenda(self):
+        h = self.pdf._kit_html("", self.artigo)
+        self.assertNotIn("paper-trad", h)
+        self.assertNotIn("Em portugu&ecirc;s:", h)
+
+    def test_titulo_pt_igual_ao_original_nao_duplica(self):
+        h = self.pdf._kit_html("", self.artigo, titulo_pt=self.artigo["titulo_original"])
+        self.assertNotIn("paper-trad", h)
+
+    def test_traducao_escapa_html(self):
+        h = self.pdf._kit_html("", self.artigo, titulo_pt="<script>alert(4)</script>")
+        self.assertNotIn("<script>alert(4)</script>", h)
+        self.assertIn("&lt;script&gt;alert(4)&lt;/script&gt;", h)
+
     def test_revista_e_titulo_escapam_html(self):
         art = dict(self.artigo, fonte="<script>alert(1)</script>",
                    titulo_original="<script>alert(2)</script>")
