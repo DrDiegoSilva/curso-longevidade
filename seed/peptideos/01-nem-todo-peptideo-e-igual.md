@@ -25,7 +25,7 @@ Um paciente que pergunta sobre Tesamorelina e um que pergunta sobre BPC-157 est�
 Esta trilha entra substância por substância nessas três categorias, sempre na mesma ordem: o que os estudos mostraram (com número, desenho e protocolo), o que os estudos mostraram de risco, e só depois o status regulatório — porque a pergunta clínica ("isso funciona, pra quê, e com que segurança") vem antes da pergunta administrativa ("posso vender/indicar isso").
 
 ## micro-resultado
-Da próxima vez que um paciente perguntar sobre um peptídeo específico, a primeira pergunta que você faz pra si mesmo não é "é liberado?" — é "isso já foi testado em humano, em que desenho, e o que exatamente foi medido?". As respostas vêm nas próximas peças, substância por substância.
+Escreva, num lugar que você vai lembrar de olhar, as três categorias desta peça (aprovado no Brasil / aprovado fora do Brasil / nunca aprovado em lugar nenhum) com um exemplo de cada. Da próxima vez que um paciente perguntar sobre um peptídeo, sua primeira pergunta pra si mesmo já sai automática: "isso já foi testado em humano, em que desenho, e o que exatamente foi medido?"
 
 ## mentalidade
 "Não tem registro na ANVISA" é o fim de uma conversa regulatória, não o fim de uma conversa clínica. Ela não diz se a substância funciona, quanto funciona, ou que risco carrega — só diz que o Estado brasileiro não avaliou formalmente aquele uso. As duas perguntas são independentes, e um médico bem informado responde as duas, não só uma.

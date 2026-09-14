@@ -25,7 +25,7 @@ Ativa receptores toll-like (TLR9 e TLR2) em células dendríticas, promove matur
 Não há registro ANVISA para Zadaxin/timosina alfa-1. Apesar disso, a importação por pacientes (ou responsáveis legais) mediante prescrição médica, ou por hospitais/clínicas/associações de pacientes para demanda específica de tratamento, é permitida conforme as próprias normas de importação da ANVISA — um caso diferente de BPC-157/TB-500, que a ANVISA chama de "ilegal para qualquer uso": aqui é "sem registro, mas importável legalmente sob condições".
 
 ## micro-resultado
-Timosina Alfa-1 é o exemplo pra mostrar que "tem ciência séria por trás" e "está registrado no Brasil" são coisas diferentes — e que qualquer uso fora da hepatite B crônica (ex.: "imunidade geral", longevidade) não carrega a mesma base de evidência que sustenta a aprovação internacional.
+Escreva por que Timosina Alfa-1 é seu contra-argumento mais forte contra "nenhum peptídeo tem prova nenhuma" — RCT pivotal robusto, aprovação em mais de 35 países — e por que isso ainda não vale pra qualquer uso fora da hepatite B crônica no Brasil.
 
 ## mentalidade
 É o contraponto mais forte contra o argumento de "todo peptídeo é igualmente sem prova" — esse tem RCT pivotal robusto e aprovação em 35+ países. A questão nunca é branco e preto: é sempre "pra que uso, com que base, sob qual registro".

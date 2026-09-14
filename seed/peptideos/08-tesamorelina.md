@@ -21,7 +21,7 @@ Mesmo aprovando, a FDA foi explícita: benefício cardiovascular de longo prazo 
 O CRM-PR nomeou Tesamorelina explicitamente em nota técnica de 7/4/2026 como peptídeo sem registro ANVISA para uso injetável. Isso monta um contraste regulatório importante: aprovada pela FDA para indicação específica e restrita nos EUA, mas sem registro equivalente no Brasil — ou seja, qualquer uso aqui, inclusive para a mesma indicação aprovada nos EUA, depende de importação individual ou manipulação, sem a base regulatória local que uma bula registrada oferece.
 
 ## micro-resultado
-Se o paciente perguntar sobre Tesamorelina para "reduzir gordura" fora do contexto de lipodistrofia por HIV: a aprovação da FDA não cobre esse uso — o ensaio que sustenta a aprovação foi feito numa população e indicação bem diferentes do que costuma ser vendido no mercado de estética/longevidade.
+Escreva a pergunta que você vai fazer sempre que ouvir "Tesamorelina é aprovada pela FDA": "aprovada pra quê, exatamente?". A resposta certa (lipodistrofia por HIV) quase nunca é a razão pela qual o paciente está perguntando — pratique já a resposta completa.
 
 ## mentalidade
 Uma aprovação de agência séria não é um selo genérico de "pode usar" — é um selo específico pra uma população, dose e desfecho exatos. Fora desse recorte, a substância volta a ser uso off-label sem a mesma base de evidência.

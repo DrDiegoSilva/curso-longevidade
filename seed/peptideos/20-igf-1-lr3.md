@@ -33,7 +33,7 @@ Hipoglicemia é o risco inferido por mecanismo farmacológico e pela extrapolaç
 Sem registro ANVISA — confirmado inclusive por vendedores brasileiros do próprio produto, que declaram explicitamente que não são medicamentos, que nenhum tem registro para uso humano ou veterinário, e que a administração em pessoas é expressamente proibida. Não há resolução da ANVISA citando "IGF-1 LR3" nominalmente — a ausência de registro é constatada, não formalmente nomeada.
 
 ## micro-resultado
-Se o paciente perguntar sobre IGF-1 LR3: não existe nenhum estudo clínico em humano, e até a informação de "segurança" que circula vem de um medicamento diferente, aprovado pra crianças com uma condição rara — não é a mesma molécula, nem a mesma população.
+Anote: pra IGF-1 LR3 não existe nenhum estudo clínico humano, e a "segurança" que circula vem de outra molécula, aprovada pra outra população. Tenha essa frase pronta — é a resposta mais curta e direta desta trilha inteira.
 
 ## mentalidade
 Quando toda a base de segurança de uma substância vem de "uma molécula parecida", vale perguntar o quanto essa semelhança realmente garante o mesmo comportamento no corpo — às vezes a diferença estrutural é justamente o que muda o risco.

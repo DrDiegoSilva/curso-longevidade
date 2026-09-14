@@ -25,7 +25,7 @@ O episódio do óbito no programa de CJC-1295, mesmo classificado como não rela
 Ambos nomeados explicitamente pela ANVISA (alertas de julho de 2026) e pelo CRM-PR como sem registro em nenhuma categoria — uso considerado ilegal.
 
 ## micro-resultado
-O dado mais forte para levar pra conversa com o paciente: CJC-1295 tem elevação de GH/IGF-1 comprovada em ensaio controlado — o efeito farmacológico é real. O que falta é justamente segurança de uso contínuo, que é o padrão como a substância é vendida hoje.
+Escreva numa frase só a resposta que resume Ipamorelin + CJC-1295: "o efeito de elevar GH é real e comprovado em ensaio controlado — o que falta é segurança de uso contínuo". É a frase que você vai repetir toda vez que essa dupla aparecer numa consulta.
 
 ## mentalidade
 "Tem estudo mostrando que funciona" e "é seguro usar continuamente" são duas afirmações diferentes — a primeira pode ser verdadeira sem que a segunda seja.

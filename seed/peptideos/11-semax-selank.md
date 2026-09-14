@@ -25,7 +25,7 @@ Dentro do uso registrado na Rússia, o perfil de segurança relatado é favoráv
 O CRM-PR nomeou explicitamente Semax e Selank em nota técnica de 7/4/2026 como peptídeos sem registro ANVISA para uso injetável/nasal.
 
 ## micro-resultado
-O registro russo é um dado real — não é pura invenção de marketing, existe agência regulatória por trás. Mas registro estrangeiro fora do circuito ocidental (FDA/EMA/ANVISA) não substitui avaliação própria nem justifica dispensar a nota regulatória no Brasil.
+Escreva a frase que resume Semax/Selank: "registrado na Rússia, não no Brasil — registro estrangeiro real, mas fora do padrão que a ANVISA exige". Guarde como resposta pronta pra quando o registro russo aparecer como prova de segurança.
 
 ## mentalidade
 "Tem registro em algum país" é uma pergunta incompleta sem perguntar em qual país e sob que padrão de exigência — a resposta muda bastante dependendo da agência.

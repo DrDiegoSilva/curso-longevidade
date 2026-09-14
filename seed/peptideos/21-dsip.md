@@ -29,7 +29,7 @@ Sem caracterização de segurança sob padrão atual — os dados de tolerabilid
 Sem registro ANVISA, sem apresentação farmacêutica regularizada — classificado como investigacional/experimental. Produtos vendidos rotulados como "DSIP" fora do circuito regulado não têm garantia de identidade, pureza, dose ou esterilidade, e não estão sob controle sanitário nenhum.
 
 ## micro-resultado
-Se o paciente perguntar sobre DSIP para sono: a resposta honesta é que a literatura mais detalhada disponível em português conclui que a evidência é escassa, antiga e de baixa qualidade — a ponto de nem citar estudos individuais por considerá-los não confiáveis pelo padrão atual.
+Guarde a frase-resumo do DSIP: "a própria literatura mais detalhada em português nem cita os estudos individuais, de tão fraca que é a evidência". Não precisa de mais nada além disso na próxima vez que o tema aparecer.
 
 ## mentalidade
 Um número de estudo antigo, isolado, sem contexto do tamanho da amostra nem do desenho, pode soar impressionante e ser, na prática, quase nada. Vale sempre perguntar "quantas pessoas, que desenho, e isso foi replicado depois?" antes de reagir ao número em si.

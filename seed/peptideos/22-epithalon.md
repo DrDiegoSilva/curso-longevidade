@@ -33,7 +33,7 @@ Uma fonte brasileira que analisou o tema levanta o ponto certo: "se os resultado
 Sem aprovação ANVISA para uso clínico rotineiro no Brasil — confirmado por fonte brasileira específica sobre o tema.
 
 ## micro-resultado
-Se o paciente citar "ativa telomerase, é cientificamente comprovado": vale diferenciar o achado de laboratório (real, replicado em fibroblasto) do achado clínico em humano (fonte única, metodologia antiga, nunca replicada sob padrão de RCT) — são graus de confiança bem diferentes dentro da mesma substância.
+Escreva a distinção que separa laboratório de clínica no Epithalon: o achado de telomerase em fibroblasto foi replicado, o achado clínico em humano nunca foi. Pratique essa frase — é a mesma lógica que serve pra qualquer "estudo revolucionário" de fonte única que aparecer depois.
 
 ## mentalidade
 Quando toda a evidência clínica de algo vem de um único grupo de pesquisa, ao longo de décadas, sem que nenhum outro grupo no mundo tenha replicado — isso não prova que está errado, mas é um sinal de alerta que merece ser nomeado, não escondido atrás do número mais impressionante do estudo.

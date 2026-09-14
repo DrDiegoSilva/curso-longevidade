@@ -25,7 +25,7 @@ Apesar da qualidade dos ensaios, kisspeptina ainda não é um medicamento aprova
 Não encontramos informação específica sobre registro ANVISA de kisspeptina como medicamento — e diferente da maioria dos peptídeos desta trilha, ela não aparece nomeada nos alertas oficiais da ANVISA nem na nota do CRM-PR (que focam nos peptídeos de estética/performance). O único achado comercial é venda informal como "produto para pesquisa" — o que não é evidência de status regulatório, só de que já circula informalmente. Como não é droga aprovada por FDA/EMA (ainda em desenvolvimento clínico), é razoável presumir ausência de registro ANVISA, mas isso é inferência, não confirmação nominal.
 
 ## micro-resultado
-Se o paciente perguntar sobre kisspeptina para fertilidade: é o único caso desta trilha onde a resposta correta é "existe pesquisa clínica séria e promissora, mas ainda não é um tratamento disponível — é diferente de dizer que não tem base nenhuma".
+Escreva a resposta que diferencia Kisspeptina do resto desta trilha: "ciência séria e promissora, mas ainda não é tratamento disponível". É o único caso aqui que pede esse tom — sem o ceticismo mais pesado das outras peças. Guarde essa frase separada das demais.
 
 ## mentalidade
 Evidência de boa qualidade não é sinônimo de "já pode usar" — pesquisa clínica avançada e tratamento aprovado são estágios diferentes, e essa distinção importa tanto quanto a qualidade do dado em si.

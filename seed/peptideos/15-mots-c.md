@@ -25,7 +25,7 @@ Não existe protocolo humano validado — o que está em teste (CB4211, MOTS-c i
 Sem registro ANVISA. Listado explicitamente na categoria "experimental/não aprovado" no Brasil por fonte voltada a médicos brasileiros (Instituto CDT), ao lado de BPC-157, TB-500, SS-31, retatrutida e GHRP-2, entre outros.
 
 ## micro-resultado
-Se o paciente perguntar sobre MOTS-c: o que existe hoje é sinal pré-clínico interessante e um ensaio de fase 2a ainda em andamento — não uma prova de eficácia em humano. Vale acompanhar quando o resultado do NCT07505745 sair, não repetir a promessa como se já estivesse confirmada.
+Anote pra voltar a checar: o resultado do ensaio de fase 2a do MOTS-c (NCT07505745) ainda não saiu. Até lá, sua resposta padrão fica pronta: "sinal pré-clínico interessante, sem prova de eficácia em humano ainda".
 
 ## mentalidade
 "Tem ensaio clínico registrado" não é o mesmo que "tem resultado clínico publicado" — um ensaio em andamento é evidência de que a pergunta está sendo feita, não de que a resposta já existe.

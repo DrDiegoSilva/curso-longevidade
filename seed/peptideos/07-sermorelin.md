@@ -25,7 +25,7 @@ Não existe protocolo validado por ensaio clínico para o uso adulto/longevidade
 Diferente de Ipamorelin, CJC-1295 e Tesamorelina — que a ANVISA e o CRM-PR nomearam diretamente — não encontramos menção nominal explícita à sermorelina em alerta oficial da ANVISA. Pela mesma lógica regulatória que se aplica ao resto da classe (manipulação exige prescrição individualizada e insumo autorizado) e pelo padrão do restante do grupo, é razoável presumir ausência de registro — mas isso é inferência, não confirmação direta. Vale checar diretamente na busca de produtos da ANVISA antes de qualquer posicionamento mais categórico com paciente.
 
 ## micro-resultado
-O ângulo mais útil pra explicar ao paciente por que "já foi aprovado" não é sinônimo de "seguro pra qualquer uso hoje": sermorelina foi aprovada, saiu do mercado por motivo comercial, e o que se vende agora não passou pelo mesmo controle de qualidade do produto aprovado.
+Anote o resumo de uma frase pra Sermorelin: "foi aprovada, saiu do mercado por motivo comercial — não por segurança — e o que se vende hoje não passou pelo mesmo controle". Use essa frase pronta sempre que "já foi aprovado" aparecer como argumento.
 
 ## mentalidade
 "Já foi aprovado em algum lugar, em algum momento" é um dado real, mas parcial — o que importa clinicamente é se o USO específico que está sendo proposto (população, dose, finalidade) foi o mesmo que passou por aprovação.

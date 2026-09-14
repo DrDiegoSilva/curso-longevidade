@@ -29,7 +29,7 @@ Injeção intramuscular direta (não sistêmica) de vetor viral, dose de 3×10¹
 Sem registro ANVISA. Não encontramos menção regulatória nominal de "follistatin-344" nas fontes brasileiras pesquisadas — ausência inferida pela regra geral de que apenas semaglutida, tirzepatida e somatropina têm aprovação ANVISA entre proteínas/peptídeos correlatos.
 
 ## micro-resultado
-Se o paciente citar "tem estudo mostrando que funciona": vale perguntar em que formato — o estudo que existe é terapia gênica intramuscular em doença rara grave, não a proteína injetável vendida hoje. É outro produto, outra via, outra população.
+Antes da próxima vez que alguém citar um estudo de peptídeo como prova, pratique a pergunta que esta peça ensina: "em que formato, que via, que população?". Follistatin-344 é o exemplo mais claro pra guardar — terapia gênica intramuscular em doença rara, não a proteína injetável vendida hoje.
 
 ## mentalidade
 Uma pesquisa PubMed que retorna resultado pro nome da substância não garante que o estudo testou a mesma coisa, do mesmo jeito, que está sendo vendida — vale sempre checar formulação e via de administração antes de aceitar o estudo como prova daquele produto específico.
