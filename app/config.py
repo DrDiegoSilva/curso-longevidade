@@ -86,7 +86,7 @@ TRILHAS = {
     },
     "peptideos": {
         "nome": os.environ.get("DSCURSO_PEPTIDEOS_NOME") or "Peptídeos",
-        "total": 11,
+        "total": 22,
         "dir": os.environ.get("DSCURSO_PEPTIDEOS_DIR") or os.path.join(_SEED_BASE, "seed", "peptideos"),
         "pecas_por_envio": 2,
         # Achado do levantamento de pesquisa: praticamente toda peça precisa da

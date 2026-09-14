@@ -210,9 +210,9 @@ class TestParseESeed(unittest.TestCase):
     def test_semear_roda_todos_os_produtos_do_catalogo(self):
         contagens = self.t.semear()
         self.assertEqual(contagens["empreendedorismo"], self.cfg.TRILHAS["empreendedorismo"]["total"])
-        # "peptideos" ainda não tem conteúdo escrito -- 0 é o resultado correto,
-        # não um erro (mesmo comportamento de diretório vazio/ausente).
-        self.assertEqual(contagens.get("peptideos", 0), 0)
+        # "peptideos" tem conteúdo escrito desde 2026-09-14 (série completa) -- as 22
+        # peças do repo devem carregar todas.
+        self.assertEqual(contagens.get("peptideos", 0), self.cfg.TRILHAS["peptideos"]["total"])
 
     def test_as_12_pecas_do_repo_carregam(self):
         contagens = self.t.semear()
@@ -220,6 +220,17 @@ class TestParseESeed(unittest.TestCase):
             p = self.db.trilha_peca("empreendedorismo", n)
             self.assertIsNotNone(p, f"peça {n} não carregou")
             self.assertTrue(p["titulo"].strip(), f"peça {n} sem título")
+
+    def test_as_22_pecas_de_peptideos_carregam_com_aviso(self):
+        """A série de peptídeos exige `aviso` (config.TRILHAS["peptideos"]["exige_aviso"])
+        -- toda peça tem que carregar título, corpo e a nota regulatória."""
+        self.t.semear()
+        for n in range(1, self.cfg.TRILHAS["peptideos"]["total"] + 1):
+            p = self.db.trilha_peca("peptideos", n)
+            self.assertIsNotNone(p, f"peça {n} de peptideos não carregou")
+            self.assertTrue(p["titulo"].strip(), f"peça {n} sem título")
+            self.assertTrue(p["corpo"].strip(), f"peça {n} sem corpo")
+            self.assertTrue((p.get("aviso") or "").strip(), f"peça {n} sem aviso")
 
     def test_semear_avisa_quando_produto_exige_aviso_e_peca_nao_tem(self):
         d = os.path.join(self.tmp, "peptideos")
@@ -312,8 +323,12 @@ class TestDrip(unittest.TestCase):
         # Achado da revisão final: ativar um produto sem conteúdo seedado
         # ainda (ou incompleto) NÃO pode inscrever o assinante nele só porque
         # alguém chamou `proxima_peca` (ex.: visita a /trilha sem nunca ter
-        # havido envio). "peptideos" nasce sem diretório de conteúdo no
-        # catálogo padrão -- `db.trilha_peca` devolve None pra qualquer peça.
+        # havido envio). "peptideos" tem conteúdo real no repo desde
+        # 2026-09-14 (o `setUp` da classe já semeou via `self.t.semear()`) --
+        # esvazia a tabela pra simular o cenário "produto ativo, zero peça
+        # no banco", que é o que este teste precisa reproduzir.
+        with self.db._conn() as c:
+            c.execute("DELETE FROM trilha_pecas WHERE produto = 'peptideos'")
         self.t.definir_produto_ativo("peptideos")
         self.assertIsNone(self.t.proxima_peca("sub-nova"), "sem peça 1, não há o que mostrar")
         self.assertIsNone(
@@ -910,7 +925,7 @@ class TestMigracaoMultiproduto(unittest.TestCase):
         self.assertIn("empreendedorismo", self.cfg.TRILHAS)
         self.assertIn("peptideos", self.cfg.TRILHAS)
         self.assertEqual(self.cfg.TRILHAS["empreendedorismo"]["total"], 12)
-        self.assertEqual(self.cfg.TRILHAS["peptideos"]["total"], 11)
+        self.assertEqual(self.cfg.TRILHAS["peptideos"]["total"], 22)
         self.assertEqual(self.cfg.TRILHAS["peptideos"]["pecas_por_envio"], 2)
         self.assertEqual(self.cfg.TRILHAS["empreendedorismo"]["pecas_por_envio"], 1)
 

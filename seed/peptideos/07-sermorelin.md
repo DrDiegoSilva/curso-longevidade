@@ -1,0 +1,34 @@
+titulo: Sermorelin — já foi aprovado, saiu do mercado, e isso muda a conversa
+eixo: Secretagogos de GH
+
+## corpo
+Sermorelin é o caso de contraste mais didático desta trilha: é o único secretagogo de GH que já teve aprovação regulatória real — e mesmo assim saiu do mercado por razão comercial, não de segurança.
+
+### O que a aprovação histórica cobria
+
+Sermorelin é um análogo do GHRH (hormônio liberador de GH). Nos EUA, a FDA aprovou o produto Geref (sermorelina) em 1997 para diagnóstico e tratamento de deficiência de GH em crianças. É uso pediátrico, indicação estreita, com base de evidência histórica sólida para esse propósito específico.
+
+### Por que saiu do mercado
+
+O fabricante (EMD Serono) descontinuou o Geref em 2008-2009 por dificuldades de manufatura — não por evento de segurança. Hoje não existe produto de sermorelina aprovado pela FDA nos EUA; o que circula vem de farmácia de manipulação, fora do processo de controle de qualidade de um medicamento aprovado.
+
+### E para o uso divulgado hoje?
+
+O mercado de "longevidade" vende sermorelina para adultos, composição corporal e efeito anti-aging — usos nunca estudados formalmente. A evidência para essa aplicação é a mesma limitação genérica dos outros secretagogos de GH: extrapolação do uso pediátrico aprovado para uma população e finalidade que nunca foram objeto de ensaio clínico.
+
+### Protocolo
+
+Não existe protocolo validado por ensaio clínico para o uso adulto/longevidade. A dose histórica aprovada (Geref) era para diagnóstico/tratamento pediátrico de deficiência de GH — não transferível diretamente sem validação própria para outro público.
+
+### Status regulatório no Brasil
+
+Diferente de Ipamorelin, CJC-1295 e Tesamorelina — que a ANVISA e o CRM-PR nomearam diretamente — não encontramos menção nominal explícita à sermorelina em alerta oficial da ANVISA. Pela mesma lógica regulatória que se aplica ao resto da classe (manipulação exige prescrição individualizada e insumo autorizado) e pelo padrão do restante do grupo, é razoável presumir ausência de registro — mas isso é inferência, não confirmação direta. Vale checar diretamente na busca de produtos da ANVISA antes de qualquer posicionamento mais categórico com paciente.
+
+## micro-resultado
+O ângulo mais útil pra explicar ao paciente por que "já foi aprovado" não é sinônimo de "seguro pra qualquer uso hoje": sermorelina foi aprovada, saiu do mercado por motivo comercial, e o que se vende agora não passou pelo mesmo controle de qualidade do produto aprovado.
+
+## mentalidade
+"Já foi aprovado em algum lugar, em algum momento" é um dado real, mas parcial — o que importa clinicamente é se o USO específico que está sendo proposto (população, dose, finalidade) foi o mesmo que passou por aprovação.
+
+## aviso
+Sem confirmação nominal de citação em alerta oficial da ANVISA (diferente de outros secretagogos da mesma classe) — status inferido pela mesma lógica regulatória, não confirmado diretamente. Recomenda-se checar a base de produtos da ANVISA antes de posicionamento categórico.

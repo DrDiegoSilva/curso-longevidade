@@ -209,9 +209,14 @@ class TestTrilhaNumeroValido(unittest.TestCase):
         self.assertEqual(self.f("-1", "empreendedorismo"), 0)
 
     def test_numero_valido_no_produto_errado_vira_zero(self):
-        # 12 é válido pra empreendedorismo (total 12), mas não pra peptideos (11)
-        self.assertEqual(self.f("12", "peptideos"), 0)
-        self.assertEqual(self.f("11", "peptideos"), 11)
+        # peptideos tem mais peças que empreendedorismo -- um número válido lá
+        # (o total dele) passa do total de empreendedorismo, e vice-versa.
+        import config
+        total_pep = config.TRILHAS["peptideos"]["total"]
+        total_emp = config.TRILHAS["empreendedorismo"]["total"]
+        self.assertGreater(total_pep, total_emp)   # a asserção abaixo depende disso
+        self.assertEqual(self.f(str(total_emp + 1), "empreendedorismo"), 0)
+        self.assertEqual(self.f(str(total_pep), "peptideos"), total_pep)
 
     def test_produto_desconhecido_vira_zero(self):
         self.assertEqual(self.f("1", "nao-existe"), 0)
