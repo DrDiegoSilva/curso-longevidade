@@ -265,6 +265,57 @@ class _CapturaPrint:
         self._redirect.__exit__(*exc)
 
 
+class TestTextoPeca(unittest.TestCase):
+    """Versão em texto puro (WhatsApp) da peça -- mesmo conteúdo do PDF, sem abrir
+    anexo. Função pura, sem rede (pedido do Diego, 2026-09-14)."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.cfg, self.db, self.subs = _recarregar(self.tmp)
+        import trilha
+        importlib.reload(trilha)
+        self.t = trilha
+        self.peca = {"produto": "peptideos", "numero": 9, "titulo": "MK-677",
+                     "eixo": "Secretagogos de GH",
+                     "corpo": "### Primeira parte\n\nTexto com **negrito** aqui.\n\n"
+                              "Parágrafo comum sem subtítulo.",
+                     "micro_resultado": "Anote o número principal.",
+                     "mentalidade": "Composição corporal não é função.",
+                     "aviso": "Proibição nominal pela Anvisa."}
+
+    def test_titulo_e_eixo_aparecem(self):
+        texto = self.t.texto_peca(self.peca)
+        self.assertIn("MK-677", texto)
+        self.assertIn("Secretagogos de GH", texto)
+
+    def test_numero_e_total_do_produto_certo(self):
+        texto = self.t.texto_peca(self.peca)
+        total = self.cfg.TRILHAS["peptideos"]["total"]
+        self.assertIn(f"Semana 9 de {total}", texto)
+        self.assertIn(self.cfg.TRILHAS["peptideos"]["nome"], texto)
+
+    def test_subtitulo_vira_negrito_de_whatsapp(self):
+        texto = self.t.texto_peca(self.peca)
+        self.assertIn("*Primeira parte*", texto)
+        self.assertNotIn("### Primeira parte", texto)
+
+    def test_negrito_duplo_vira_negrito_de_whatsapp(self):
+        texto = self.t.texto_peca(self.peca)
+        self.assertIn("*negrito*", texto)
+        self.assertNotIn("**negrito**", texto)
+
+    def test_aviso_tarefa_e_mentalidade_aparecem(self):
+        texto = self.t.texto_peca(self.peca)
+        self.assertIn("Proibição nominal pela Anvisa.", texto)
+        self.assertIn("Anote o número principal.", texto)
+        self.assertIn("Composição corporal não é função.", texto)
+
+    def test_sem_aviso_nao_sobra_secao_vazia(self):
+        peca = dict(self.peca, aviso="")
+        texto = self.t.texto_peca(peca)
+        self.assertNotIn("Sem registro na Anvisa", texto)
+
+
 class TestDrip(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
@@ -510,6 +561,10 @@ class TestEnvio(unittest.TestCase):
             f.write("pdf")
         return out_path
 
+    def _fake_texto(self, whatsapp, msg):
+        self.textos_enviados = getattr(self, "textos_enviados", [])
+        self.textos_enviados.append({"whatsapp": whatsapp, "msg": msg})
+
     def _sub(self, nome="Fulano", numero="5543999990000", slot="08h"):
         reg = self.subs.adicionar(nome, numero)
         self.subs.definir_slot(reg["id"], slot)
@@ -517,16 +572,26 @@ class TestEnvio(unittest.TestCase):
 
     def test_envia_a_peca_1_e_avanca(self):
         sub = self._sub()
-        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertEqual(len(self.enviados), 1)
         self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 2)
+
+    def test_envia_tambem_o_texto_da_peca(self):
+        """Pedido do Diego (2026-09-14): resumo em texto, não só o PDF anexado."""
+        sub = self._sub()
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render,
+                                texto_fn=self._fake_texto)
+        self.assertTrue(ok)
+        self.assertEqual(len(self.textos_enviados), 1)
+        self.assertEqual(self.textos_enviados[0]["whatsapp"], sub["whatsapp"])
+        self.assertIn(self.cfg.TRILHAS["empreendedorismo"]["nome"], self.textos_enviados[0]["msg"])
 
     def test_claim_orfao_e_retomado_assinante_volta_a_receber(self):
         sub = self._sub()
         self.db.trilha_registrar_envio(sub["id"], "empreendedorismo", 1)
         self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 1)
-        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok, "claim órfão tem que ser retomado, não travar o assinante pra sempre")
         self.assertEqual(len(self.enviados), 1)
         self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 2)
@@ -537,7 +602,7 @@ class TestEnvio(unittest.TestCase):
         def explode(*a, **k):
             raise RuntimeError("zap caiu")
 
-        ok = self.t.enviar_para(sub, enviar_fn=explode, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=explode, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertFalse(ok)
         self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 1)
 
@@ -547,15 +612,15 @@ class TestEnvio(unittest.TestCase):
         def explode(*a, **k):
             raise RuntimeError("zap caiu")
 
-        self.t.enviar_para(sub, enviar_fn=explode, render_fn=self._fake_render)
-        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.t.enviar_para(sub, enviar_fn=explode, render_fn=self._fake_render, texto_fn=self._fake_texto)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok, "a mesma peça tem que poder ser reenviada depois de falhar")
 
     def test_quem_concluiu_e_sem_ativo_nao_recebe_mais(self):
         sub = self._sub()
         self.db.trilha_avancar(sub["id"], "empreendedorismo", self.cfg.TRILHAS["empreendedorismo"]["total"])
         self.t.definir_produto_ativo("")
-        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertFalse(ok)
         self.assertEqual(self.enviados, [])
 
@@ -564,7 +629,7 @@ class TestEnvio(unittest.TestCase):
         a = self._sub("A", "5543999990001", "08h")
         b = self._sub("B", "5543999990002", "18h")
         res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
-                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 1)
         self.assertEqual(self.db.trilha_posicao(a["id"], "empreendedorismo"), 2)
         self.assertEqual(self.db.trilha_posicao(b["id"], "empreendedorismo"), 1)
@@ -573,7 +638,7 @@ class TestEnvio(unittest.TestCase):
         from datetime import date
         self._sub()
         res = self.t.enviar_slot("08h", quando=date(2026, 8, 7),
-                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 0)
         self.assertEqual(self.enviados, [])
 
@@ -581,8 +646,8 @@ class TestEnvio(unittest.TestCase):
         from datetime import date
         self._sub()
         sab = date(2026, 8, 8)
-        self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
-        res = self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
+        res = self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 0)
         self.assertEqual(len(self.enviados), 1)
 
@@ -591,7 +656,7 @@ class TestEnvio(unittest.TestCase):
         sub = self._sub()
         self.subs.marcar_status(sub["id"], "CANCELADO", acesso_ate="2020-01-01")
         res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
-                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 0)
 
     def test_falha_no_avanco_apos_envio_nao_trava_o_assinante(self):
@@ -607,11 +672,11 @@ class TestEnvio(unittest.TestCase):
 
         self.db.trilha_avancar = avancar_com_falha
         try:
-            ok1 = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+            ok1 = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
             self.assertFalse(ok1, "avanço falhou -- não pode reportar sucesso")
             self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 1)
 
-            ok2 = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+            ok2 = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
             self.assertTrue(ok2, "claim liberado -- a mesma peça tem que poder sair de novo")
             self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 2)
         finally:
@@ -636,7 +701,7 @@ class TestEnvio(unittest.TestCase):
         try:
             with patch("time.sleep"):
                 res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
-                                         enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+                                         enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         finally:
             self.t.produto_do_assinante = produto_original
 
@@ -652,7 +717,7 @@ class TestEnvio(unittest.TestCase):
         c = self._sub("C", "5543999990012", "08h")
         with patch("time.sleep") as mock_sleep:
             res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
-                                     enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+                                     enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 3)
         self.assertEqual(mock_sleep.call_count, 2, "3 envios -> 2 pausas entre eles, nunca no fim")
         for chamada in mock_sleep.call_args_list:
@@ -664,14 +729,14 @@ class TestEnvio(unittest.TestCase):
         sab = date(2026, 8, 8)
 
         res1 = self.t.enviar_slot("08h", quando=sab, enviar_fn=self._fake_enviar,
-                                  render_fn=self._fake_render)
+                                  render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res1["enviados"], 1)
         self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 2)
 
         self.subs.definir_slot(sub["id"], "18h")
 
         res2 = self.t.enviar_slot("18h", quando=sab, enviar_fn=self._fake_enviar,
-                                  render_fn=self._fake_render)
+                                  render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res2["enviados"], 0, "já recebeu a peça da semana -- não pode duplicar")
         self.assertEqual(len(self.enviados), 1, "só UMA peça no sábado, apesar da troca de slot")
         self.assertEqual(self.db.trilha_posicao(sub["id"], "empreendedorismo"), 2)
@@ -689,7 +754,8 @@ class TestEnvio(unittest.TestCase):
             return out_path
 
         sub = self._sub()
-        self.assertTrue(self.t.enviar_para(sub, enviar_fn=espiao, render_fn=render_html))
+        self.assertTrue(self.t.enviar_para(sub, enviar_fn=espiao, render_fn=render_html,
+                                           texto_fn=self._fake_texto))
         html = capturado["html"]
         self.assertIn(f"{self.cfg.ARTIGOS_URL}/ferramentas/", html)
         self.assertNotIn(f"{self.cfg.PUBLIC_URL}/ferramentas/", html)
@@ -704,7 +770,7 @@ class TestEnvio(unittest.TestCase):
         sub = self._sub()
         dia = date(2026, 8, 8)
         res = self.t.enviar_slot("08h", quando=dia,
-                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+                                 enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 0)
         self.assertEqual(res["falhas"], 0, "ninguém ativo não é falha -- é nada pra fazer")
         self.assertEqual(self.enviados, [])
@@ -746,6 +812,10 @@ class TestLoteDePecas(unittest.TestCase):
             f.write("pdf")
         return out_path
 
+    def _fake_texto(self, whatsapp, msg):
+        self.textos_enviados = getattr(self, "textos_enviados", [])
+        self.textos_enviados.append({"whatsapp": whatsapp, "msg": msg})
+
     def _sub(self):
         reg = self.subs.adicionar("Fulano", "5543999990000")
         self.subs.definir_slot(reg["id"], "08h")
@@ -753,7 +823,7 @@ class TestLoteDePecas(unittest.TestCase):
 
     def test_manda_2_pecas_numa_visita_so(self):
         sub = self._sub()
-        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertEqual(len(self.enviados), 2)
         self.assertIn("Semana 1", self.enviados[0])
@@ -764,13 +834,13 @@ class TestLoteDePecas(unittest.TestCase):
         from unittest.mock import patch
         sub = self._sub()
         with patch("time.sleep") as mock_sleep:
-            self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+            self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         mock_sleep.assert_called_once_with(self.cfg.SEND_DELAY_SEC)
 
     def test_trilha_acaba_no_meio_do_lote_manda_a_ultima_e_para(self):
         sub = self._sub()
         self.db.trilha_avancar(sub["id"], "peptideos", 2)   # só falta a peça 3
-        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertEqual(len(self.enviados), 1)
         self.assertIn("Semana 3", self.enviados[0])
@@ -786,7 +856,7 @@ class TestLoteDePecas(unittest.TestCase):
                 raise RuntimeError("zap caiu na 2ª")
             self.enviados.append(caption)
 
-        ok = self.t.enviar_para(sub, enviar_fn=enviar_falha_na_2a, render_fn=self._fake_render)
+        ok = self.t.enviar_para(sub, enviar_fn=enviar_falha_na_2a, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok, "a 1ª peça saiu de verdade -- não é falha total")
         self.assertEqual(len(self.enviados), 1)
         self.assertEqual(self.db.trilha_posicao(sub["id"], "peptideos"), 2,
@@ -817,6 +887,9 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
     def _fake_enviar(self, whatsapp, pdf_path, caption=""):
         self.enviados.append({"whatsapp": whatsapp, "caption": caption})
 
+    def _fake_texto(self, whatsapp, msg):
+        pass
+
     def _render_capturando(self, htmls):
         def render(html, out_path):
             htmls.append(html)
@@ -834,7 +907,7 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
         sub = self._sub()
         htmls = []
         ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar,
-                                render_fn=self._render_capturando(htmls))
+                                render_fn=self._render_capturando(htmls), texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertNotIn("Baixar", htmls[0])
         self.assertNotIn("planilha-custo-hora", htmls[0])
@@ -847,7 +920,7 @@ class TestLinkFerramentaNoEnvio(unittest.TestCase):
         sub = self._sub()
         htmls = []
         ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar,
-                                render_fn=self._render_capturando(htmls))
+                                render_fn=self._render_capturando(htmls), texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertIn("/ferramentas/planilha-custo-hora", htmls[0])
         self.assertIn("Baixar", htmls[0])

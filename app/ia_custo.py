@@ -18,7 +18,7 @@ import config
 # varrendo os `acao=` REAIS do código-fonte.
 ACOES = ("dossie", "resumo_estudo", "boletim", "triagem", "tags", "metadados",
          "perguntas", "kit", "titulo", "grafico", "aula", "audio_roteiro",
-         "audio_tts", "desconhecido")
+         "audio_roteiro_trilha", "audio_tts", "desconhecido")
 
 _SEM_PRECO = set()          # avisa uma vez por modelo, não a cada chamada
 

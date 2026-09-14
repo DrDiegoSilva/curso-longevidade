@@ -93,6 +93,46 @@ def semear():
     return contagens
 
 
+def _corpo_para_whatsapp(texto):
+    """Corpo da peça (mesmo texto que `pdf_trilha` transforma em <h2>/<p>) em texto
+    puro pro WhatsApp: `### subtitulo` vira `*subtitulo*` (negrito de WhatsApp é UM
+    asterisco, não dois), `**negrito**` some do mesmo jeito. Sem lista/tabela nas
+    peças de hoje -- se aparecer, cai como texto corrido (mesmo comportamento
+    'menos automático que quebrado' do resto do app)."""
+    import re
+    blocos = []
+    for bloco in (texto or "").replace("\r\n", "\n").split("\n\n"):
+        bloco = bloco.strip()
+        if not bloco:
+            continue
+        if bloco.startswith("### "):
+            blocos.append(f"*{bloco[4:].strip()}*")
+        else:
+            blocos.append(re.sub(r"\*\*(.+?)\*\*", r"*\1*", bloco))
+    return "\n\n".join(blocos)
+
+
+def texto_peca(peca):
+    """Versão em texto puro (WhatsApp) da mesma peça que `pdf_trilha.montar_html`
+    manda pro PDF -- pra quem quer ler direto no chat, sem abrir o anexo. Nome/total
+    do produto vêm de `config.TRILHAS`, mesma regra do PDF."""
+    info = config.TRILHAS.get(peca.get("produto", ""), {})
+    nome_produto = info.get("nome", config.PRODUTO)
+    total_produto = info.get("total", peca.get("numero", 0))
+    partes = [f"🎓 *{nome_produto} — Semana {peca.get('numero', 0)} de {total_produto}*",
+              f"*{peca.get('titulo', '')}*",
+              f"_{peca.get('eixo', '')}_",
+              "",
+              _corpo_para_whatsapp(peca.get("corpo", ""))]
+    if peca.get("aviso"):
+        partes += ["", "⚠️ *Sem registro na Anvisa*", peca["aviso"].strip()]
+    if peca.get("micro_resultado"):
+        partes += ["", "📌 *Sua tarefa desta semana*", peca["micro_resultado"].strip()]
+    if peca.get("mentalidade"):
+        partes += ["", "🧠 *Mentalidade*", peca["mentalidade"].strip()]
+    return "\n".join(partes)
+
+
 _DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
 
 
@@ -144,7 +184,7 @@ def _liberar_claim(sub_id, produto, numero):
                   "AND feito_em IS NULL", (sub_id or "", produto, int(numero)))
 
 
-def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None):
+def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None):
     """Um ciclo claim->render->envia->avança, pra UMA peça de UM produto.
     Extraído pra `enviar_para` poder rodar isto `pecas_por_envio` vezes seguidas
     na mesma visita, sem duplicar a lógica de claim/retomada/falha."""
@@ -177,25 +217,40 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None):
               f"(execução anterior não completou)", flush=True)
 
     enviar_fn = enviar_fn or deliver.enviar_pdf
+    texto_fn = texto_fn or deliver.enviar_texto
     if render_fn is None:
         import pdf as _pdf
         render_fn = _pdf.gerar_pdf
 
+    numero_whats = phone.normalizar(sub.get("whatsapp", ""))
     try:
         import pdf_trilha
         link = ""
         if peca.get("ferramenta_slug") and caminho_ferramenta(peca["ferramenta_slug"]):
             link = f"{config.ARTIGOS_URL}/ferramentas/{peca['ferramenta_slug']}"
+        # Texto primeiro, depois o PDF -- mesma ordem do estudo diário (o
+        # assinante lê o resumo no chat e ainda ganha o PDF pra guardar/printar).
+        texto_fn(numero_whats, texto_peca(peca))
         html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
                                            abertura=abertura(sub_id, produto, n), link_ferramenta=link)
         out = os.path.join(tempfile.gettempdir(), f"trilha-{produto}-{n}-{sub_id}.pdf")
         render_fn(html_peca, out)
-        enviar_fn(phone.normalizar(sub.get("whatsapp", "")), out,
+        enviar_fn(numero_whats, out,
                   caption=f"{info['nome']} · Semana {n}: {peca.get('titulo','')}")
     except Exception as e:
         print(f"[trilha] peça {n} ({produto}) p/ {sub_id} falhou: {e}", flush=True)
         _liberar_claim(sub_id, produto, n)
         return False
+
+    # Áudio é extra, não essencial -- uma falha aqui (TTS fora do ar, sem
+    # OPENAI_API_KEY) não pode desfazer um envio de texto+PDF que já aconteceu.
+    if config.audio_ligado():
+        try:
+            import audio as audiomod
+            mp3 = audiomod.gerar_audio_da_peca(peca)
+            deliver.enviar_audio(numero_whats, mp3)
+        except Exception as e:
+            print(f"[trilha] áudio da peça {n} ({produto}) p/ {sub_id} falhou (não crítico): {e}", flush=True)
 
     try:
         db.trilha_avancar(sub_id, produto, n)
@@ -208,7 +263,7 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None):
     return True
 
 
-def enviar_para(sub, enviar_fn=None, render_fn=None):
+def enviar_para(sub, enviar_fn=None, render_fn=None, texto_fn=None):
     """Envia a(s) peça(s) da vez a UM assinante -- `pecas_por_envio` do produto em
     que ele está agora (1 pra empreendedorismo, 2 pra peptídeos). Se a trilha
     acabar no meio do lote, manda a que resta e para -- nunca emenda no próximo
@@ -227,7 +282,7 @@ def enviar_para(sub, enviar_fn=None, render_fn=None):
             # mesmo número de WhatsApp que sustenta o produto pago inteiro -- não
             # dispara 2 mensagens grudadas pra mesma pessoa.
             time.sleep(config.SEND_DELAY_SEC)
-        ok = _enviar_uma_peca(sub, produto, enviar_fn=enviar_fn, render_fn=render_fn)
+        ok = _enviar_uma_peca(sub, produto, enviar_fn=enviar_fn, render_fn=render_fn, texto_fn=texto_fn)
         if not ok:
             return enviou_alguma
         enviou_alguma = True
@@ -272,7 +327,7 @@ def produto_do_assinante(sub_id):
     return produto_ativo() or None
 
 
-def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
+def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None, texto_fn=None):
     """Envia a peça (ou peças, se `pecas_por_envio>1`) da semana aos assinantes
     ativos de `slot`. Só roda no dia da trilha. Quem não tem produto pra receber
     agora (`produto_do_assinante` devolve None) simplesmente não conta nem como
@@ -319,7 +374,7 @@ def enviar_slot(slot, quando=None, enviar_fn=None, render_fn=None):
             time.sleep(config.SEND_DELAY_SEC)
         primeiro = False
         try:
-            ok = enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn)
+            ok = enviar_para(s, enviar_fn=enviar_fn, render_fn=render_fn, texto_fn=texto_fn)
         except Exception as e:
             print(f"[trilha] envio a {s.get('id')} explodiu fora do enviar_para: {e}", flush=True)
             ok = False

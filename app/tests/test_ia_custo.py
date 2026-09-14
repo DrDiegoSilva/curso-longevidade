@@ -302,12 +302,12 @@ class TestVocabularioDeRotulos(unittest.TestCase):
         rotulos = self._rotulos_no_codigo()
         self.assertEqual(rotulos - set(ia_custo.ACOES), set())
 
-    def test_vocabulario_tem_exatamente_os_14_rotulos_fixados(self):
+    def test_vocabulario_tem_exatamente_os_15_rotulos_fixados(self):
         import ia_custo
         self.assertEqual(set(ia_custo.ACOES), {
             "dossie", "resumo_estudo", "boletim", "triagem", "tags", "metadados",
             "perguntas", "kit", "titulo", "grafico", "aula", "audio_roteiro",
-            "audio_tts", "desconhecido"})
+            "audio_roteiro_trilha", "audio_tts", "desconhecido"})
 
 
 if __name__ == "__main__":

@@ -78,3 +78,34 @@ def narrar(texto):
 def gerar_audio_do_estudo(art, conteudo):
     """Pipeline completo: roteiro (Claude) -> mp3 (OpenAI). Retorna bytes."""
     return narrar(gerar_roteiro(art, conteudo))
+
+
+_SISTEMA_TRILHA = (
+    "Você é o NARRADOR de uma trilha semanal em áudio para médicos assinantes. NÃO se passe por "
+    "nenhum médico específico, NÃO use nome próprio nem 'eu, doutor' — fale como apresentador da "
+    "trilha. Tom natural e conversacional, como uma boa aula falada — NÃO leia dados em lista. Traga "
+    "o essencial desta peça: o que ela ensina, o achado mais importante (com os números que importam, "
+    "ditos de forma fluida) e a virada de conduta ou de mentalidade que ela deixa. ESCREVA PARA SER "
+    "OUVIDO: evite siglas, escreva por extenso (ex.: 'hormônio do crescimento' em vez de GH). Comece "
+    "com uma abertura curta (ex.: 'Nesta semana da trilha...') e feche rápido, sem se despedir em nome "
+    "de ninguém. Português do Brasil. No máximo 250 palavras. Responda SÓ o texto do áudio."
+)
+
+
+def gerar_roteiro_peca(peca, gerar_fn=None):
+    """Roteiro falado de UMA peça de trilha (string). gerar_fn injetável (testável sem IA) --
+    mesmo padrão de `gerar_roteiro`."""
+    material = (f"Título: {peca.get('titulo', '')}\nEixo: {peca.get('eixo', '')}\n\n"
+                f"{_limpar(peca.get('corpo', ''))}\n\n"
+                f"Mentalidade: {_limpar(peca.get('mentalidade', ''))}")
+    if gerar_fn:
+        return gerar_fn(material)
+    import resumo_diario
+    return resumo_diario.claude(resumo_diario.SONNET,
+                                "Faça o roteiro de áudio desta aula:\n\n" + material,
+                                system=_SISTEMA_TRILHA, max_tokens=800, acao="audio_roteiro_trilha").strip()
+
+
+def gerar_audio_da_peca(peca):
+    """Pipeline completo pra uma peça de trilha: roteiro (Claude) -> mp3 (OpenAI)."""
+    return narrar(gerar_roteiro_peca(peca))
