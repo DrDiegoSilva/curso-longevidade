@@ -1,0 +1,13 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disparar deploy no EasyPanel
+        run: curl -fsS --max-time 30 "${{ secrets.EASYPANEL_DEPLOY_HOOK }}"
