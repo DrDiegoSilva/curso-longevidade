@@ -24,11 +24,5 @@ Tópico: perfil bem caracterizado, considerado seguro nas concentrações cosmé
 
 A ANVISA nomeou GHK-Cu explicitamente nos alertas de julho de 2026, como sem registro para uso injetável, "ilegal para qualquer uso em saúde, inclusive estético". O uso cosmético tópico, em concentração baixa, tende a se enquadrar na regulação de cosméticos — categoria regulatória diferente da injetável alertada, ainda que não haja confirmação de registro específico de um produto cosmético brasileiro com esse ativo.
 
-## micro-resultado
-Treine a resposta padrão pra GHK-Cu: a primeira coisa que você diz, antes de qualquer explicação, é "tópico ou injetável?". Anote isso como seu primeiro reflexo pra essa pergunta — são duas conversas completamente diferentes com a mesma sigla.
-
-## mentalidade
-Via de administração pode mudar tudo — não é só "mais ou menos forte", é uma pergunta regulatória e de evidência totalmente separada.
-
 ## aviso
 Uso injetável: sem registro ANVISA, nomeado no alerta oficial de julho/2026 como ilegal para qualquer uso em saúde. Uso tópico/cosmético: categoria regulatória diferente (cosméticos), sem confirmação de registro específico de produto brasileiro com este ativo.

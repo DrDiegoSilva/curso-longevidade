@@ -22,11 +22,5 @@ Não existe protocolo de dose humana — não há nenhum estudo que tenha testad
 
 Sem registro ANVISA — esperado, já que nem fase 1 humana existe em lugar nenhum do mundo. Não há sequer registro público de pedido de aprovação experimental (IND) em nenhuma agência internacional que tenhamos encontrado. É vendido como "peptídeo de pesquisa" — o que é tecnicamente correto (não existe uso humano validado), mas o marketing associado a ele ("neuroproteção", "longevidade cerebral") não tem nenhum respaldo de estudo em pessoa.
 
-## micro-resultado
-Pratique dizer, sem rodeio, que Humanin não tem nem o estudo de segurança mais básico em humano — é a resposta mais curta e mais honesta desta trilha inteira. Deixe essa frase pronta, não precisa de mais nada.
-
-## mentalidade
-"Associado a melhor cognição" e "melhora a cognição quando administrado" são duas frases que soam parecidas e significam coisas completamente diferentes — a primeira é uma observação, a segunda exigiria um ensaio que simplesmente não existe.
-
 ## aviso
 Sem registro ANVISA. Nenhum ensaio clínico humano de qualquer fase foi concluído em nenhum país — inclusive ausência de estudo básico de segurança.

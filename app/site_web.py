@@ -2561,6 +2561,8 @@ def pagina_trilha(sub, itens, produto, msg=""):
             if not it.get("entregue", True):
                 acao = ('<p class="hint" style="margin:8px 0 0">Ainda não chegou — '
                         'você recebe esta peça no seu WhatsApp no próximo sábado.</p>')
+            elif not info.get("tarefa_mentalidade", True):
+                acao = ""   # conteúdo científico -- sem tarefa pra marcar como feita
             elif it.get("feito"):
                 acao = '<p class="hint" style="margin:8px 0 0">✅ Você marcou como feita.</p>'
             else:
@@ -2579,7 +2581,11 @@ def pagina_trilha(sub, itens, produto, msg=""):
     corpo = f"""
     <div class="wrap">
       <h2 class="disp">{_esc(info["nome"])}</h2>
-      <p class="hint">Olá, {nome}. Uma peça por sábado — cada uma tem uma tarefa pequena, é ela que faz a diferença.</p>
+      <p class="hint">{
+        f"Olá, {nome}. Uma peça por sábado — cada uma tem uma tarefa pequena, é ela que faz a diferença."
+        if info.get("tarefa_mentalidade", True)
+        else f"Olá, {nome}. Uma peça por sábado, direto ao ponto: o que a ciência mostra, o risco e o status na Anvisa."
+      }</p>
       {msg_html}
       {linhas}
       <p style="margin:22px 0 0"><a class="cta ghost" href="/minha">Voltar</a></p>

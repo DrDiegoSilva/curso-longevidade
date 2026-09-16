@@ -24,11 +24,5 @@ Existem dados de fase 2 para essa indicação, inclusive em homens que não resp
 
 Não há registro confirmado na ANVISA. O acesso no Brasil ocorre por importação individual sob prescrição e regras específicas — a ausência de registro nacional não é uma liberação, é ausência de avaliação nacional formal de segurança, eficácia e qualidade para uso no país.
 
-## micro-resultado
-Anote a distinção que separa PT-141: aprovação da FDA existe, mas só pra mulheres com TDSH — o uso masculino, o mais divulgado, roda com evidência de fase 2. Pratique dizer essa distinção em voz alta antes da próxima consulta em que o assunto aparecer.
-
-## mentalidade
-"Aprovado pela FDA" sem especificar para quem e pra quê é uma frase incompleta que costuma ser usada pra vender uso bem mais amplo do que a aprovação realmente cobre.
-
 ## aviso
 Sem registro ANVISA no Brasil. Acesso só por importação individual sob prescrição — mesmo sendo aprovado pela FDA nos EUA para uma indicação específica em mulheres.

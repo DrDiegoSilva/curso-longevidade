@@ -304,16 +304,32 @@ class TestTextoPeca(unittest.TestCase):
         self.assertIn("*negrito*", texto)
         self.assertNotIn("**negrito**", texto)
 
-    def test_aviso_tarefa_e_mentalidade_aparecem(self):
+    def test_aviso_aparece(self):
         texto = self.t.texto_peca(self.peca)
         self.assertIn("Proibição nominal pela Anvisa.", texto)
-        self.assertIn("Anote o número principal.", texto)
-        self.assertIn("Composição corporal não é função.", texto)
 
     def test_sem_aviso_nao_sobra_secao_vazia(self):
         peca = dict(self.peca, aviso="")
         texto = self.t.texto_peca(peca)
         self.assertNotIn("Sem registro na Anvisa", texto)
+
+    def test_peptideos_nao_mostra_tarefa_nem_mentalidade(self):
+        """Pedido do Diego (2026-09-16): peptídeos é conteúdo científico, não
+        formação de hábito -- `tarefa_mentalidade=False` no catálogo tira as
+        duas seções mesmo quando a peça tem o campo preenchido."""
+        texto = self.t.texto_peca(self.peca)
+        self.assertNotIn("Sua tarefa desta semana", texto)
+        self.assertNotIn("Anote o número principal.", texto)
+        self.assertNotIn("Mentalidade", texto)
+        self.assertNotIn("Composição corporal não é função.", texto)
+
+    def test_produto_com_tarefa_mentalidade_mostra_as_duas(self):
+        peca = dict(self.peca, produto="empreendedorismo")
+        texto = self.t.texto_peca(peca)
+        self.assertIn("Sua tarefa desta semana", texto)
+        self.assertIn("Anote o número principal.", texto)
+        self.assertIn("Mentalidade", texto)
+        self.assertIn("Composição corporal não é função.", texto)
 
 
 class TestDrip(unittest.TestCase):
@@ -518,7 +534,7 @@ class TestPdfTrilha(unittest.TestCase):
         self.assertNotIn("bloco alerta", h)
 
     def test_com_aviso_mostra_bloco_de_alerta_depois_do_corpo(self):
-        peca = dict(self.peca, produto="peptideos",
+        peca = dict(self.peca,
                    aviso="A Anvisa nomeou esta substância como ilegal para qualquer uso.")
         h = self.p.montar_html(peca, "Diego")
         self.assertIn("Sem registro na Anvisa", h)
@@ -540,6 +556,22 @@ class TestPdfTrilha(unittest.TestCase):
         total_pep = self.cfg.TRILHAS["peptideos"]["total"]
         self.assertIn(f"1 de {total_pep}", h)
         self.assertIn(self.cfg.TRILHAS["peptideos"]["nome"], h)
+
+    def test_peptideos_nao_mostra_tarefa_nem_mentalidade(self):
+        """Pedido do Diego (2026-09-16): `tarefa_mentalidade=False` no catálogo
+        de peptídeos tira os dois blocos do PDF, mesmo que a peça (de outro
+        produto, herdada do fixture) traga os campos preenchidos."""
+        peca = dict(self.peca, produto="peptideos", numero=1)
+        h = self.p.montar_html(peca, "Diego")
+        self.assertNotIn("Sua tarefa desta semana", h)
+        self.assertNotIn("Faça a conta.", h)
+        self.assertNotIn("Mentalidade", h)
+        self.assertNotIn("Pense grande.", h)
+
+    def test_empreendedorismo_continua_mostrando_tarefa_e_mentalidade(self):
+        h = self.p.montar_html(self.peca, "Diego")
+        self.assertIn("Sua tarefa desta semana", h)
+        self.assertIn("Mentalidade", h)
 
 
 class TestEnvio(unittest.TestCase):

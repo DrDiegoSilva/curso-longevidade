@@ -83,6 +83,7 @@ TRILHAS = {
         "dir": os.environ.get("DSCURSO_TRILHA_DIR") or os.path.join(_SEED_BASE, "seed", "trilha"),
         "pecas_por_envio": 1,
         "exige_aviso": False,
+        "tarefa_mentalidade": True,
     },
     "peptideos": {
         "nome": os.environ.get("DSCURSO_PEPTIDEOS_NOME") or "Peptídeos",
@@ -93,6 +94,11 @@ TRILHAS = {
         # nota de "sem registro ANVISA" — `trilha.semear()` avisa no log quantas
         # peças deste produto ficaram sem o campo `aviso`.
         "exige_aviso": True,
+        # Pedido do Diego (2026-09-16): peça de peptídeos é conteúdo
+        # científico, não formação de hábito -- "tarefa da semana" e
+        # "mentalidade" não fazem sentido aqui (ver pdf_trilha.montar_html
+        # e trilha.texto_peca).
+        "tarefa_mentalidade": False,
     },
 }
 

@@ -32,11 +32,5 @@ Aumento de apetite (o mais frequente, transitório, resolvido em poucos meses), 
 
 A Resolução ANVISA RE nº 791, de 22 de janeiro de 2021 (publicada no Diário Oficial da União em 23/02/2021), determinou apreensão e proibiu comercialização, distribuição, fabricação, importação, manipulação, propaganda e uso de uma lista de substâncias que inclui nominalmente "Ibutamoren" e "MK-677" — junto com SARMs como Ostarine, Ligandrol, RAD-140, Cardarine e Testolona. A base legal é violação do artigo 5º da RDC 204/2006, por insumo farmacêutico sem avaliação de eficácia/segurança pela ANVISA. É a única substância desta trilha inteira com proibição formal, nominal e direta numa resolução publicada da ANVISA — não uma inferência por categoria, uma citação pelo nome. MK-677 também consta na lista de substâncias proibidas da WADA e do Departamento de Defesa dos EUA.
 
-## micro-resultado
-Monte a resposta de duas frases pra MK-677: o estudo mais robusto (2 anos, 65 pessoas) mostra ganho de massa magra real, sem ganho de força, com piora metabólica — e é o único peptídeo desta trilha com proibição nominal explícita da ANVISA. Deixe essa resposta pronta pra usar.
-
-## mentalidade
-"Tem estudo de 2 anos mostrando resultado" pode ser verdade e ainda assim não sustentar o uso — depende de qual desfecho o estudo realmente mostrou. Composição corporal melhorar e função piorar (ou ficar igual) no mesmo estudo é um resultado que merece ser contado inteiro, não só a metade favorável.
-
 ## aviso
 Proibição nominal e formal pela ANVISA (Resolução RE nº 791/2021, DOU 23/02/2021) — apreensão, proibição de comercialização, distribuição, importação, manipulação, propaganda e uso. Também consta na lista de substâncias proibidas da WADA.

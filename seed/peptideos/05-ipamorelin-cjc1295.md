@@ -24,11 +24,5 @@ O episódio do óbito no programa de CJC-1295, mesmo classificado como não rela
 
 Ambos nomeados explicitamente pela ANVISA (alertas de julho de 2026) e pelo CRM-PR como sem registro em nenhuma categoria — uso considerado ilegal.
 
-## micro-resultado
-Escreva numa frase só a resposta que resume Ipamorelin + CJC-1295: "o efeito de elevar GH é real e comprovado em ensaio controlado — o que falta é segurança de uso contínuo". É a frase que você vai repetir toda vez que essa dupla aparecer numa consulta.
-
-## mentalidade
-"Tem estudo mostrando que funciona" e "é seguro usar continuamente" são duas afirmações diferentes — a primeira pode ser verdadeira sem que a segunda seja.
-
 ## aviso
 Sem registro na ANVISA em qualquer categoria. Nomeados nominalmente nos alertas oficiais de julho/2026 (ANVISA) e na nota técnica do CRM-PR como ilegais para qualquer uso em saúde.

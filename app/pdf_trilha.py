@@ -160,6 +160,13 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
     if peca.get("aviso"):
         aviso_html = (f'<div class="bloco alerta"><p class="rot">⚠ Sem registro na Anvisa</p>'
                       f'{_paragrafos(peca.get("aviso"))}</div>')
+    tarefa_mentalidade_html = ""
+    if info.get("tarefa_mentalidade", True):
+        tarefa_mentalidade_html = (
+            '<div class="bloco"><p class="rot">Sua tarefa desta semana</p>'
+            f'{_paragrafos(peca.get("micro_resultado")) or "<p></p>"}</div>'
+            '<div class="bloco"><p class="rot">Mentalidade</p>'
+            f'{_paragrafos(peca.get("mentalidade")) or "<p></p>"}</div>')
     return f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <style>{_CSS}</style></head><body>
   <div class="capa">
@@ -178,10 +185,7 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
   {abertura_html}
   <div class="corpo">{_paragrafos(peca.get('corpo'))}</div>
   {aviso_html}
-  <div class="bloco"><p class="rot">Sua tarefa desta semana</p>
-    {_paragrafos(peca.get('micro_resultado')) or '<p></p>'}</div>
-  <div class="bloco"><p class="rot">Mentalidade</p>
-    {_paragrafos(peca.get('mentalidade')) or '<p></p>'}</div>
+  {tarefa_mentalidade_html}
   {ferramenta_html}
   <p class="rodape">Para {_esc(nome_assinante)} · {_esc(nome_produto)}</p>
   </div>

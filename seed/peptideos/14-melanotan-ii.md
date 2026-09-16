@@ -24,11 +24,5 @@ Não existe protocolo validado por estudo de segurança — os regimes circulam 
 
 O Conselho Regional de Farmácia de Mato Grosso do Sul (CRF-MS) emitiu alerta chamando Melanotan II de "substância ilegal", sem aprovação para uso estético, vendida ilegalmente pela internet sem controle de qualidade, associada a complicações graves como priapismo isquêmico — que pode exigir cirurgia e deixar sequela permanente. Não há alerta nomeado específico da própria ANVISA para Melanotan II (os alertas mais recentes focaram em BPC-157/TB-500/GHK-Cu/CJC-1295/Ipamorelina), mas o CRF-MS, como conselho de classe farmacêutico, é fonte regulatória/profissional relevante confirmando a ilegalidade.
 
-## micro-resultado
-Pratique a frase que muda o tom da conversa sobre Melanotan II: "aqui o problema não é falta de prova — é dano documentado: melanoma e priapismo isquêmico". Esta é a única peça desta trilha que pede esse tom mais direto — guarde a diferença.
-
-## mentalidade
-Nem todo peptídeo desta trilha carrega o mesmo tipo de risco. Falta de evidência (a maioria dos casos) é diferente de dano ativamente documentado (este caso) — e o segundo merece um tom de alerta mais direto que o primeiro.
-
 ## aviso
 Sem aprovação regulatória em qualquer jurisdição. Classificado como substância ilegal pelo CRF-MS (nota técnica), associado a complicações graves documentadas: melanoma e priapismo isquêmico.

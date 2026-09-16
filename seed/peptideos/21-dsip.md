@@ -28,11 +28,5 @@ Sem caracterização de segurança sob padrão atual — os dados de tolerabilid
 
 Sem registro ANVISA, sem apresentação farmacêutica regularizada — classificado como investigacional/experimental. Produtos vendidos rotulados como "DSIP" fora do circuito regulado não têm garantia de identidade, pureza, dose ou esterilidade, e não estão sob controle sanitário nenhum.
 
-## micro-resultado
-Guarde a frase-resumo do DSIP: "a própria literatura mais detalhada em português nem cita os estudos individuais, de tão fraca que é a evidência". Não precisa de mais nada além disso na próxima vez que o tema aparecer.
-
-## mentalidade
-Um número de estudo antigo, isolado, sem contexto do tamanho da amostra nem do desenho, pode soar impressionante e ser, na prática, quase nada. Vale sempre perguntar "quantas pessoas, que desenho, e isso foi replicado depois?" antes de reagir ao número em si.
-
 ## aviso
 Sem registro ANVISA, sem apresentação farmacêutica regularizada — classificado como investigacional/experimental. Produtos vendidos fora do circuito regulado não têm garantia de identidade, pureza, dose ou esterilidade.

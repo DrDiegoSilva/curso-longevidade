@@ -126,10 +126,11 @@ def texto_peca(peca):
               _corpo_para_whatsapp(peca.get("corpo", ""))]
     if peca.get("aviso"):
         partes += ["", "⚠️ *Sem registro na Anvisa*", peca["aviso"].strip()]
-    if peca.get("micro_resultado"):
-        partes += ["", "📌 *Sua tarefa desta semana*", peca["micro_resultado"].strip()]
-    if peca.get("mentalidade"):
-        partes += ["", "🧠 *Mentalidade*", peca["mentalidade"].strip()]
+    if info.get("tarefa_mentalidade", True):
+        if peca.get("micro_resultado"):
+            partes += ["", "📌 *Sua tarefa desta semana*", peca["micro_resultado"].strip()]
+        if peca.get("mentalidade"):
+            partes += ["", "🧠 *Mentalidade*", peca["mentalidade"].strip()]
     return "\n".join(partes)
 
 
@@ -169,8 +170,11 @@ def proxima_peca(sub_id):
 
 def abertura(sub_id, produto, numero):
     """Linha de retomada no topo da peça, olhando a peça anterior DO MESMO
-    produto. Vazia na peça 1 (não há anterior)."""
+    produto. Vazia na peça 1 (não há anterior) e em produto sem `tarefa_mentalidade`
+    -- não há tarefa nenhuma pra ter ficado feita ou em aberto."""
     if numero <= 1:
+        return ""
+    if not config.TRILHAS.get(produto, {}).get("tarefa_mentalidade", True):
         return ""
     if db.trilha_fez(sub_id, produto, numero - 1):
         return "Você marcou a tarefa da semana passada como feita. É assim que essa trilha funciona."

@@ -28,11 +28,5 @@ Reações no local de injeção (mais comuns em uso subcutâneo crônico, como e
 
 Sem registro ANVISA. A aprovação da FDA é recente (2025) e específica para Síndrome de Barth — não há evidência de submissão ou registro no Brasil. O uso vendido no mercado brasileiro de longevidade é importação ou manipulação não registrada, à revelia da indicação estreita realmente aprovada nos EUA.
 
-## micro-resultado
-Escreva a frase-chave de SS-31/Elamipretide: "aprovação real da FDA existe, mas só pra Síndrome de Barth — fracassou nas duas indicações mais gerais que foram testadas". Guarde como modelo de resposta pra qualquer "aprovado pela FDA" com indicação estreita.
-
-## mentalidade
-Esse é o exemplo mais claro desta trilha de por que "tem aprovação da FDA" precisa sempre vir acompanhado de "pra quê exatamente" — a mesma molécula fracassou em duas indicações e foi aprovada numa terceira, bem mais estreita que o marketing sugere.
-
 ## aviso
 Sem registro ANVISA. Aprovação FDA (2025) restrita à Síndrome de Barth — uso fora dessa indicação específica não tem a mesma base regulatória nem de evidência.

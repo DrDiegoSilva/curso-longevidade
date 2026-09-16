@@ -165,6 +165,9 @@ class _RouteStub:
     def _redirect(self, location, token=None, clear=False):
         return {"redirect": location}
 
+    def _sessao(self):
+        return None   # sem cookie de login -- só o token abre a rota nestes testes
+
 
 class TestRotaAdminPrecos(unittest.TestCase):
     """Rota /admin/precos (GET + POST) chamada direto no do_GET/do_POST do Handler

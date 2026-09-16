@@ -32,11 +32,5 @@ Elevação de cortisol/ACTH é efeito de classe esperado dos GHRPs. Segurança d
 
 Sem registro ANVISA para os três. A Resolução CFM nº 2.333/2023 veda prescrição de terapias hormonais para fins estéticos/desempenho esportivo, citando genericamente que secretagogos de GH não têm registro na ANVISA — mas não encontramos citação nominal específica de "hexarelina", "GHRP-2" ou "GHRP-6" em nenhuma resolução da ANVISA (diferente do MK-677, que tem citação nominal direta). O status de ausência de registro aqui é inferido pela categoria geral, não confirmado nominalmente pela ANVISA.
 
-## micro-resultado
-Pratique em voz alta a diferença entre "já foi aprovado" e "aprovado pra quê exatamente", usando GHRP-2 como exemplo (aprovado no Japão, mas só pra teste diagnóstico de dose única). Guarde esse modelo de explicação — ele serve de novo, sem alterar quase nada, pra Sermorelin e Tesamorelina.
-
-## mentalidade
-Farmacodinâmica bem demonstrada (a substância libera GH, mensuravelmente) não é o mesmo que eficácia clínica demonstrada (a substância melhora algum desfecho que importa pro paciente). As duas coisas podem estar bem separadas, e é isso que essa classe inteira de peptídeos mostra.
-
 ## aviso
 Sem registro ANVISA para hexarelina, GHRP-2 e GHRP-6. Ausência de registro inferida pela categoria geral (Resolução CFM 2.333/2023), sem citação nominal específica da ANVISA para nenhum dos três — diferente de outros secretagogos já nomeados em alerta oficial.
