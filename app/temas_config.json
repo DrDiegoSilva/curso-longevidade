@@ -35,8 +35,8 @@
       "rotulo": "Longevidade",
       "emoji": "🧬",
       "cor": "#4a3f1a",
-      "query": "(senolytic OR senescence OR \"healthy aging\" OR healthspan OR \"lifespan extension\" OR rapamycin OR sirolimus OR geroprotector OR \"biological age\" OR \"epigenetic clock\" OR \"epigenetic age\" OR \"DNA methylation age\" OR \"caloric restriction\" OR geroscience OR \"NAD+\" OR spermidine OR \"cellular senescence\" OR \"aging biomarkers\" OR \"continuous glucose\" OR multiomics OR \"multi-omics\")",
-      "excluir": "(\"nursing home\" OR \"aged care\" OR \"home care\" OR dementia OR sedation OR anesthesia OR arthroplasty OR cancer OR tumor OR oncology)"
+      "query": "(senolytic OR senescence OR \"healthy aging\" OR healthspan OR \"lifespan extension\" OR rapamycin OR sirolimus OR geroprotector OR \"biological age\" OR \"epigenetic clock\" OR \"epigenetic age\" OR \"DNA methylation age\" OR \"caloric restriction\" OR geroscience OR \"NAD+\" OR spermidine OR \"cellular senescence\" OR \"aging biomarkers\" OR \"continuous glucose\" OR multiomics OR \"multi-omics\" OR \"cold water immersion\" OR \"cold exposure\" OR cryotherapy OR \"sauna bathing\" OR \"heat therapy\" OR \"gut microbiome\" OR \"gut microbiota\" OR probiotic OR postbiotic OR \"fecal microbiota transplant\" OR photobiomodulation OR \"red light therapy\" OR \"low-level laser therapy\" OR \"near-infrared light\")",
+      "excluir": "(\"nursing home\" OR \"aged care\" OR \"home care\" OR dementia OR sedation OR anesthesia OR arthroplasty OR cancer OR tumor OR oncology OR \"inflammatory bowel disease\" OR \"Crohn\" OR \"ulcerative colitis\")"
     }
   },
   "dias_envio": ["segunda", "terca", "quarta", "quinta", "sexta"],
