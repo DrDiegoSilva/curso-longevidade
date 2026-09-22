@@ -36,7 +36,14 @@ def _normalizar(a, tema, tipo="varredura"):
         "data": a.get("data") or "",
         "doi": a.get("doi") or "",
         "url": a.get("url") or "",
-        "abstract": (a.get("resumo") or "")[:2500],
+        # ClinicalTrials.gov guarda em `resumo` só o contexto/protocolo do estudo -- o
+        # resultado de verdade (o que o ensaio realmente encontrou) mora em `texto_completo`
+        # (ver sources.parse_clinicaltrials). Sem essa troca, a triagem mostrava um "abstract"
+        # que nunca dizia o que o estudo achou, só o que ele se propôs a testar (achado do
+        # Diego, 2026-09-22). Outras fontes mantêm o resumo normal -- lá o abstract já É o
+        # achado, texto_completo é só o artigo inteiro (pior preview truncado em 2500).
+        "abstract": ((a.get("texto_completo") if a.get("banco") == "clinicaltrials" else None)
+                     or a.get("resumo") or "")[:2500],
         # Texto completo (Open Access, ver sources._so_com_texto_completo) — SEM corte de
         # 2500: é o que gerar_resumo() usa de verdade pra escrever o resumo (o 'abstract'
         # acima só sobra pra exibição/triagem). Vazio quando o artigo não tem full text.

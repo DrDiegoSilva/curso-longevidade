@@ -63,6 +63,31 @@ class TestVarrer(unittest.TestCase):
         self.assertTrue(c["chave"])                         # chave de dedup não vazia
         self.assertIsInstance(c["score"], float)
 
+    def test_clinicaltrials_mostra_resultado_no_abstract_nao_so_protocolo(self):
+        """Achado do Diego (2026-09-22): a fila mostrava só o protocolo (o que o ensaio se
+        propôs a testar) e nunca o resultado -- porque `resumo` do ClinicalTrials.gov é
+        sempre o briefSummary/contexto, nunca o achado. `abstract` (o que a triagem exibe)
+        tem que preferir `texto_completo` (contexto + resultado) quando banco=clinicaltrials."""
+        def buscar_ct(q, d, a):
+            return [{"titulo": "Estudo X", "doi": "", "url": "https://clinicaltrials.gov/study/NCT1",
+                     "resumo": "Contexto do estudo: só o que o ensaio se propôs a testar.",
+                     "texto_completo": "Contexto do estudo: ...\n\nResultados publicados no registro: "
+                                       "reduziu 5kg em 12 semanas.",
+                     "fonte": "ClinicalTrials.gov", "data": "2026-03-01", "banco": "clinicaltrials"}]
+        cands = curadoria.varrer("2026-01-01", "2026-07-19", caps={"Obesidade": 1},
+                                 buscar_fn=buscar_ct, triar_fn=_fake_triar)
+        self.assertIn("reduziu 5kg em 12 semanas", cands[0]["abstract"])
+
+    def test_outras_fontes_continuam_usando_o_resumo_normal(self):
+        def buscar_epmc(q, d, a):
+            return [{"titulo": "Estudo Y", "doi": "10.1/y", "url": "",
+                     "resumo": "Abstract de verdade com o achado.",
+                     "texto_completo": "Artigo inteiro completo, não é o que a triagem deve priorizar.",
+                     "fonte": "BMJ", "data": "2026-03-01", "banco": "europepmc"}]
+        cands = curadoria.varrer("2026-01-01", "2026-07-19", caps={"Obesidade": 1},
+                                 buscar_fn=buscar_epmc, triar_fn=_fake_triar)
+        self.assertEqual(cands[0]["abstract"], "Abstract de verdade com o achado.")
+
     def test_chave_normaliza(self):
         self.assertEqual(curadoria._chave({"doi": "10.1/AbC"}), "10.1/abc")
         self.assertEqual(curadoria._chave({"url": "http://X"}), "http://x")

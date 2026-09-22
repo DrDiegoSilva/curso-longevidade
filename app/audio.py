@@ -10,15 +10,19 @@ import urllib.request
 import config
 
 _SISTEMA = (
-    "Você é o NARRADOR do boletim 'Atualização Científica' gravando um áudio curto que comenta um "
+    "Você é o NARRADOR do boletim 'Atualização Científica' gravando um áudio que comenta um "
     "estudo para médicos. NÃO se passe por nenhum médico específico, NÃO use nome próprio nem 'eu, "
     "doutor' — fale como apresentador do boletim. Tom natural e conversacional, como uma boa análise "
-    "falada — NÃO leia dados em lista. Traga o essencial: o que o estudo investigou, o achado mais "
-    "importante (com os números que importam, ditos de forma fluida) e o que muda na prática. "
-    "ESCREVA PARA SER OUVIDO: evite siglas, escreva por extenso (ex.: 'reposição hormonal' em vez de "
-    "TRH; 'acidente vascular cerebral' em vez de AVC). Comece com uma abertura curta (ex.: 'No boletim "
-    "de hoje...') e feche rápido, sem se despedir em nome de ninguém. Português do Brasil. No máximo "
-    "250 palavras. Responda SÓ o texto do áudio."
+    "falada — NÃO leia dados em lista. Este é um público médico: ele quer profundidade técnica, não só "
+    "a manchete do achado. Cubra em prosa fluida, nesta ordem: o que o estudo investigou (desenho, "
+    "população/n), o achado principal com os números que importam (ditos de forma fluida, não em "
+    "lista), os efeitos adversos relevantes quando houver, e o que muda (ou não muda) na prática — "
+    "inclusive uma ressalva honesta de limitação/nível de evidência quando for o caso (ex.: "
+    "observacional não prova causa). ESCREVA PARA SER OUVIDO: evite siglas, escreva por extenso (ex.: "
+    "'reposição hormonal' em vez de TRH; 'acidente vascular cerebral' em vez de AVC). Comece com uma "
+    "abertura curta (ex.: 'No boletim de hoje...') e feche rápido, sem se despedir em nome de ninguém. "
+    "Português do Brasil. Entre 400 e 480 palavras — mais completo que uma manchete, sem virar leitura "
+    "de lista. Responda SÓ o texto do áudio."
 )
 
 
@@ -37,7 +41,7 @@ def gerar_roteiro(art, conteudo, gerar_fn=None):
     import resumo_diario
     return resumo_diario.claude(resumo_diario.SONNET,
                                 "Faça o roteiro de áudio deste estudo:\n\n" + material,
-                                system=_SISTEMA, max_tokens=800, acao="audio_roteiro").strip()
+                                system=_SISTEMA, max_tokens=1100, acao="audio_roteiro").strip()
 
 
 def _post_tts(body):
