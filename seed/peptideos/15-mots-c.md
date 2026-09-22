@@ -8,6 +8,10 @@ eixo: Metabolismo
 
 MOTS-c é um peptídeo derivado do próprio DNA mitocondrial — não é um hormônio clássico, é um sinalizador que a mitocôndria produz. É estudado para metabolismo, resistência à insulina e envelhecimento, com a promessa de melhorar sensibilidade à insulina e função metabólica geral.
 
+### Mecanismo
+
+MOTS-c ativa a AMPK — o principal sensor de energia da célula — por uma via pouco usual: inibe o ciclo do folato e a síntese de purina associada, levando ao acúmulo de um intermediário (AICAR) que ativa a AMPK diretamente. Sob estresse ou exercício, o peptídeo é translocado ao núcleo da célula, onde regula genes de resposta antioxidante e adaptação ao estresse. É um mecanismo bem caracterizado em laboratório — a lacuna, como a seção a seguir descreve, é a confirmação clínica em humano.
+
 ### O que existe em humano até agora
 
 Não existem ensaios de eficácia humana completos com o peptídeo nativo MOTS-c. Um análogo sintético (CB4211, desenvolvido pela farmacêutica CohBar) completou estudos de fase 1a/1b em voluntários saudáveis e em pessoas com obesidade e esteatose hepática — mas o programa foi descontinuado antes de avançar. Existe um ensaio de fase 2a ativo (NCT07505745) testando MOTS-c investigacional em adultos com pré-diabetes e sobrepeso, com desfecho primário de sensibilidade à insulina medida por teste oral de tolerância à glicose ao longo de 16 semanas — mas ainda sem resultado publicado.

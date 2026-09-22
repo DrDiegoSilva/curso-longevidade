@@ -16,6 +16,10 @@ O fabricante (EMD Serono) descontinuou o Geref em 2008-2009 por dificuldades de 
 
 O mercado de "longevidade" vende sermorelina para adultos, composição corporal e efeito anti-aging — usos nunca estudados formalmente. A evidência para essa aplicação é a mesma limitação genérica dos outros secretagogos de GH: extrapolação do uso pediátrico aprovado para uma população e finalidade que nunca foram objeto de ensaio clínico.
 
+### Mecanismo
+
+Sermorelina é um análogo truncado do GHRH (hormônio liberador de GH — os 29 primeiros aminoácidos da molécula natural): liga-se ao receptor de GHRH na hipófise e estimula a liberação pulsátil e natural de GH. A diferença mecanística em relação a aplicar GH exógeno direto: por estimular a via natural, preserva o padrão pulsátil e o feedback negativo do eixo hipotálamo-hipófise, o que teoricamente reduz o risco de supressão do eixo que a reposição direta de GH pode causar. É a mesma classe mecanística da tesamorelina (peça seguinte) e de outros secretagogos desta trilha.
+
 ### Protocolo
 
 Não existe protocolo validado por ensaio clínico para o uso adulto/longevidade. A dose histórica aprovada (Geref) era para diagnóstico/tratamento pediátrico de deficiência de GH — não transferível diretamente sem validação própria para outro público.

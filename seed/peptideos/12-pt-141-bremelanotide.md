@@ -16,6 +16,10 @@ Náusea em até 40% dos casos, rubor, reação no local da injeção, cefaleia, 
 
 Existem dados de fase 2 para essa indicação, inclusive em homens que não respondem a inibidores de PDE5 (como sildenafila) — mas essa NÃO é a indicação aprovada pela FDA, nem nos EUA. O uso masculino roda com base em evidência preliminar, não no mesmo padrão que sustentou a aprovação para mulheres.
 
+### Mecanismo
+
+Bremelanotida é agonista dos receptores de melanocortina (principalmente MC4R, também MC1R) e atua no sistema nervoso central, no hipotálamo — mecanismo completamente diferente dos inibidores de PDE5 (como sildenafila), que agem perifericamente sobre o vaso sanguíneo. É essa ação central sobre a via do desejo, e não um efeito vascular, que explica por que a bremelanotida foi estudada e aprovada especificamente para transtorno do desejo (não de excitação/ereção) — e por que efeitos colaterais como náusea e rubor (efeitos centrais/sistêmicos) diferem do perfil dos inibidores de PDE5.
+
 ### Protocolo do ensaio pivotal
 
 1,75 mg por via subcutânea, autoadministrado conforme necessário (não diário), até uma vez a cada 24 horas, no protocolo RECONNECT — é dose sob demanda, não de uso contínuo.

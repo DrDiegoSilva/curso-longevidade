@@ -12,6 +12,10 @@ Tesamorelina é um análogo do fator liberador de GH. A FDA aprovou o produto Eg
 
 Mesmo aprovando, a FDA foi explícita: benefício cardiovascular de longo prazo e segurança prolongada não foram estudados no programa de aprovação, e não há dados mostrando melhora de adesão à terapia antirretroviral com o uso do medicamento.
 
+### Mecanismo
+
+Como a sermorelina, é um análogo do GHRH que atua no mesmo receptor hipofisário — a diferença prática é uma modificação estrutural que aumenta a estabilidade enzimática da molécula, prolongando seu tempo de ação e permitindo o regime de uma aplicação diária que sustentou o programa de aprovação. O efeito de redução de gordura visceral aprovado (Egrifta) passa pelo aumento de GH/IGF-1 endógenos, não por ação direta sobre o tecido adiposo.
+
 ### Protocolo do ensaio pivotal
 
 2 mg por via subcutânea, uma vez ao dia, avaliado ao longo de 52 semanas, em pacientes HIV-positivos com lipodistrofia confirmada — não é o regime genérico "anti-aging" divulgado informalmente, é dose e população específicas do desenho que gerou a aprovação.

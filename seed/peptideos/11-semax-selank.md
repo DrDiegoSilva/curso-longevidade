@@ -12,6 +12,10 @@ Derivado do ACTH(4-7), registrado na Rússia para uso cerebrovascular e neuroló
 
 Registrado na Rússia como ansiolítico. Existe pelo menos um ensaio clínico randomizado citável: um RCT com 62 pessoas comparou Selank a medazepam (um benzodiazepínico padrão) para ansiedade generalizada e neurastenia, mostrando eficácia ansiolítica comparável — além de efeito antiastênico e leve estímulo psíquico que o benzodiazepínico não produzia. É, dos dois, o que tem desenho de estudo mais próximo de um RCT reconhecível — ainda com a mesma ressalva de publicação e metodologia fora do padrão ocidental.
 
+### Mecanismo
+
+Semax é um análogo sintético de um fragmento do ACTH (ACTH 4-7) — não tem atividade hormonal clássica, mas modula a expressão de fatores neurotróficos como o BDNF e afeta os sistemas de serotonina e dopamina, o que sustenta o uso como nootrópico/neuroprotetor. Selank é um análogo sintético da tuftsina (peptídeo imunomodulador natural) — seu efeito ansiolítico é atribuído à modulação do sistema GABA e à mesma via de BDNF. Os dois mecanismos são bem descritos na literatura russa, mas — como o restante da evidência do par — fora do padrão de replicação e revisão do mundo ocidental.
+
 ### Protocolo
 
 Registros russos descrevem Semax em spray nasal (a via de administração predominante nos estudos russos, por questão de biodisponibilidade — peptídeos se degradam por via oral) e Selank também predominantemente intranasal. Doses variam por indicação nos protocolos russos; não existe dose padronizada validada fora desse contexto regulatório.

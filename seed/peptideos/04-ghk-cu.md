@@ -12,6 +12,10 @@ Décadas de literatura pré-clínica em coelhos, ratos e porcos mostram cicatriz
 
 Toda essa evidência é para a forma tópica. Não existe base equivalente para a forma injetável — que é justamente a divulgada nas redes sociais para "anti-aging" e reparo tecidual sistêmico. Não há ensaio clínico controlado testando GHK-Cu injetável em humano para essas indicações.
 
+### Mecanismo proposto
+
+GHK-Cu é um tripeptídeo (glicina-histidina-lisina) que ocorre naturalmente no corpo e declina com a idade — sua concentração no plasma cai de forma proporcional ao envelhecimento. Ligado a cobre, modula a expressão de um número grande de genes ligados a reparo tecidual e resposta antioxidante, além de estimular diretamente a síntese de colágeno e glicosaminoglicanos pelos fibroblastos. É esse mecanismo — bem descrito para a forma tópica, onde a molécula atua localmente na pele — que sustenta o uso cosmético estabelecido. Não há confirmação de que o mesmo mecanismo se traduza em benefício sistêmico quando a via é injetável.
+
 ### Protocolo
 
 Tópico: concentrações cosméticas padrão (tipicamente 1-3 ppm em formulações), sem prescrição médica — é ingrediente cosmético estabelecido. Injetável: sem protocolo validado, sem estudo de dose-resposta em humano.

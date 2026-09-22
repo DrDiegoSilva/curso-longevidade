@@ -8,6 +8,10 @@ De todos os peptídeos cobertos aqui, é o caso mais claro de distância entre o
 
 Peptídeo derivado de DNA mitocondrial, vendido como "neuroprotetor" e "anti-aging cerebral" no mercado de peptídeos.
 
+### Mecanismo
+
+Humanin é outro peptídeo derivado do DNA mitocondrial — em laboratório, ativa um complexo receptor (CNTFR/WSX-1/gp130) que dispara a via JAK/STAT3 de sobrevivência celular, aumentando a expressão de proteínas anti-apoptóticas (Bcl-2, Mcl-1) e bloqueando diretamente duas proteínas pró-apoptose (IGFBP-3 e BAX). É um mecanismo neuroprotetor bem descrito em célula e animal — a mesma base mecanística que, como a seção seguinte detalha, nunca foi testada em ensaio clínico humano.
+
 ### O que existe de evidência
 
 Nenhum ensaio clínico de fase 1 (nem o mais básico teste de segurança) foi concluído e publicado até hoje para humanin ou qualquer análogo. Toda a evidência de neuroproteção vem de cultura de células humanas em laboratório e de modelos animais — camundongos envelhecidos. Um estudo mostrou que humanin previne declínio cognitivo relacionado à idade em camundongos, e que níveis circulantes de humanin estão associados a melhor desempenho cognitivo em humanos — mas isso é um achado observacional/correlacional (quem tem mais humanin no sangue tende a ter cognição melhor), não um ensaio de tratamento. É uma diferença que importa: correlação não é o mesmo que "dar humanin melhora a cognição".

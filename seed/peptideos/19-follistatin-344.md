@@ -8,6 +8,10 @@ eixo: Massa muscular
 
 No mercado de biohacking, follistatin-344 é vendido como proteína/peptídeo recombinante ou como plasmídeo de DNA ("minicircle"), com a promessa de inibir miostatina e ativina — os freios naturais do crescimento muscular — e assim induzir hipertrofia. Mas o que existe de estudo clínico sério usou uma abordagem completamente diferente: terapia gênica viral.
 
+### Mecanismo
+
+Follistatina se liga e neutraliza a miostatina (e outros membros da família TGF-β, como a ativina) — a miostatina é o freio natural do crescimento muscular, então bloqueá-la remove essa restrição e permite hipertrofia. É o mesmo alvo farmacológico perseguido por outras classes de inibidores de miostatina em desenvolvimento pra doenças de perda muscular. O mecanismo em si é bem estabelecido; o que muda radicalmente entre o que foi estudado e o que se vende é a via de entrega — como a seção a seguir detalha.
+
 ### O estudo que existe de verdade
 
 Um ensaio de fase 1/2a de terapia gênica (Mendell et al.) injetou um vetor viral (AAV1.CMV.FS344) diretamente no músculo quadríceps, dos dois lados, em 6 pacientes com distrofia muscular de Becker — uma doença neuromuscular genética grave. O desfecho primário foi a distância percorrida no teste de caminhada de 6 minutos. Resultado agregado: melhora média de 11,5% em 6 meses (estatisticamente significativa). Mas a variação individual foi grande — um paciente melhorou 58 metros, outro 125 metros, outro 108 metros, e um não teve melhora relevante (9 metros) — e a resposta esteve correlacionada com o grau de fibrose muscular já presente: mais fibrose, menos resposta. Um segundo ensaio, incluindo também pacientes com miosite por corpos de inclusão, mostrou aumento de volume e força muscular sustentado por 2 anos, sem eventos adversos sérios relacionados ao tratamento.

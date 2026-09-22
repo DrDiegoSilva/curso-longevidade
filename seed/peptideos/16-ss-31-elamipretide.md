@@ -4,6 +4,10 @@ eixo: Mitocôndria
 ## corpo
 É o programa clínico mais extenso e mais sofisticado desta trilha — com resultados bem heterogêneos por indicação, e uma aprovação real da FDA que não cobre nem de longe o que é vendido genericamente como "saúde mitocondrial".
 
+### Mecanismo
+
+SS-31/elamipretide se liga seletivamente à cardiolipina — um lipídio da membrana interna da mitocôndria — por atração eletrostática (a molécula tem carga positiva). Essa ligação estabiliza a estrutura das cristas mitocondriais e melhora a eficiência da cadeia de transporte de elétrons, reduzindo a produção de espécies reativas de oxigênio. A hipótese inicial era que a molécula agisse como antioxidante direto; pesquisa mais recente aponta que o efeito real vem dessa estabilização estrutural da membrana, não de sequestro de radicais livres.
+
 ### Onde o programa clínico fracassou
 
 **Miopatia mitocondrial primária** (estudo MMPOWER-3, fase 3, randomizado, duplo-cego, 24 semanas, 40 mg/dia subcutâneo): não atingiu o desfecho primário. A diferença entre grupos no teste de caminhada de 6 minutos foi de apenas -3,2 metros (praticamente nula, p=0,69), e na escala de fadiga a diferença foi de -0,07 (p=0,37) — sem significância estatística em nenhum dos dois. Uma análise post-hoc por subgrupo genético sugeriu algum benefício em pacientes com variantes patogênicas no DNA nuclear (mas não no DNA mitocondrial) — é achado exploratório, não confirmatório.

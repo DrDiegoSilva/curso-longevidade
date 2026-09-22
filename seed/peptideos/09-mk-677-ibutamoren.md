@@ -24,6 +24,10 @@ A glicemia de jejum subiu cerca de 0,3 mmol/L e a sensibilidade à insulina dimi
 
 Aumento de apetite (o mais frequente, transitório, resolvido em poucos meses), edema leve e transitório de membros inferiores, e mialgia.
 
+### Mecanismo
+
+MK-677 é agonista do receptor de grelina (GHS-R1a) — via oral, mimetiza a grelina (o "hormônio da fome") pra estimular a liberação de GH e IGF-1 pela hipófise, sem precisar de injeção. É esse mesmo mecanismo, ligado à grelina, que explica o efeito colateral mais comum do estudo (aumento de apetite): a molécula ativa a mesma via que naturalmente sinaliza fome.
+
 ### Protocolo do estudo
 
 25 mg por via oral, uma vez ao dia, por até 2 anos — é a maior duração de exposição humana documentada entre todos os peptídeos desta trilha.
