@@ -437,6 +437,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                      "total_fatura": total_fatura}
             return self._html(site_web.pagina_custos(dados, config.ADMIN_TOKEN or "",
                                                      msg=q.get("msg", [""])[0]), 200)
+        if path == "/admin/engajamento":
+            import config, db, site_web, subscribers, auth_web
+            q = up.parse_qs(up.urlparse(self.path).query)
+            sess = self._sessao()
+            token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
+            if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
+                return self._html("<h3>Acesso negado</h3>", 403)
+            db.init()
+            resumo = db.resumo_engajamento()
+            linhas = []
+            for sub_id, contagem in resumo.items():
+                sub = subscribers.por_id(sub_id) or {}
+                linhas.append({"nome": sub.get("nome") or sub_id, **contagem})
+            linhas.sort(key=lambda l: l.get("lida", 0), reverse=True)
+            return self._html(site_web.pagina_admin_engajamento(linhas, config.ADMIN_TOKEN or ""), 200)
         if path.startswith("/admin/trilha/peca/"):
             import config, db as _db, pdf_trilha, trilha as _trilha_mod
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -773,6 +788,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("bad json", 400)
             st, msg = webhook_asaas.processar(body, self.headers.get("asaas-access-token"))
             return self._html(msg, st)
+        if path == "/webhook/whatsapp-status":   # Z-API/Evolution: status de entrega/leitura
+            import webhook_whatsapp, json as _json
+            try:
+                body = _json.loads(raw.decode("utf-8") or "{}")
+            except Exception:
+                body = {}
+            webhook_whatsapp.processar(body)   # nunca levanta -- sempre 200, provedor não retenta à toa
+            return self._html("ok", 200)
         ctype = self.headers.get("Content-Type", "")
         if path == "/curadoria" and ctype.startswith("multipart/form-data"):
             return self._curadoria_upload(raw, ctype)   # upload de PDF do estudo

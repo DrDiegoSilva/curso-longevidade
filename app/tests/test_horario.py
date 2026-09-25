@@ -102,7 +102,7 @@ class TestEnviarSlot(unittest.TestCase):
         self.daily._audio_master = lambda *a, **k: None
         self.daily._pdf_master = lambda *a, **k: None
         self.daily._e_dia_util = lambda dt: True
-        self.daily._enviar_estudo_para = lambda w, n, ctx: self.enviados.append({"whatsapp": w, "nome": n})
+        self.daily._enviar_estudo_para = lambda w, n, ctx, sid="": self.enviados.append({"whatsapp": w, "nome": n})
         # 2 assinantes: um no 12h, um no default (08h)
         self.s.definir_slot(self.s.adicionar("A", "5543000000001")["id"], "12h")
         self.s.adicionar("B", "5543000000002")   # 08h default

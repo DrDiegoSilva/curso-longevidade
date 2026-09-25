@@ -718,6 +718,7 @@ def _admin_nav(token="", atual=""):
             + lk("/series", "🎬 Séries", "series")
             + lk("/admin/precos", "💰 Preços", "precos")
             + lk("/admin/custos", "📊 Custos", "custos")
+            + lk("/admin/engajamento", "📈 Engajamento", "engajamento")
             + lk("/admin/envio", "🗓️ Dias", "envio")
             + lk("/admin/trilha", "📘 Trilha", "trilha")
             + lk("/admin/afiliados", "🤝 Afiliados", "afiliados")
@@ -2156,6 +2157,54 @@ def pagina_custos(dados, token, msg=""):
                    meta_extra='<meta name="robots" content="noindex">')
 
 
+def pagina_admin_engajamento(linhas, token="", msg=""):
+    """Quem de fato está lendo o que a gente manda -- pedido do Diego (2026-09-25): o app
+    não media NENHUM uso além do 'marcar feito' da trilha. `linhas` já vem pronta do
+    serve.py (um dict por assinante com nome + contagem enviado/entregue/lida/reproduzida),
+    ordenada por quem mais leu primeiro.
+
+    'Lida' é a confirmação de leitura do WhatsApp na mensagem (texto/PDF/áudio) -- não dá
+    pra confirmar que o PDF em si foi aberto (a maioria dos leitores de PDF bloqueia
+    qualquer chamada de rede embutida), então isto mede "recebeu e leu o pacote do dia",
+    não "abriu o anexo"."""
+    total_env = sum(l.get("enviado", 0) + l.get("entregue", 0) + l.get("lida", 0)
+                    + l.get("reproduzida", 0) for l in (linhas or []))
+    total_lida = sum(l.get("lida", 0) + l.get("reproduzida", 0) for l in (linhas or []))
+    pct_geral = f"{100 * total_lida / total_env:.0f}%" if total_env else "—"
+
+    def linha(l):
+        env = l.get("enviado", 0) + l.get("entregue", 0) + l.get("lida", 0) + l.get("reproduzida", 0)
+        lida = l.get("lida", 0) + l.get("reproduzida", 0)
+        pct = f"{100 * lida / env:.0f}%" if env else "—"
+        return (f'<tr><td>{_esc(l.get("nome"))}</td>'
+                f'<td align="right">{env}</td>'
+                f'<td align="right">{lida}</td>'
+                f'<td align="right"><strong>{pct}</strong></td></tr>')
+
+    cab = ('<tr><th align="left">Assinante</th><th align="right">Enviadas</th>'
+           '<th align="right">Lidas</th><th align="right">% lida</th></tr>')
+    tabela = (f'<table style="width:100%;border-collapse:collapse">{cab}'
+              f'{"".join(linha(l) for l in linhas)}</table>' if linhas
+              else '<p class="hint">Sem mensagens rastreadas ainda -- normal nos primeiros '
+                   'dias após ligar o rastreio, ou se o webhook de status ainda não foi '
+                   'configurado no provedor de WhatsApp.</p>')
+
+    corpo = (
+        f'<div class="wrap">{_admin_nav(token, "engajamento")}'
+        + (f'<div class="infobox">{_esc(msg)}</div>' if msg else '')
+        + f'<div class="panel" style="max-width:none">'
+        f'<h3>Engajamento</h3>'
+        f'<p style="font-size:26px;margin:6px 0"><strong>{pct_geral}</strong> '
+        f'<span class="hint">das mensagens enviadas foram lidas</span></p>'
+        f'<p class="hint">"Lida" é a confirmação de leitura do WhatsApp na mensagem -- não '
+        f'confirma que o PDF foi aberto, só que o pacote do dia (texto/PDF/áudio) chegou e '
+        f'foi visto.</p>'
+        f'<h3 style="margin-top:22px">Por assinante</h3>{tabela}'
+        f'</div></div>')
+    return _pagina("Engajamento · Admin", corpo, logado=True,
+                   meta_extra='<meta name="robots" content="noindex">')
+
+
 def pagina_agenda(semanas, estoque, token, msg=""):
     opcoes = "".join(
         f'<option value="{_esc(s["data"])}">{_esc(s["data"][8:10])}/{_esc(s["data"][5:7])}</option>'
@@ -2508,6 +2557,7 @@ def pagina_minha(sub, admin=False):
                   + card("/admin/mensagens", "✉️", "Mensagens", "Textos de WhatsApp/e-mail e automações")
                   + card("/admin/precos", "🏷️", "Preços", "Planos e valores de venda")
                   + card("/admin/custos", "💰", "Custos de IA", "Quanto o robô gastou no mês")
+                  + card("/admin/engajamento", "📈", "Engajamento", "Quem de fato lê o que a gente manda")
                   + card("/admin/afiliados", "🤝", "Afiliados", "Cadastro e comissões")
                   + card("/admin/trilha", "🧬", "Trilhas", "Peptídeos/empreendedorismo — qual está ativa")
                   + card("/series", "📚", "Séries", "Estudos em várias partes")

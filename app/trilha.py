@@ -232,15 +232,18 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
         link = ""
         if peca.get("ferramenta_slug") and caminho_ferramenta(peca["ferramenta_slug"]):
             link = f"{config.ARTIGOS_URL}/ferramentas/{peca['ferramenta_slug']}"
+        import webhook_whatsapp as ww
         # Texto primeiro, depois o PDF -- mesma ordem do estudo diário (o
         # assinante lê o resumo no chat e ainda ganha o PDF pra guardar/printar).
-        texto_fn(numero_whats, texto_peca(peca))
+        r_texto = texto_fn(numero_whats, texto_peca(peca))
+        ww.registrar_envio(r_texto, sub_id, "trilha_texto")
         html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
                                            abertura=abertura(sub_id, produto, n), link_ferramenta=link)
         out = os.path.join(tempfile.gettempdir(), f"trilha-{produto}-{n}-{sub_id}.pdf")
         render_fn(html_peca, out)
-        enviar_fn(numero_whats, out,
-                  caption=f"{info['nome']} · Semana {n}: {peca.get('titulo','')}")
+        r_pdf = enviar_fn(numero_whats, out,
+                          caption=f"{info['nome']} · Semana {n}: {peca.get('titulo','')}")
+        ww.registrar_envio(r_pdf, sub_id, "trilha_pdf")
     except Exception as e:
         print(f"[trilha] peça {n} ({produto}) p/ {sub_id} falhou: {e}", flush=True)
         _liberar_claim(sub_id, produto, n)
@@ -251,8 +254,10 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
     if config.audio_ligado():
         try:
             import audio as audiomod
+            import webhook_whatsapp as ww
             mp3 = audiomod.gerar_audio_da_peca(peca)
-            deliver.enviar_audio(numero_whats, mp3)
+            r_audio = deliver.enviar_audio(numero_whats, mp3)
+            ww.registrar_envio(r_audio, sub_id, "trilha_audio")
         except Exception as e:
             print(f"[trilha] áudio da peça {n} ({produto}) p/ {sub_id} falhou (não crítico): {e}", flush=True)
 

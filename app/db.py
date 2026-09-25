@@ -278,6 +278,14 @@ def init():
                 feito_em TEXT,
                 PRIMARY KEY (subscriber_id, produto, numero)
             );
+            CREATE TABLE IF NOT EXISTS mensagens_enviadas (
+                id TEXT PRIMARY KEY,
+                subscriber_id TEXT NOT NULL,
+                tipo TEXT NOT NULL,
+                status TEXT DEFAULT 'enviado',
+                enviado_em TEXT,
+                atualizado_em TEXT
+            );
             CREATE TABLE IF NOT EXISTS automacoes_renovacao (
                 id TEXT PRIMARY KEY, dias INTEGER, canal TEXT, texto TEXT,
                 ativo INTEGER DEFAULT 1, criado_em TEXT
@@ -314,7 +322,8 @@ _TABELAS = ["digests", "login_codes", "sessions", "subscribers",
             "afiliados", "comissoes", "settings", "envios_slot", "envios_dia",
             "automacoes_renovacao", "avisos_renovacao", "classicos",
             "series", "serie_itens", "dossies",
-            "trilha_pecas", "trilha_progresso", "trilha_envios", "ia_uso"]
+            "trilha_pecas", "trilha_progresso", "trilha_envios", "ia_uso",
+            "mensagens_enviadas"]
 
 
 def _add_coluna(c, tabela, coluna, tipo):
@@ -2129,6 +2138,73 @@ def resumo_ia_uso(desde, ate=None):
           " ORDER BY substr(quando,1,10) DESC, acao, modelo")
     with _conn() as c:
         return [dict(r) for r in c.execute(q, params).fetchall()]
+
+
+# ---------------------------------------------------------------- engajamento (leitura no WhatsApp)
+def registrar_mensagem_enviada(msg_id, subscriber_id, tipo):
+    """Uma linha por mensagem despachada (texto/PDF/áudio, estudo ou trilha) — `msg_id` é o
+    id que o backend de WhatsApp devolveu no envio (webhook_whatsapp.extrair_id_*), é o que
+    casa esta linha com o webhook de status que chega depois. NUNCA levanta: perder uma
+    linha de rastreio é aceitável, perder o envio de verdade não é -- mesma garantia de
+    `ia_custo.registrar`."""
+    if not msg_id:
+        return
+    from datetime import datetime
+    try:
+        agora = datetime.now().isoformat()
+        with _conn() as c:
+            c.execute("""INSERT OR IGNORE INTO mensagens_enviadas
+                         (id,subscriber_id,tipo,status,enviado_em,atualizado_em)
+                         VALUES (?,?,?,'enviado',?,?)""",
+                      (msg_id, subscriber_id or "", tipo or "", agora, agora))
+    except Exception as e:
+        print(f"[engajamento] não registrei o envio ({tipo}): {e}", flush=True)
+
+
+def atualizar_status_mensagem(msg_id, status):
+    """Aplica o status que o webhook do WhatsApp mandou (entregue/lida/reproduzida).
+
+    Nunca RETROCEDE o status: `entregue` chegando depois de `lida` (comum -- provedores
+    reenviam ou entregam webhooks fora de ordem) não pode apagar que a mensagem já foi
+    lida. A ordem de progresso é fixa: enviado < entregue < lida < reproduzida.
+    """
+    if not msg_id or not status:
+        return
+    ordem = {"enviado": 0, "entregue": 1, "lida": 2, "reproduzida": 3}
+    if status not in ordem:
+        return
+    from datetime import datetime
+    try:
+        with _conn() as c:
+            atual = c.execute("SELECT status FROM mensagens_enviadas WHERE id=?",
+                              (msg_id,)).fetchone()
+            if atual is None:
+                return   # webhook chegou antes do registro do envio, ou id desconhecido
+            if ordem.get(atual["status"], 0) >= ordem[status]:
+                return
+            c.execute("UPDATE mensagens_enviadas SET status=?, atualizado_em=? WHERE id=?",
+                      (status, datetime.now().isoformat(), msg_id))
+    except Exception as e:
+        print(f"[engajamento] não atualizei o status ({msg_id} -> {status}): {e}", flush=True)
+
+
+def resumo_engajamento(desde=None):
+    """Por assinante: quantas mensagens de cada status, desde quando. Base da tela de
+    engajamento -- SQL agrega em vez de trazer linha a linha, mesmo raciocínio de
+    `resumo_ia_uso` (a tabela só cresce)."""
+    q = "SELECT subscriber_id, status, COUNT(*) AS n FROM mensagens_enviadas"
+    params = []
+    if desde:
+        q += " WHERE enviado_em >= ?"
+        params.append(desde)
+    q += " GROUP BY subscriber_id, status"
+    with _conn() as c:
+        linhas = [dict(r) for r in c.execute(q, params).fetchall()]
+    por_sub = {}
+    for l in linhas:
+        d = por_sub.setdefault(l["subscriber_id"], {"enviado": 0, "entregue": 0, "lida": 0, "reproduzida": 0})
+        d[l["status"]] = d.get(l["status"], 0) + l["n"]
+    return por_sub
 
 
 # ---------------------------------------------------------------- exclusão do corpus

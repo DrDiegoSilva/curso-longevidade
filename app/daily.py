@@ -763,26 +763,30 @@ def _ctx_do_dia(hoje):
     return _montar_ctx(hoje, r)
 
 
-def _enviar_estudo_para(whatsapp, nome, ctx):
+def _enviar_estudo_para(whatsapp, nome, ctx, subscriber_id=""):
     """Envia o estudo do dia (texto + PDF + áudio) a UM assinante. Falha de mídia é logada."""
     import phone
+    import webhook_whatsapp as ww
     whatsapp = phone.normalizar(whatsapp)
     link = f"{config.PUBLIC_URL}/entrar"
     msg = deliver.personalizar_rodape(
         montar_texto_resumo(ctx["titulo"], ctx["r"]["resumo"], ctx["tmeta"], fresco=ctx.get("fresco", False)),
         nome, link)
-    deliver.enviar_texto(whatsapp, msg)
+    r_texto = deliver.enviar_texto(whatsapp, msg)
+    ww.registrar_envio(r_texto, subscriber_id, "estudo_texto")
     if ctx["master_pdf"]:
         try:
             _tit = ctx["titulo"]
             _url = (ctx["art"].get("url") or "").strip()
             _leg = f"{_tit}\n\nEstudo original: {_url}" if _url else _tit
-            deliver.enviar_pdf(whatsapp, ctx["master_pdf"], caption=_leg, nome_arquivo=_tit)
+            r_pdf = deliver.enviar_pdf(whatsapp, ctx["master_pdf"], caption=_leg, nome_arquivo=_tit)
+            ww.registrar_envio(r_pdf, subscriber_id, "estudo_pdf")
         except Exception as e:
             print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
     if ctx["audio_bytes"]:
         try:
-            deliver.enviar_audio(whatsapp, ctx["audio_bytes"])
+            r_audio = deliver.enviar_audio(whatsapp, ctx["audio_bytes"])
+            ww.registrar_envio(r_audio, subscriber_id, "estudo_audio")
         except Exception as e:
             print(f"[enviar] áudio p/ {whatsapp} falhou: {e}", flush=True)
 
@@ -806,7 +810,7 @@ def enviar_slot(slot):
     destinatarios = [s for s in subscribers.ativos()
                      if subscribers.slot_de(s) == slot and db.registrar_envio_assinante(hoje, s["id"])]
     res = deliver.distribuir(r, destinatarios, config.SEND_DELAY_SEC,
-                             lambda w, n: _enviar_estudo_para(w, n, ctx))
+                             lambda w, n, sid: _enviar_estudo_para(w, n, ctx, sid))
     _finalizar_dia(hoje, r, ctx["art"], ctx["conteudo"], ctx["tmeta"])
     if destinatarios:
         deliver.enviar_curador(f"✅ Enviado (slot {slot}, {ctx['art'].get('tema','')}): {res['ok']} assinantes"

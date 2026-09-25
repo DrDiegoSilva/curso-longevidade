@@ -141,12 +141,12 @@ def enviar_admin(msg):
 
 
 def distribuir(rascunho, assinantes, delay_sec, enviar_fn):
-    """Loop com throttle. enviar_fn(whatsapp, nome) injetável (testável sem rede).
-    Falha em um assinante não derruba o lote."""
+    """Loop com throttle. enviar_fn(whatsapp, nome, subscriber_id) injetável (testável sem
+    rede). Falha em um assinante não derruba o lote."""
     ok, falhas = 0, []
     for a in assinantes:
         try:
-            enviar_fn(a["whatsapp"], a.get("nome", ""))
+            enviar_fn(a["whatsapp"], a.get("nome", ""), a.get("id", ""))
             ok += 1
         except Exception as e:
             falhas.append({"whatsapp": a.get("whatsapp"), "erro": str(e)})
