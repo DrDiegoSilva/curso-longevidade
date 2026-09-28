@@ -264,9 +264,15 @@ def enviar_audio_preview(r):
     return enviou
 
 
-def _preparar_da_reserva(reserva_id=None):
+def _preparar_da_reserva(reserva_id=None, data_alvo=None):
     """Monta o rascunho de amanhã a partir de um resumo PRONTO da reserva. Se
-    `reserva_id` vier (slot da agenda), usa aquele; senão, o próximo da fila."""
+    `reserva_id` vier (slot da agenda), usa aquele; senão, o próximo da fila.
+
+    `data_alvo` pinado por quem chama (ex.: `trocar_estudo_amanha`, com a data do
+    rascunho que está substituindo) evita recomputar "amanhã" na hora da troca -- uma
+    troca feita depois da meia-noite recomputaria um dia inteiro à frente do rascunho
+    original, e o antigo (na data certa) seria o que `enviar_slot` acaba mandando
+    (achado do Diego, 2026-09-28)."""
     import db
     r_res = db.obter_reserva(reserva_id) if reserva_id else db.proximo_da_reserva()
     if not r_res:
@@ -282,7 +288,7 @@ def _preparar_da_reserva(reserva_id=None):
         grafico = None
     c = {"titulo_pt": r_res.get("titulo_pt", ""), "resumo": r_res.get("resumo", ""),
          "gancho": r_res.get("gancho", ""), "grafico": grafico}
-    alvo = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_slot
+    alvo = data_alvo or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")   # dia do envio (amanhã) — casa com enviar_slot
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
     try:                                     # fail-safe: PDF nunca pode derrubar a preparação/revisão
@@ -348,11 +354,11 @@ def reenviar_pdf_do_dia(data=None):
     return {"ok": True, "msg": f"PDF de {hoje} ({dg.get('tema','')}) reenviado a {ok}/{len(ativos)} assinantes."}
 
 
-def _preparar_de_artigo(art):
-    """Gera conteúdo de um artigo cru (fila/fresco) e monta o rascunho de amanhã."""
-    amanha = datetime.now() + timedelta(days=1)
+def _preparar_de_artigo(art, data_alvo=None):
+    """Gera conteúdo de um artigo cru (fila/fresco) e monta o rascunho de amanhã.
+    `data_alvo`: ver docstring de `_preparar_da_reserva`."""
     c = content.gerar_conteudo(art)
-    alvo = amanha.strftime("%Y-%m-%d")
+    alvo = data_alvo or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
     os.makedirs(config.drafts_dir(), exist_ok=True)
     preview = os.path.join(config.drafts_dir(), f"{alvo}-preview.pdf")
     try:                                     # fail-safe: PDF nunca pode derrubar a preparação/revisão
@@ -374,8 +380,9 @@ def _preparar_de_artigo(art):
     return r
 
 
-def _preparar_de_candidato(cand_id):
-    """Monta o rascunho de amanhã de um CANDIDATO cru (resumo JIT). Mira _preparar_de_artigo."""
+def _preparar_de_candidato(cand_id, data_alvo=None):
+    """Monta o rascunho de amanhã de um CANDIDATO cru (resumo JIT). Mira _preparar_de_artigo.
+    `data_alvo`: ver docstring de `_preparar_da_reserva`."""
     import db
     # Defesa em profundidade: o portão é `montar_alternativas`/`alternativa_valida`, mas
     # este caminho gera conteúdo que vai pro assinante — não confia só no chamador.
@@ -386,7 +393,7 @@ def _preparar_de_candidato(cand_id):
            "tema": c.get("tema", ""), "fonte": c.get("fonte", ""),
            "doi": c.get("doi", ""), "url": c.get("url", ""), "data": c.get("data", ""),
            "resumo": c.get("abstract", "")}
-    r = _preparar_de_artigo(art)          # gera conteúdo, cria draft, manda preview + áudio
+    r = _preparar_de_artigo(art, data_alvo=data_alvo)   # gera conteúdo, cria draft, manda preview + áudio
     if r:
         r["candidato_id"] = cand_id
         draft_store.salvar(r)
@@ -514,9 +521,9 @@ def trocar_estudo_amanha(token, tipo, cid):
         return None
     try:
         if tipo == "reserva":
-            novo = _preparar_da_reserva(reserva_id=cid)
+            novo = _preparar_da_reserva(reserva_id=cid, data_alvo=r["data"])
         elif tipo == "candidato":
-            novo = _preparar_de_candidato(cid)
+            novo = _preparar_de_candidato(cid, data_alvo=r["data"])
         else:
             novo = None
     except Exception as e:

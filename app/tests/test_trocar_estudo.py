@@ -243,7 +243,7 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
              mock.patch.object(daily, "_preparar_de_candidato") as m_cand, \
              mock.patch.object(daily.deliver, "enviar_curador") as m_cur:
             out = daily.trocar_estudo_amanha("tok", "reserva", "res_escolhida")
-        m_res.assert_called_once_with(reserva_id="res_escolhida")
+        m_res.assert_called_once_with(reserva_id="res_escolhida", data_alvo="2026-07-28")
         m_cand.assert_not_called()
         m_up.assert_called_once_with("2026-07-28", tipo="reserva", ref_id="res_escolhida",
                                      payload=None, tema="Obesidade", titulo="Ret PT", fixado=0)
@@ -271,7 +271,7 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
              mock.patch.object(daily, "_preparar_da_reserva"), \
              mock.patch.object(daily.deliver, "enviar_curador"):
             daily.trocar_estudo_amanha("tok", "candidato", "c_escolhido")
-        m_cand.assert_called_once_with("c_escolhido")
+        m_cand.assert_called_once_with("c_escolhido", data_alvo="2026-07-28")
         m_up.assert_called_once_with("2026-07-28", tipo="candidato", ref_id="c_escolhido",
                                      payload=None, tema="Perf", titulo="Cand", fixado=0)
         m_cand_ag.assert_called_once_with("c_escolhido")
@@ -315,6 +315,77 @@ class TestTrocarEstudoAmanha(unittest.TestCase):
         m_cur.assert_called_once()                     # avisou que a agenda não atualizou
         m_pool.assert_not_called()                     # bookkeeping abortou junto (não devolveu o antigo)
         self.assertEqual(out["review_token"], "n")     # não crashou; retornou o novo
+
+
+class TestTrocaPinaADataMesmoDepoisDaMeiaNoite(unittest.TestCase):
+    """Achado do Diego (2026-09-28): "troquei o estudo e foi enviado o estudo antigo".
+
+    Causa raiz: `_preparar_de_candidato`/`_preparar_da_reserva` recomputavam "amanhã" na
+    hora da troca (`datetime.now() + 1 dia`). Uma troca feita depois da meia-noite
+    recomputa um dia inteiro à frente do rascunho que estava sendo substituído -- o novo
+    rascunho nasce numa data que `enviar_slot` só vai ler NO DIA SEGUINTE, e o antigo (na
+    data certa) é o que sai às 08h. Fim-a-fim com `trocar_estudo_amanha` de verdade
+    (sem mockar os `_preparar_*`), só a IA/rede é fake."""
+
+    def setUp(self):
+        self._env_antes = {k: os.environ.get(k) for k in ("DSCURSO_ARTIGOS_DB", "DSCURSO_DATA", "DATABASE_URL")}
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        os.environ["DSCURSO_DATA"] = self.tmp
+        os.environ.pop("DATABASE_URL", None)
+        import importlib, config as _cfg
+        importlib.reload(_cfg)
+        import db as _db
+        importlib.reload(_db)
+        _db.init()
+        import daily
+        importlib.reload(daily)
+        self.daily = daily
+        self.db = _db
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+        for k, v in self._env_antes.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_candidato_escolhido_fica_na_mesma_data_do_rascunho_trocado(self):
+        daily = self.daily
+        db = self.db
+        # rascunho original preparado ontem às 18h, pra sair HOJE (a "amanhã" de ontem)
+        hoje = "2026-09-29"
+        r_antigo = daily.draft_store.novo_rascunho(hoje, {"tema": "Obesidade", "titulo": "Velho"},
+                                                   "resumo velho", None)
+        r_antigo["candidato_id"] = "c_velho"
+        daily.draft_store.salvar(r_antigo)
+        db.salvar_candidatos([{"tema": "Obesidade", "titulo": "Novo escolhido", "chave": "k_novo",
+                               "fonte": "NEJM", "doi": "10.1/novo", "url": "http://novo",
+                               "data": "2026-09-01", "score": 9, "abstract": "abstract do novo"}])
+        cand_novo = db.listar_candidatos(tipo="varredura")[0]
+        with mock.patch.object(daily.content, "gerar_conteudo",
+                               return_value={"resumo": "resumo novo", "gancho": "g", "grafico": None,
+                                            "titulo_pt": "Novo PT"}), \
+             mock.patch.object(daily.pdfmod, "gerar_pdf"), \
+             mock.patch.object(daily.deliver, "enviar_curador"), \
+             mock.patch.object(daily, "enviar_audio_preview"), \
+             mock.patch.object(db, "agenda_upsert"), \
+             mock.patch.object(db, "marcar_candidato_agendado"), \
+             mock.patch.object(db, "marcar_candidato_pronto"), \
+             mock.patch("daily.datetime") as m_dt:
+            # a TROCA em si acontece depois da meia-noite: "agora" já é HOJE (0h05),
+            # então "amanhã" recomputado do zero seria AMANHÃ -- um dia à frente do
+            # rascunho de "hoje" que está sendo substituído.
+            from datetime import datetime as _real_dt, timedelta as _td
+            m_dt.now.return_value = _real_dt.fromisoformat(hoje + "T00:05:00")
+            m_dt.strptime = _real_dt.strptime
+            novo = daily.trocar_estudo_amanha(r_antigo["review_token"], "candidato", cand_novo["id"])
+        self.assertIsNotNone(novo)
+        self.assertEqual(novo["data"], hoje)          # NÃO virou hoje+1
+        # e o que `enviar_slot` vai efetivamente carregar pra HOJE já é o escolhido
+        self.assertEqual(daily.draft_store.carregar(hoje)["titulo_pt"], "Novo PT")
 
 
 if __name__ == "__main__":
