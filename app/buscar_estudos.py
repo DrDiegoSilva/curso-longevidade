@@ -4,7 +4,7 @@ Prioriza journals de renome. Imprime estruturado para síntese posterior.
 Uso: python buscar_estudos.py "obesity OR GLP-1 OR tirzepatide" --dias 14 --max 15
 Futuro (VPS): adicionar OpenAlex/Crossref/medRxiv/ClinicalTrials/openFDA.
 """
-import sys, json, re, argparse, urllib.request, urllib.parse
+import os, sys, json, re, argparse, urllib.request, urllib.parse
 import html as _html
 from datetime import datetime, timedelta
 if hasattr(sys.stdout, "reconfigure"):
@@ -39,6 +39,12 @@ def _http_get_text(url, timeout=60):
     req = urllib.request.Request(url, headers={"User-Agent": "HealthBot/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode("utf-8", "replace")
+
+
+def _http_get_bytes(url, timeout=60):
+    req = urllib.request.Request(url, headers={"User-Agent": "HealthBot/1.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read(), r.headers.get("Content-Type", "")
 
 
 def buscar_epmc(query, desde, ate, n=40, clinico=True, excluir=""):
@@ -112,17 +118,85 @@ def _pmcid_por_doi(doi):
     return r0.get("pmcid") or "", r0.get("isOpenAccess") or ""
 
 
+# ─── Texto completo (Open Access, Unpaywall) — fonte SUPLEMENTAR ──────────────────
+# Achado do Diego (2026-11-02): "se temos acesso a grandes bancos de dados não é pra
+# faltar" -- quer mais volume de estudo completo SEM afrouxar a exigência de full
+# text (ver sources._so_com_texto_completo). A Europe PMC só cobre Open Access
+# hospedado NELA (PMCID); a Unpaywall indexa Open Access de qualquer lugar (site da
+# própria revista, repositório institucional) por DOI -- cobre o artigo que é OA mas
+# nunca foi depositado na PMC. Usa poppler (pdftotext, já instalado no Dockerfile p/
+# o PDF que o Diego sobe na curadoria) pra extrair o texto do PDF baixado.
+UNPAYWALL_EMAIL = os.environ.get("DSCURSO_UNPAYWALL_EMAIL") or "contato@drdiegosilva.com.br"
+
+
+def _unpaywall_melhor_pdf(doi):
+    """URL do PDF Open Access de um DOI, segundo a Unpaywall. "" se não for OA, se não
+    tiver link de PDF, ou se a API falhar (nunca levanta -- ver texto_completo_unpaywall)."""
+    if not doi:
+        return ""
+    url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi)}?email={UNPAYWALL_EMAIL}"
+    try:
+        data = _http_get_json(url)
+    except Exception as e:
+        print(f"[fulltext] unpaywall falhou ({doi}): {e}", flush=True)
+        return ""
+    if not data.get("is_oa"):
+        return ""
+    return (data.get("best_oa_location") or {}).get("url_for_pdf") or ""
+
+
+def _pdf_bytes_para_texto(pdf_bytes):
+    """Texto corrido de um PDF via pdftotext (poppler) -- mesma ferramenta que
+    curadoria.extrair_texto_pdf usa pro PDF que o Diego sobe manualmente. None se
+    falhar, ou vier vazio -- sem fallback pro abstract (mesma regra das outras fontes)."""
+    import subprocess, tempfile, os as _os
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(pdf_bytes)
+        caminho = f.name
+    try:
+        out = subprocess.run(["pdftotext", "-q", caminho, "-"], capture_output=True, timeout=60)
+        return out.stdout.decode("utf-8", "replace").strip() or None
+    except Exception as e:
+        print(f"[fulltext] pdftotext falhou: {e}", flush=True)
+        return None
+    finally:
+        try:
+            _os.unlink(caminho)
+        except Exception:
+            pass
+
+
+def texto_completo_unpaywall(doi):
+    """Fallback da Unpaywall pro texto completo (ver bloco acima). Só aceita quando o
+    download É um PDF de verdade (confere o Content-Type) -- nunca extrai texto de uma
+    página HTML de landing (menu/propaganda/abstract repetido no lugar do corpo), o que
+    degradaria a qualidade do resumo abaixo do que o filtro de full text promete."""
+    url_pdf = _unpaywall_melhor_pdf(doi)
+    if not url_pdf:
+        return None
+    try:
+        pdf_bytes, content_type = _http_get_bytes(url_pdf)
+    except Exception as e:
+        print(f"[fulltext] download unpaywall falhou ({doi}): {e}", flush=True)
+        return None
+    if "pdf" not in (content_type or "").lower():
+        return None
+    return _pdf_bytes_para_texto(pdf_bytes)
+
+
 def texto_completo(doi="", pmcid="", is_open_access=""):
-    """Texto completo de um artigo — só quando ele é Open Access com PMCID na Europe
-    PMC (é a única fonte de full text que este app consegue buscar E ler com stdlib
-    puro). Aceita pmcid/isOpenAccess já conhecidos (artigo veio da própria Europe PMC,
-    evita 2ª chamada) ou resolve pelo DOI (artigo veio de outra base). None = sem
-    texto completo — o chamador NUNCA deve cair pro abstract como substituto."""
+    """Texto completo de um artigo. Tenta primeiro a Europe PMC (Open Access + PMCID —
+    aceita pmcid/isOpenAccess já conhecidos, do próprio resultado da busca, ou resolve
+    pelo DOI quando o artigo veio de outra base). Sem PMCID/OA na PMC (ou se o download
+    falhar), cai pra Unpaywall por DOI como fonte suplementar — ver bloco acima. None =
+    nenhuma das duas achou texto completo; o chamador NUNCA cai pro abstract."""
     if not (pmcid and is_open_access == "Y"):
         pmcid, is_open_access = _pmcid_por_doi(doi)
-    if not (pmcid and is_open_access == "Y"):
-        return None
-    return texto_completo_pmc(pmcid)
+    if pmcid and is_open_access == "Y":
+        texto = texto_completo_pmc(pmcid)
+        if texto:
+            return texto
+    return texto_completo_unpaywall(doi) if doi else None
 
 
 def carregar_tema(nome):

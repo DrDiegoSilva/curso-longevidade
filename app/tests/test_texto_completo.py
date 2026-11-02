@@ -112,16 +112,166 @@ class TestTextoCompleto(unittest.TestCase):
         finally:
             be._pmcid_por_doi, be.texto_completo_pmc = orig_lookup, orig_pmc
 
-    def test_nao_open_access_devolve_none(self):
-        orig_lookup = be._pmcid_por_doi
-        be._pmcid_por_doi = lambda doi: ("PMC3", "N")   # tem PMCID mas NÃO é OA -> sem full text
+    def test_nao_open_access_na_pmc_tenta_unpaywall(self):
+        """PMC diz que NÃO é OA (ou nem tem PMCID) -> ainda tenta a Unpaywall por DOI,
+        que pode achar OA em lugar que a PMC não indexa."""
+        orig_lookup, orig_unpaywall = be._pmcid_por_doi, be.texto_completo_unpaywall
+        be._pmcid_por_doi = lambda doi: ("PMC3", "N")
+        be.texto_completo_unpaywall = lambda doi: f"UNPAYWALL-{doi}"
+        try:
+            self.assertEqual(be.texto_completo(doi="10.1/z"), "UNPAYWALL-10.1/z")
+        finally:
+            be._pmcid_por_doi, be.texto_completo_unpaywall = orig_lookup, orig_unpaywall
+
+    def test_nenhuma_fonte_acha_devolve_none(self):
+        orig_lookup, orig_unpaywall = be._pmcid_por_doi, be.texto_completo_unpaywall
+        be._pmcid_por_doi = lambda doi: ("PMC3", "N")
+        be.texto_completo_unpaywall = lambda doi: None
         try:
             self.assertIsNone(be.texto_completo(doi="10.1/z"))
         finally:
-            be._pmcid_por_doi = orig_lookup
+            be._pmcid_por_doi, be.texto_completo_unpaywall = orig_lookup, orig_unpaywall
 
     def test_sem_doi_nem_pmcid_devolve_none(self):
         self.assertIsNone(be.texto_completo())
+
+
+class TestUnpaywallMelhorPdf(unittest.TestCase):
+    def test_sem_doi_nao_chama_rede(self):
+        chamado = {"n": 0}
+        orig = be._http_get_json
+        def conta(url, timeout=40):
+            chamado["n"] += 1
+            return {}
+        be._http_get_json = conta
+        try:
+            self.assertEqual(be._unpaywall_melhor_pdf(""), "")
+        finally:
+            be._http_get_json = orig
+        self.assertEqual(chamado["n"], 0)
+
+    def test_oa_com_pdf(self):
+        orig = be._http_get_json
+        be._http_get_json = lambda url, timeout=40: {
+            "is_oa": True, "best_oa_location": {"url_for_pdf": "https://x.org/a.pdf"}}
+        try:
+            self.assertEqual(be._unpaywall_melhor_pdf("10.1/x"), "https://x.org/a.pdf")
+        finally:
+            be._http_get_json = orig
+
+    def test_nao_oa_devolve_vazio(self):
+        orig = be._http_get_json
+        be._http_get_json = lambda url, timeout=40: {"is_oa": False}
+        try:
+            self.assertEqual(be._unpaywall_melhor_pdf("10.1/x"), "")
+        finally:
+            be._http_get_json = orig
+
+    def test_oa_sem_link_de_pdf_devolve_vazio(self):
+        orig = be._http_get_json
+        be._http_get_json = lambda url, timeout=40: {
+            "is_oa": True, "best_oa_location": {"url": "https://x.org/landing"}}
+        try:
+            self.assertEqual(be._unpaywall_melhor_pdf("10.1/x"), "")
+        finally:
+            be._http_get_json = orig
+
+    def test_falha_de_rede_devolve_vazio_sem_levantar(self):
+        orig = be._http_get_json
+        def bomba(url, timeout=40):
+            raise TimeoutError("sem resposta")
+        be._http_get_json = bomba
+        try:
+            self.assertEqual(be._unpaywall_melhor_pdf("10.1/x"), "")
+        finally:
+            be._http_get_json = orig
+
+
+class TestPdfBytesParaTexto(unittest.TestCase):
+    def test_extrai_via_pdftotext(self):
+        import subprocess
+        orig = subprocess.run
+        class FakeOut:
+            stdout = "Corpo do artigo.".encode("utf-8")
+        subprocess.run = lambda *a, **k: FakeOut()
+        try:
+            self.assertEqual(be._pdf_bytes_para_texto(b"%PDF-fake"), "Corpo do artigo.")
+        finally:
+            subprocess.run = orig
+
+    def test_saida_vazia_devolve_none(self):
+        import subprocess
+        orig = subprocess.run
+        class FakeOut:
+            stdout = b""
+        subprocess.run = lambda *a, **k: FakeOut()
+        try:
+            self.assertIsNone(be._pdf_bytes_para_texto(b"%PDF-fake"))
+        finally:
+            subprocess.run = orig
+
+    def test_falha_devolve_none_sem_levantar(self):
+        import subprocess
+        orig = subprocess.run
+        def bomba(*a, **k):
+            raise OSError("pdftotext não encontrado")
+        subprocess.run = bomba
+        try:
+            self.assertIsNone(be._pdf_bytes_para_texto(b"%PDF-fake"))
+        finally:
+            subprocess.run = orig
+
+
+class TestTextoCompletoUnpaywall(unittest.TestCase):
+    def test_sem_pdf_devolve_none_sem_baixar(self):
+        orig_melhor, orig_bytes = be._unpaywall_melhor_pdf, be._http_get_bytes
+        be._unpaywall_melhor_pdf = lambda doi: ""
+        chamado = {"n": 0}
+        be._http_get_bytes = lambda url, timeout=60: chamado.__setitem__("n", chamado["n"] + 1) or (b"", "")
+        try:
+            self.assertIsNone(be.texto_completo_unpaywall("10.1/x"))
+        finally:
+            be._unpaywall_melhor_pdf, be._http_get_bytes = orig_melhor, orig_bytes
+        self.assertEqual(chamado["n"], 0)
+
+    def test_pdf_de_verdade_extrai_texto(self):
+        orig_melhor, orig_bytes, orig_extrai = (be._unpaywall_melhor_pdf, be._http_get_bytes,
+                                                  be._pdf_bytes_para_texto)
+        be._unpaywall_melhor_pdf = lambda doi: "https://x.org/a.pdf"
+        be._http_get_bytes = lambda url, timeout=60: (b"%PDF-fake", "application/pdf")
+        be._pdf_bytes_para_texto = lambda pdf_bytes: "Corpo do artigo."
+        try:
+            self.assertEqual(be.texto_completo_unpaywall("10.1/x"), "Corpo do artigo.")
+        finally:
+            be._unpaywall_melhor_pdf, be._http_get_bytes, be._pdf_bytes_para_texto = (
+                orig_melhor, orig_bytes, orig_extrai)
+
+    def test_resposta_html_e_descartada_sem_extrair(self):
+        """Link "de PDF" que na verdade devolve uma página HTML (landing/paywall) --
+        não pode virar texto completo: menu/propaganda no lugar do corpo real."""
+        orig_melhor, orig_bytes, orig_extrai = (be._unpaywall_melhor_pdf, be._http_get_bytes,
+                                                  be._pdf_bytes_para_texto)
+        be._unpaywall_melhor_pdf = lambda doi: "https://x.org/a.pdf"
+        be._http_get_bytes = lambda url, timeout=60: (b"<html>...</html>", "text/html; charset=utf-8")
+        chamado = {"n": 0}
+        be._pdf_bytes_para_texto = lambda pdf_bytes: chamado.__setitem__("n", chamado["n"] + 1)
+        try:
+            self.assertIsNone(be.texto_completo_unpaywall("10.1/x"))
+        finally:
+            be._unpaywall_melhor_pdf, be._http_get_bytes, be._pdf_bytes_para_texto = (
+                orig_melhor, orig_bytes, orig_extrai)
+        self.assertEqual(chamado["n"], 0)
+
+    def test_falha_de_download_devolve_none(self):
+        orig_melhor, orig_bytes = be._unpaywall_melhor_pdf, be._http_get_bytes
+        be._unpaywall_melhor_pdf = lambda doi: "https://x.org/a.pdf"
+        def bomba(url, timeout=60):
+            raise TimeoutError("sem resposta")
+        be._http_get_bytes = bomba
+        try:
+            self.assertIsNone(be.texto_completo_unpaywall("10.1/x"))
+        finally:
+            be._unpaywall_melhor_pdf, be._http_get_bytes = orig_melhor, orig_bytes
 
 
 if __name__ == "__main__":

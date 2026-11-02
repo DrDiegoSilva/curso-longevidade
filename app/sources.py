@@ -234,12 +234,16 @@ def _clinicaltrials(query, desde, ate):
 def _so_com_texto_completo(arts):
     """Gate final, obrigatório: só passa artigo com o ESTUDO COMPLETO confirmado — decisão de
     2026-09-03, o site/WhatsApp nunca publicam resumo feito só de abstract (ou, no caso de
-    ensaio clínico, só do protocolo sem resultado). Dois jeitos de confirmar:
+    ensaio clínico, só do protocolo sem resultado). Jeitos de confirmar:
     1) já veio pronto (`parse_clinicaltrials` só anexa texto_completo quando hasResults=True
        — sem resultado publicado, nem chega aqui com o campo preenchido);
     2) Open Access + PMCID na Europe PMC — direto (artigo já veio de lá) ou por DOI (artigo
-       de outra base, ex.: OpenAlex, Semantic Scholar).
-    Sem nenhum dos dois, o artigo é DESCARTADO — nunca cai pro abstract como substituto.
+       de outra base, ex.: OpenAlex, Semantic Scholar);
+    3) sem PMCID/OA na Europe PMC, tenta a Unpaywall por DOI (fonte suplementar — cobre OA
+       hospedado fora da PMC, ex.: site da própria revista, repositório institucional; ver
+       buscar_estudos.texto_completo_unpaywall. Achado do Diego, 2026-11-02: mais volume de
+       estudo completo sem afrouxar a exigência).
+    Sem nenhum dos três, o artigo é DESCARTADO — nunca cai pro abstract como substituto.
     Quando resolve pela Europe PMC, também troca `url` pelo link do texto completo (o DOI
     pode cair em paywall; o link da Europe PMC, não)."""
     import buscar_estudos as be
