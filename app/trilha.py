@@ -194,6 +194,7 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
     na mesma visita, sem duplicar a lógica de claim/retomada/falha."""
     import os
     import tempfile
+    import time
     import deliver
     import phone
 
@@ -235,12 +236,15 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
         import webhook_whatsapp as ww
         # Texto primeiro, depois o PDF -- mesma ordem do estudo diário (o
         # assinante lê o resumo no chat e ainda ganha o PDF pra guardar/printar).
+        # Pausa entre as duas: 3 mensagens em rajada pro mesmo número é o padrão que
+        # provedores de WhatsApp tratam como automação suspeita (achado do Diego, 2026-11-02).
         r_texto = texto_fn(numero_whats, texto_peca(peca))
         ww.registrar_envio(r_texto, sub_id, "trilha_texto")
         html_peca = pdf_trilha.montar_html(peca, sub.get("nome", ""),
                                            abertura=abertura(sub_id, produto, n), link_ferramenta=link)
         out = os.path.join(tempfile.gettempdir(), f"trilha-{produto}-{n}-{sub_id}.pdf")
         render_fn(html_peca, out)
+        time.sleep(config.SEND_DELAY_SEC)
         r_pdf = enviar_fn(numero_whats, out,
                           caption=f"{info['nome']} · Semana {n}: {peca.get('titulo','')}")
         ww.registrar_envio(r_pdf, sub_id, "trilha_pdf")
@@ -256,6 +260,7 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
             import audio as audiomod
             import webhook_whatsapp as ww
             mp3 = audiomod.gerar_audio_da_peca(peca)
+            time.sleep(config.SEND_DELAY_SEC)
             r_audio = deliver.enviar_audio(numero_whats, mp3)
             ww.registrar_envio(r_audio, sub_id, "trilha_audio")
         except Exception as e:

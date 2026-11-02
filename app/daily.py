@@ -771,8 +771,14 @@ def _ctx_do_dia(hoje):
 
 
 def _enviar_estudo_para(whatsapp, nome, ctx, subscriber_id=""):
-    """Envia o estudo do dia (texto + PDF + áudio) a UM assinante. Falha de mídia é logada."""
+    """Envia o estudo do dia (texto + PDF + áudio) a UM assinante. Falha de mídia é logada.
+
+    Pausa `SEND_DELAY_SEC` ENTRE as três mensagens do mesmo assinante, não só entre
+    assinantes diferentes -- 3 mensagens em sequência instantânea pro mesmo número é
+    exatamente o padrão de rajada que provedores de WhatsApp (Z-API/Evolution por trás)
+    tratam como automação suspeita e pode derrubar o número (achado do Diego, 2026-11-02)."""
     import phone
+    import time
     import webhook_whatsapp as ww
     whatsapp = phone.normalizar(whatsapp)
     link = f"{config.PUBLIC_URL}/entrar"
@@ -782,6 +788,7 @@ def _enviar_estudo_para(whatsapp, nome, ctx, subscriber_id=""):
     r_texto = deliver.enviar_texto(whatsapp, msg)
     ww.registrar_envio(r_texto, subscriber_id, "estudo_texto")
     if ctx["master_pdf"]:
+        time.sleep(config.SEND_DELAY_SEC)
         try:
             _tit = ctx["titulo"]
             _url = (ctx["art"].get("url") or "").strip()
@@ -791,6 +798,7 @@ def _enviar_estudo_para(whatsapp, nome, ctx, subscriber_id=""):
         except Exception as e:
             print(f"[enviar] PDF p/ {whatsapp} falhou: {e}", flush=True)
     if ctx["audio_bytes"]:
+        time.sleep(config.SEND_DELAY_SEC)
         try:
             r_audio = deliver.enviar_audio(whatsapp, ctx["audio_bytes"])
             ww.registrar_envio(r_audio, subscriber_id, "estudo_audio")

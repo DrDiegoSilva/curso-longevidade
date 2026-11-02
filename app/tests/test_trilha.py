@@ -751,7 +751,10 @@ class TestEnvio(unittest.TestCase):
             res = self.t.enviar_slot("08h", quando=date(2026, 8, 8),
                                      enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertEqual(res["enviados"], 3)
-        self.assertEqual(mock_sleep.call_count, 2, "3 envios -> 2 pausas entre eles, nunca no fim")
+        # 2 pausas entre os 3 assinantes (nunca depois do último) + 1 pausa intra-envio
+        # por assinante (entre o texto e o PDF da própria peça, achado do Diego 2026-11-02)
+        # = 2 + 3 = 5.
+        self.assertEqual(mock_sleep.call_count, 5)
         for chamada in mock_sleep.call_args_list:
             self.assertEqual(chamada.args[0], self.cfg.SEND_DELAY_SEC)
 
@@ -928,7 +931,11 @@ class TestLoteDePecas(unittest.TestCase):
         sub = self._sub()
         with patch("time.sleep") as mock_sleep:
             self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
-        mock_sleep.assert_called_once_with(self.cfg.SEND_DELAY_SEC)
+        # 1 pausa entre as 2 peças do lote + 1 pausa intra-envio por peça (entre o texto e
+        # o PDF da própria peça, achado do Diego 2026-11-02) = 1 + 2 = 3.
+        self.assertEqual(mock_sleep.call_count, 3)
+        for chamada in mock_sleep.call_args_list:
+            self.assertEqual(chamada.args[0], self.cfg.SEND_DELAY_SEC)
 
     def test_trilha_acaba_no_meio_do_lote_manda_a_ultima_e_para(self):
         sub = self._sub()
