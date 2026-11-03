@@ -2601,8 +2601,7 @@ def pagina_trilha(sub, itens, produto, msg=""):
         linhas = ('<p class="hint">Sua primeira peça chega no próximo sábado, '
                   'no mesmo horário em que você recebe os estudos.</p>')
     else:
-        partes = []
-        for i, it in enumerate(itens):
+        def _peca_html(i, it):
             ferramenta = ""
             if it.get("ferramenta_slug"):
                 ferramenta = (f'<p style="margin:8px 0 0"><a class="cta ghost" '
@@ -2622,12 +2621,28 @@ def pagina_trilha(sub, itens, produto, msg=""):
                         f'<button class="actbtn" type="submit">✅ Fiz a tarefa desta semana</button>'
                         f'</form>')
             destaque = ' style="border-color:var(--ouro2)"' if i == 0 else ""
-            partes.append(
-                f'<div class="panel"{destaque}>'
-                f'<p class="plabel">Semana {int(it["numero"])} de {info["total"]}</p>'
-                f'<h3 style="margin:4px 0 0">{_esc(it["titulo"])}</h3>'
-                f'{ferramenta}{acao}</div>')
-        linhas = "".join(partes)
+            return (f'<div class="panel"{destaque}>'
+                    f'<p class="plabel">Semana {int(it["numero"])} de {info["total"]}</p>'
+                    f'<h3 style="margin:4px 0 0">{_esc(it["titulo"])}</h3>'
+                    f'{ferramenta}{acao}</div>')
+        # `itens` vem mais recente primeiro (ver docstring). Com a trilha correndo por
+        # meses, uma lista corrida de todas as semanas virava scroll infinito (achado
+        # do Diego, 2026-11-03) -- igual o problema que `_curadoria_reserva_cards` e
+        # `_agrupar_por_mes_semana` já resolveram em outras páginas. Mantém a semana
+        # atual + a anterior visíveis, recolhe o resto num acordeão.
+        atuais = "".join(_peca_html(i, it) for i, it in enumerate(itens[:2]))
+        antigas = itens[2:]
+        bloco_antigas = ""
+        if antigas:
+            corpo_antigas = "".join(_peca_html(i + 2, it) for i, it in enumerate(antigas))
+            bloco_antigas = (
+                f'<details style="margin:14px 0 4px;border:1px solid rgba(201,162,39,.32);'
+                f'border-radius:10px;background:rgba(201,162,39,.06);padding:0 14px">'
+                f'<summary style="cursor:pointer;color:var(--ouro2);font-family:var(--ui);'
+                f'font-size:14.5px;font-weight:600;padding:12px 0">'
+                f'Semanas anteriores ({len(antigas)})</summary>'
+                f'<div style="padding-bottom:14px">{corpo_antigas}</div></details>')
+        linhas = atuais + bloco_antigas
     corpo = f"""
     <div class="wrap">
       <h2 class="disp">{_esc(info["nome"])}</h2>

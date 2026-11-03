@@ -84,6 +84,30 @@ class TestPaginaTrilha(unittest.TestCase):
         self.assertIn(f"de {total}", h)
         self.assertIn(self.cfg.TRILHAS["peptideos"]["nome"], h)
 
+    def _itens(self, n):
+        # mais recente primeiro, igual `itens` chega de verdade (ver docstring de pagina_trilha).
+        return [{"numero": n - i, "titulo": f"Peça {n - i}", "feito": False, "ferramenta_slug": ""}
+                for i in range(n)]
+
+    def test_poucas_pecas_nao_tem_acordeao(self):
+        """Até 2 peças (semana atual + anterior) cabem direto na tela -- sem acordeão."""
+        h = self.w.pagina_trilha({"nome": "Diego"}, self._itens(2), "empreendedorismo")
+        self.assertNotIn("Semanas anteriores", h)
+        self.assertIn("Peça 2", h)
+        self.assertIn("Peça 1", h)
+
+    def test_muitas_pecas_recolhe_as_antigas_num_acordeao(self):
+        """Achado do Diego (2026-11-03): a lista corrida de todas as semanas virava
+        scroll infinito. A partir da 3ª peça, o resto entra num <details> recolhido."""
+        h = self.w.pagina_trilha({"nome": "Diego"}, self._itens(5), "empreendedorismo")
+        self.assertIn("Semanas anteriores (3)", h)
+        # as 2 mais recentes ficam fora do acordeão (direto na tela).
+        self.assertIn("Peça 5", h)
+        self.assertIn("Peça 4", h)
+        # as mais antigas ainda estão na página, só dentro do <details> (não some conteúdo).
+        for titulo in ("Peça 3", "Peça 2", "Peça 1"):
+            self.assertIn(titulo, h)
+
 
 class TestFerramentaSegura(unittest.TestCase):
     def setUp(self):
