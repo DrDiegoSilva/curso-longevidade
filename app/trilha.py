@@ -137,11 +137,21 @@ def texto_peca(peca):
 _DIAS = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
 
 
+def dia_trilha():
+    """Dia da semana em que a trilha envia. Admin escolhe em /admin/envio
+    (db.settings 'trilha_dia') -- não setado ainda, ou erro de banco, usa
+    config.TRILHA_DIA (sábado)."""
+    try:
+        return db.get_config("trilha_dia", None) or config.TRILHA_DIA
+    except Exception:
+        return config.TRILHA_DIA
+
+
 def e_dia_da_trilha(quando=None):
-    """True se `quando` cai no dia da trilha (config.TRILHA_DIA). Aceita date ou datetime."""
+    """True se `quando` cai no dia da trilha (ver dia_trilha()). Aceita date ou datetime."""
     from datetime import datetime
     d = quando or datetime.now()
-    return _DIAS[d.weekday()] == config.TRILHA_DIA
+    return _DIAS[d.weekday()] == dia_trilha()
 
 
 def proxima_peca(sub_id):

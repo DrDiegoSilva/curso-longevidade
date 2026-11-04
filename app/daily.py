@@ -626,12 +626,24 @@ def rotina_08h():
     enviar_slot("08h")
 
 
+def _dia_varredura():
+    # admin escolhe em /admin/envio (db.settings 'dia_varredura'). Não setado ainda, ou
+    # erro de banco -> usa config.DIA_VARREDURA (domingo), igual _dias_envio() faz pro
+    # estudo diário.
+    try:
+        import db
+        return db.get_config("dia_varredura", None) or config.DIA_VARREDURA
+    except Exception:
+        return config.DIA_VARREDURA
+
+
 def varredura_semanal(hoje=None, rodar_fn=None):
-    """Roda a varredura geral 1x por semana ISO, só no DIA_VARREDURA (domingo de manhã).
-    Idempotente via db.registrar_envio_slot(chave-semana, 'varredura'). Retorna True se rodou."""
+    """Roda a varredura geral 1x por semana ISO, só no dia escolhido (ver _dia_varredura(),
+    padrão domingo de manhã). Idempotente via db.registrar_envio_slot(chave-semana,
+    'varredura'). Retorna True se rodou."""
     from datetime import date
     hoje = hoje or date.today()
-    if DIAS[hoje.weekday()] != config.DIA_VARREDURA:
+    if DIAS[hoje.weekday()] != _dia_varredura():
         return False
     import db
     ano, semana, _ = hoje.isocalendar()

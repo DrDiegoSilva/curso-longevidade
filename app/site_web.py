@@ -848,8 +848,11 @@ def pagina_admin_afiliados(afiliados, comissoes, token="", editar_id=None):
     return _pagina("Afiliados · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
-def pagina_admin_envio(dias_ativos, token="", msg=""):
-    """Escolhe em quais dias da semana os estudos são enviados (e a agenda materializa slots)."""
+def pagina_admin_envio(dias_ativos, token="", msg="", trilha_dia="sabado", varredura_dia="domingo"):
+    """Calendário de envios: em quais dias cada coisa acontece (estudo diário, trilha
+    semanal, varredura de novos estudos). 3 formulários independentes na mesma tela --
+    salvar um não mexe nos outros 2. Achado do Diego (2026-11-04): antes só o estudo
+    diário era configurável aqui; trilha e varredura eram fixas no código."""
     tk = _esc(token)
     ativos = set(dias_ativos or [])
     aviso = (f'<div class="infobox" style="margin:14px 0;border-color:#2f9e6b66;background:#2f9e6b18">{_esc(msg)}</div>'
@@ -862,21 +865,51 @@ def pagina_admin_envio(dias_ativos, token="", msg=""):
         f'<input type="checkbox" name="dia" value="{slug}"{" checked" if slug in ativos else ""}>'
         f'<span style="color:var(--creme);font-size:16px">{rot}</span></label>'
         for slug, rot in rotulos)
+
+    def _radio_dia(name, atual):
+        return "".join(
+            f'<label style="display:flex;align-items:center;gap:10px;padding:11px 14px;'
+            f'border:1px solid rgba(233,225,198,.14);border-radius:12px;margin-bottom:8px;cursor:pointer">'
+            f'<input type="radio" name="{name}" value="{slug}"{" checked" if slug == atual else ""}>'
+            f'<span style="color:var(--creme);font-size:16px">{rot}</span></label>'
+            for slug, rot in rotulos)
+
     corpo = f"""
     <div class="wrap">
       {_admin_nav(token, "envio")}
       <div class="sectag" style="margin-top:8px">Painel do curador</div>
-      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Dias de envio</h2>
-      <p class="hint">Em quais dias os estudos são enviados no WhatsApp (e a agenda reserva slots). Desmarcar um dia = nada é enviado nele.</p>
+      <h2 class="disp" style="font-size:40px;color:var(--creme);margin:2px 0 4px">Calendário de envios</h2>
+      <p class="hint">Em quais dias cada coisa roda. Cada bloco abaixo salva separado dos outros.</p>
       {aviso}
+
+      <p class="plabel" style="margin-top:22px">📬 Estudo diário (WhatsApp)</p>
+      <p class="hint" style="margin:4px 0 10px">Desmarcar um dia = nada é enviado nele (a agenda também para de reservar slot nesse dia).</p>
       <form method="post" action="/admin/envio">
         <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="salvar_dias">
-        <div class="panel" style="max-width:420px;margin:14px 0">{checks}
+        <div class="panel" style="max-width:420px;margin:0 0 14px">{checks}
           <button class="actbtn" type="submit" style="margin-top:12px">Salvar dias</button>
         </div>
       </form>
+
+      <p class="plabel" style="margin-top:10px">🧬 Trilha semanal</p>
+      <p class="hint" style="margin:4px 0 10px">Peptídeos/Empreendedorismo — qual dia da semana entrega a próxima peça pra quem está na trilha.</p>
+      <form method="post" action="/admin/envio">
+        <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="salvar_trilha_dia">
+        <div class="panel" style="max-width:420px;margin:0 0 14px">{_radio_dia("trilha_dia", trilha_dia)}
+          <button class="actbtn" type="submit" style="margin-top:12px">Salvar dia da trilha</button>
+        </div>
+      </form>
+
+      <p class="plabel" style="margin-top:10px">🔎 Varredura de novos estudos</p>
+      <p class="hint" style="margin:4px 0 10px">Dia em que o robô busca sozinho por novos estudos pra reabastecer a reserva (além do botão manual em /curadoria).</p>
+      <form method="post" action="/admin/envio">
+        <input type="hidden" name="token" value="{tk}"><input type="hidden" name="acao" value="salvar_varredura_dia">
+        <div class="panel" style="max-width:420px;margin:0 0 14px">{_radio_dia("varredura_dia", varredura_dia)}
+          <button class="actbtn" type="submit" style="margin-top:12px">Salvar dia da varredura</button>
+        </div>
+      </form>
     </div>"""
-    return _pagina("Dias de envio · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
+    return _pagina("Calendário de envios · Admin", corpo, logado=True, meta_extra='<meta name="robots" content="noindex">')
 
 
 def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo="", msg=""):

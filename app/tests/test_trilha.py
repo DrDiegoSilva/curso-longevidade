@@ -348,6 +348,18 @@ class TestDrip(unittest.TestCase):
         self.assertFalse(self.t.e_dia_da_trilha(date(2026, 8, 7)))    # sexta
         self.assertFalse(self.t.e_dia_da_trilha(date(2026, 8, 9)))    # domingo
 
+    def test_dia_trilha_default_e_sabado(self):
+        self.assertEqual(self.t.dia_trilha(), "sabado")
+
+    def test_dia_trilha_editavel_via_admin(self):
+        """Achado do Diego (2026-11-04): /admin/envio agora deixa escolher o dia da
+        trilha -- db.settings 'trilha_dia' sobrepõe o padrão."""
+        self.db.set_config("trilha_dia", "quarta")
+        self.assertEqual(self.t.dia_trilha(), "quarta")
+        from datetime import date
+        self.assertTrue(self.t.e_dia_da_trilha(date(2026, 8, 5)))   # quarta
+        self.assertFalse(self.t.e_dia_da_trilha(date(2026, 8, 8)))  # sábado, não é mais o dia
+
     def test_assinante_novo_recebe_a_peca_1(self):
         peca = self.t.proxima_peca("sub-a")
         self.assertEqual(peca["numero"], 1)

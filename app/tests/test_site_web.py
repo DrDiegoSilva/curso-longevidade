@@ -279,6 +279,24 @@ class TestRender(unittest.TestCase):
         self.assertIn("salvar_dias", h)
         self.assertIn("/admin/envio", self.s._admin_nav("tk", "envio"))
 
+    def test_pagina_admin_envio_tem_calendario_de_trilha_e_varredura(self):
+        """Achado do Diego (2026-11-04): queria escolher o dia de CADA coisa (não só do
+        estudo diário) num calendário único."""
+        h = self.s.pagina_admin_envio({"segunda"}, token="tk", trilha_dia="quarta",
+                                      varredura_dia="sexta")
+        self.assertIn("salvar_trilha_dia", h)
+        self.assertIn("salvar_varredura_dia", h)
+        self.assertIn('name="trilha_dia" value="quarta" checked', h)
+        self.assertIn('name="varredura_dia" value="sexta" checked', h)
+        # os outros dias de cada rádio existem mas não vêm marcados.
+        self.assertIn('name="trilha_dia" value="sabado"', h)
+        self.assertNotIn('name="trilha_dia" value="sabado" checked', h)
+
+    def test_pagina_admin_envio_usa_os_defaults_quando_nada_foi_escolhido(self):
+        h = self.s.pagina_admin_envio({"segunda"}, token="tk")
+        self.assertIn('name="trilha_dia" value="sabado" checked', h)
+        self.assertIn('name="varredura_dia" value="domingo" checked', h)
+
     def test_pagina_admin_mensagens(self):
         h = self.s.pagina_admin_mensagens("WA TEXTO {link}", "Assunto X", "CORPO {nome}", token="tk")
         self.assertIn("WA TEXTO", h)

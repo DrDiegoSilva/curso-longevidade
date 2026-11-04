@@ -372,7 +372,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 automacoes=db.listar_automacoes(),
                 bonus_resgate_dias=mensagens.bonus_resgate_dias()), 200)
         if path == "/admin/envio":
-            import config, site_web, auth_web, db, daily
+            import config, site_web, auth_web, db, daily, trilha as _trilha_mod
             q = up.parse_qs(up.urlparse(self.path).query)
             sess = self._sessao()
             token_ok = config.ADMIN_TOKEN and q.get("token", [""])[0] == config.ADMIN_TOKEN
@@ -380,7 +380,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
             return self._html(site_web.pagina_admin_envio(
-                daily._dias_envio(), config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0]), 200)
+                daily._dias_envio(), config.ADMIN_TOKEN or "", msg=q.get("msg", [""])[0],
+                trilha_dia=_trilha_mod.dia_trilha(), varredura_dia=daily._dia_varredura()), 200)
         if path == "/admin/precos":
             import config, site_web, auth_web
             q = up.parse_qs(up.urlparse(self.path).query)
@@ -912,16 +913,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._redirect(f"/admin/mensagens?token={config.ADMIN_TOKEN}&msg=Mensagens+salvas"
                                   if token_ok else "/admin/mensagens?msg=Mensagens+salvas")
         if path == "/admin/envio":
-            import config, auth_web, db
+            import config, auth_web, db, daily
             sess = self._sessao()
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN
             if not (token_ok or (sess and auth_web.eh_admin(sess["whatsapp"]))):
                 return self._html("<h3>Acesso negado</h3>", 403)
             db.init()
-            if g("acao") == "salvar_dias":
+            acao = g("acao")
+            msg = "Dias+salvos"
+            if acao == "salvar_dias":
                 db.set_config("dias_envio", ",".join(form.get("dia", [])))
-            return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg=Dias+salvos"
-                                  if token_ok else "/admin/envio?msg=Dias+salvos")
+            elif acao == "salvar_trilha_dia":
+                dia = g("trilha_dia")
+                if dia in daily.DIAS:
+                    db.set_config("trilha_dia", dia)
+                    msg = "Dia+da+trilha+salvo"
+            elif acao == "salvar_varredura_dia":
+                dia = g("varredura_dia")
+                if dia in daily.DIAS:
+                    db.set_config("dia_varredura", dia)
+                    msg = "Dia+da+varredura+salvo"
+            return self._redirect(f"/admin/envio?token={config.ADMIN_TOKEN}&msg={msg}"
+                                  if token_ok else f"/admin/envio?msg={msg}")
         if path == "/admin/trilha":
             import config, db, trilha as _trilha
             token_ok = bool(config.ADMIN_TOKEN) and g("token") == config.ADMIN_TOKEN

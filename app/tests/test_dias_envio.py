@@ -34,5 +34,27 @@ class TestDiasEnvio(unittest.TestCase):
         self.assertEqual(self.daily._dias_envio(), set())
 
 
+class TestDiaVarredura(unittest.TestCase):
+    """_dia_varredura (override editável via db.settings 'dia_varredura',
+    ver /admin/envio). Achado do Diego, 2026-11-04."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        os.environ["DSCURSO_ARTIGOS_DB"] = os.path.join(self.tmp, "t.db")
+        for m in ("config", "db", "daily"):
+            if m in sys.modules:
+                importlib.reload(sys.modules[m])
+        import config, db, daily
+        importlib.reload(config); importlib.reload(db); importlib.reload(daily)
+        self.cfg, self.db, self.daily = config, db, daily
+        db.init()
+
+    def test_default_do_config(self):
+        self.assertEqual(self.daily._dia_varredura(), self.cfg.DIA_VARREDURA)
+
+    def test_override_settings(self):
+        self.db.set_config("dia_varredura", "quarta")
+        self.assertEqual(self.daily._dia_varredura(), "quarta")
+
+
 if __name__ == "__main__":
     unittest.main()
