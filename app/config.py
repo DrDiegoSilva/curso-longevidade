@@ -84,12 +84,16 @@ TRILHAS = {
         "pecas_por_envio": 1,
         "exige_aviso": False,
         "tarefa_mentalidade": True,
+        "unidade": "Semana",   # 1 peça por sábado -> "Semana N de T" bate com a realidade
     },
     "peptideos": {
         "nome": os.environ.get("DSCURSO_PEPTIDEOS_NOME") or "Peptídeos",
         "total": 22,
         "dir": os.environ.get("DSCURSO_PEPTIDEOS_DIR") or os.path.join(_SEED_BASE, "seed", "peptideos"),
         "pecas_por_envio": 2,
+        # 2 peças no MESMO sábado -> rotular de "Semana" pareceria erro (2 "semanas"
+        # seguidas no mesmo dia). Achado do Diego, 2026-11-14.
+        "unidade": "Parte",
         # Achado do levantamento de pesquisa: praticamente toda peça precisa da
         # nota de "sem registro ANVISA" — `trilha.semear()` avisa no log quantas
         # peças deste produto ficaram sem o campo `aviso`.

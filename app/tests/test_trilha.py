@@ -291,8 +291,18 @@ class TestTextoPeca(unittest.TestCase):
     def test_numero_e_total_do_produto_certo(self):
         texto = self.t.texto_peca(self.peca)
         total = self.cfg.TRILHAS["peptideos"]["total"]
-        self.assertIn(f"Semana 9 de {total}", texto)
+        # peptídeos manda 2 peças por sábado (pecas_por_envio=2) -> "Parte", não
+        # "Semana" (que pareceria erro: 2 "semanas" no mesmo dia). Achado do Diego, 2026-11-14.
+        self.assertIn(f"Parte 9 de {total}", texto)
         self.assertIn(self.cfg.TRILHAS["peptideos"]["nome"], texto)
+
+    def test_empreendedorismo_mantem_semana_1_por_sabado(self):
+        """empreendedorismo manda 1 peça por sábado -- "Semana N" continua certo lá,
+        só peptideos (2 por sábado) precisava de outra palavra."""
+        peca = dict(self.peca, produto="empreendedorismo", numero=4)
+        texto = self.t.texto_peca(peca)
+        total = self.cfg.TRILHAS["empreendedorismo"]["total"]
+        self.assertIn(f"Semana 4 de {total}", texto)
 
     def test_subtitulo_vira_negrito_de_whatsapp(self):
         texto = self.t.texto_peca(self.peca)
@@ -934,8 +944,8 @@ class TestLoteDePecas(unittest.TestCase):
         ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertEqual(len(self.enviados), 2)
-        self.assertIn("Semana 1", self.enviados[0])
-        self.assertIn("Semana 2", self.enviados[1])
+        self.assertIn("Parte 1", self.enviados[0])
+        self.assertIn("Parte 2", self.enviados[1])
         self.assertEqual(self.db.trilha_posicao(sub["id"], "peptideos"), 3)
 
     def test_pausa_entre_as_2_pecas_da_mesma_pessoa(self):
@@ -955,7 +965,7 @@ class TestLoteDePecas(unittest.TestCase):
         ok = self.t.enviar_para(sub, enviar_fn=self._fake_enviar, render_fn=self._fake_render, texto_fn=self._fake_texto)
         self.assertTrue(ok)
         self.assertEqual(len(self.enviados), 1)
-        self.assertIn("Semana 3", self.enviados[0])
+        self.assertIn("Parte 3", self.enviados[0])
         self.assertEqual(self.db.trilha_posicao(sub["id"], "peptideos"), 4)
 
     def test_2a_peca_falha_nao_desfaz_a_1a(self):

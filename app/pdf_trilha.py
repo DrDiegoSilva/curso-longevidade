@@ -151,11 +151,12 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
     info = config.TRILHAS.get(peca.get("produto", ""), {})
     nome_produto = info.get("nome", config.PRODUTO)
     total_produto = info.get("total", numero)
+    unidade = info.get("unidade", "Semana")
     abertura_html = (f'<p class="abertura">{_esc(abertura)}</p>' if abertura else "")
     ferramenta_html = ""
     if link_ferramenta:
         ferramenta_html = (f'<p class="ferramenta">📎 <a href="{_esc(link_ferramenta)}">'
-                           f'Baixar a ferramenta desta semana</a></p>')
+                           f'Baixar a ferramenta desta {_esc(unidade.lower())}</a></p>')
     aviso_html = ""
     if peca.get("aviso"):
         aviso_html = (f'<div class="bloco alerta"><p class="rot">⚠ Sem registro na Anvisa</p>'
@@ -163,7 +164,7 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
     tarefa_mentalidade_html = ""
     if info.get("tarefa_mentalidade", True):
         tarefa_mentalidade_html = (
-            '<div class="bloco"><p class="rot">Sua tarefa desta semana</p>'
+            f'<div class="bloco"><p class="rot">Sua tarefa desta {_esc(unidade.lower())}</p>'
             f'{_paragrafos(peca.get("micro_resultado")) or "<p></p>"}</div>'
             '<div class="bloco"><p class="rot">Mentalidade</p>'
             f'{_paragrafos(peca.get("mentalidade")) or "<p></p>"}</div>')
@@ -175,7 +176,7 @@ def montar_html(peca, nome_assinante, abertura="", link_ferramenta=""):
         <img class="capa-icone" src="data:image/png;base64,{_ICONE_DS_B64}" alt="">
         <span class="capa-nome">Dr. Diego Silva</span>
       </div>
-      <span class="capa-selo">Semana {_esc(numero)} de {_esc(total_produto)}</span>
+      <span class="capa-selo">{_esc(unidade)} {_esc(numero)} de {_esc(total_produto)}</span>
     </div>
     <div class="capa-produto">{_esc(nome_produto)}</div>
   </div>

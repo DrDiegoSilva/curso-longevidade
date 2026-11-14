@@ -930,6 +930,7 @@ def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo=
     if produto not in catalogo:
         produto = next(iter(catalogo), "")
     info = catalogo.get(produto, {"nome": "", "total": 0})
+    unidade = info.get("unidade", "Semana")
     tk = f"token={_esc(token)}" if token else ""
 
     abas = "".join(
@@ -948,11 +949,11 @@ def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo=
                 f'<p style="margin:0 0 6px"><a class="cta ghost" '
                 f'href="/admin/trilha/peca/{int(p["numero"])}?produto={produto}'
                 f'{("&" + tk) if tk else ""}">'
-                f'Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
+                f'{_esc(unidade)} {int(p["numero"])} · {_esc(p.get("titulo") or "")}</a></p>')
         bloco_pecas = "".join(itens)
 
     opcoes_numero = "".join(
-        f'<option value="{int(p["numero"])}">Semana {int(p["numero"])} · {_esc(p.get("titulo") or "")}</option>'
+        f'<option value="{int(p["numero"])}">{_esc(unidade)} {int(p["numero"])} · {_esc(p.get("titulo") or "")}</option>'
         for p in pecas)
     admin_wpp = (config.ADMIN_WHATSAPPS[0] if config.ADMIN_WHATSAPPS else "")
     bloco_teste = (
@@ -993,7 +994,7 @@ def pagina_admin_trilha(linhas, token="", pecas=None, produto="", produto_ativo=
     else:
         cards = []
         for l in linhas:
-            estado = "Concluiu" if l.get("concluiu") else f"Semana {int(l['proxima_peca'])}"
+            estado = "Concluiu" if l.get("concluiu") else f"{unidade} {int(l['proxima_peca'])}"
             cards.append(
                 f'<div class="panel" style="max-width:680px;margin:0 0 12px;padding:16px 20px">'
                 f'<h3 style="margin:0;font-family:var(--disp);color:var(--creme);font-size:20px">'
@@ -2628,6 +2629,8 @@ def pagina_trilha(sub, itens, produto, msg=""):
         return _pagina(f"Trilha · {PRODUTO}", corpo, logado=True, atual="/trilha",
                        meta_extra='<meta name="robots" content="noindex">')
     info = _cfg.TRILHAS.get(produto, {"nome": _cfg.PRODUTO, "total": 0})
+    unidade = info.get("unidade", "Semana")
+    n_lote = info.get("pecas_por_envio", 1)
     nome = _esc(sub.get("nome") or "assinante")
     msg_html = f'<div class="infobox">{_esc(msg)}</div>' if msg else ""
     if not itens:
@@ -2651,11 +2654,11 @@ def pagina_trilha(sub, itens, produto, msg=""):
                 acao = (f'<form method="post" action="/trilha" style="margin:8px 0 0">'
                         f'<input type="hidden" name="acao" value="marcar_feito">'
                         f'<input type="hidden" name="numero" value="{int(it["numero"])}">'
-                        f'<button class="actbtn" type="submit">✅ Fiz a tarefa desta semana</button>'
+                        f'<button class="actbtn" type="submit">✅ Fiz a tarefa desta {unidade.lower()}</button>'
                         f'</form>')
             destaque = ' style="border-color:var(--ouro2)"' if i == 0 else ""
             return (f'<div class="panel"{destaque}>'
-                    f'<p class="plabel">Semana {int(it["numero"])} de {info["total"]}</p>'
+                    f'<p class="plabel">{_esc(unidade)} {int(it["numero"])} de {info["total"]}</p>'
                     f'<h3 style="margin:4px 0 0">{_esc(it["titulo"])}</h3>'
                     f'{ferramenta}{acao}</div>')
         # `itens` vem mais recente primeiro (ver docstring). Com a trilha correndo por
@@ -2673,16 +2676,17 @@ def pagina_trilha(sub, itens, produto, msg=""):
                 f'border-radius:10px;background:rgba(201,162,39,.06);padding:0 14px">'
                 f'<summary style="cursor:pointer;color:var(--ouro2);font-family:var(--ui);'
                 f'font-size:14.5px;font-weight:600;padding:12px 0">'
-                f'Semanas anteriores ({len(antigas)})</summary>'
+                f'{_esc(unidade)}s anteriores ({len(antigas)})</summary>'
                 f'<div style="padding-bottom:14px">{corpo_antigas}</div></details>')
         linhas = atuais + bloco_antigas
+    cadencia = "Uma peça por sábado" if n_lote == 1 else f"{n_lote} peças por sábado"
     corpo = f"""
     <div class="wrap">
       <h2 class="disp">{_esc(info["nome"])}</h2>
       <p class="hint">{
-        f"Olá, {nome}. Uma peça por sábado — cada uma tem uma tarefa pequena, é ela que faz a diferença."
+        f"Olá, {nome}. {cadencia} — cada uma tem uma tarefa pequena, é ela que faz a diferença."
         if info.get("tarefa_mentalidade", True)
-        else f"Olá, {nome}. Uma peça por sábado, direto ao ponto: o que a ciência mostra, o risco e o status na Anvisa."
+        else f"Olá, {nome}. {cadencia}, direto ao ponto: o que a ciência mostra, o risco e o status na Anvisa."
       }</p>
       {msg_html}
       {linhas}

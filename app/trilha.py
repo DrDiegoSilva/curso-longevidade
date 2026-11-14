@@ -119,7 +119,8 @@ def texto_peca(peca):
     info = config.TRILHAS.get(peca.get("produto", ""), {})
     nome_produto = info.get("nome", config.PRODUTO)
     total_produto = info.get("total", peca.get("numero", 0))
-    partes = [f"🎓 *{nome_produto} — Semana {peca.get('numero', 0)} de {total_produto}*",
+    unidade = info.get("unidade", "Semana")
+    partes = [f"🎓 *{nome_produto} — {unidade} {peca.get('numero', 0)} de {total_produto}*",
               f"*{peca.get('titulo', '')}*",
               f"_{peca.get('eixo', '')}_",
               "",
@@ -128,7 +129,7 @@ def texto_peca(peca):
         partes += ["", "⚠️ *Sem registro na Anvisa*", peca["aviso"].strip()]
     if info.get("tarefa_mentalidade", True):
         if peca.get("micro_resultado"):
-            partes += ["", "📌 *Sua tarefa desta semana*", peca["micro_resultado"].strip()]
+            partes += ["", f"📌 *Sua tarefa desta {unidade.lower()}*", peca["micro_resultado"].strip()]
         if peca.get("mentalidade"):
             partes += ["", "🧠 *Mentalidade*", peca["mentalidade"].strip()]
     return "\n".join(partes)
@@ -256,7 +257,7 @@ def _enviar_uma_peca(sub, produto, enviar_fn=None, render_fn=None, texto_fn=None
         render_fn(html_peca, out)
         time.sleep(config.SEND_DELAY_SEC)
         r_pdf = enviar_fn(numero_whats, out,
-                          caption=f"{info['nome']} · Semana {n}: {peca.get('titulo','')}")
+                          caption=f"{info['nome']} · {info.get('unidade', 'Semana')} {n}: {peca.get('titulo','')}")
         ww.registrar_envio(r_pdf, sub_id, "trilha_pdf")
     except Exception as e:
         print(f"[trilha] peça {n} ({produto}) p/ {sub_id} falhou: {e}", flush=True)
@@ -325,7 +326,7 @@ def enviar_peca_teste(produto, numero, whatsapp, enviar_fn=None, render_fn=None,
         out = os.path.join(tempfile.gettempdir(), f"trilha-teste-{produto}-{numero}.pdf")
         render_fn(html_peca, out)
         enviar_fn(numero_whats, out,
-                  caption=f"[TESTE] {info['nome']} · Semana {numero}: {peca.get('titulo','')}")
+                  caption=f"[TESTE] {info['nome']} · {info.get('unidade', 'Semana')} {numero}: {peca.get('titulo','')}")
     except Exception as e:
         return {"ok": False, "msg": f"Falhou no envio da peça {numero} ({produto}): {e}"}
 
